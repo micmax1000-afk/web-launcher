@@ -1,0 +1,5 @@
+{
+  "appId": "com.weblauncher.app",
+  "appName": "Web Launcher",
+  "webDir": "."
+}
