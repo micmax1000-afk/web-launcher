@@ -26,8 +26,8 @@ jobs:
 
       - name: Installa dipendenze, Plugin Browser e Genera Asset
         run: |
-          npm install
-          npm install @capacitor/browser @capacitor/assets --save-dev
+          npm install --legacy-peer-deps
+          npm install @capacitor/browser@^5.0.0 @capacitor/assets --save-dev --legacy-peer-deps
           npx capacitor-assets generate --android
           npx cap add android || true
           npx cap sync android
