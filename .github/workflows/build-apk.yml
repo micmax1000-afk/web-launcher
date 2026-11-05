@@ -3,6 +3,7 @@ name: Build Android APK
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -23,13 +24,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Installa dipendenze e Capacitor
+      - name: Installa dipendenze, Plugin Browser e Genera Asset
         run: |
           npm install
-          npm install @capacitor/assets --save-dev
+          npm install @capacitor/browser @capacitor/assets --save-dev
           npx capacitor-assets generate --android
-          npx cap add android
-          npx cap sync
+          npx cap add android || true
+          npx cap sync android
 
       - name: Compila APK con Gradle
         run: |
