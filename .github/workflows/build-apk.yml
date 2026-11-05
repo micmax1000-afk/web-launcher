@@ -26,8 +26,6 @@ jobs:
       - name: Installa dipendenze e Capacitor
         run: |
           npm install
-          npx cap init --force # oppure installa @capacitor/cli e @capacitor/android
-          npm install @capacitor/core @capacitor/android
           npx cap add android
           npx cap sync
 
