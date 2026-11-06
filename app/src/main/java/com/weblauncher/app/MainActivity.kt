@@ -116,7 +116,7 @@ class MainActivity : AppCompatActivity() {
         }
         webSearchHint.setOnClickListener {
             val q = searchInput.text?.toString()?.trim().orEmpty()
-            if (q.isNotEmpty()) openInBrowser("https://www.google.com/search?q=" + Uri.encode(q))
+            if (q.isNotEmpty()) openInBrowser(searchUrl(q))
         }
 
         findViewById<View>(R.id.btnMic).setOnClickListener { requestMicAndListen() }
@@ -143,7 +143,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupLauncher() {
         adapter = LauncherAdapter(
             onClick = { openInBrowser(normalizeUrl(it.url)) },
-            onLongClick = { item, _ -> showAppMenu(item) },
+            onMenu = { item -> showAppMenu(item) },
             onReorder = { fromId, toId -> applyReorder(fromId, toId) }
         )
         val glm = GridLayoutManager(this, 3)
@@ -245,16 +245,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateWebHint(q: String) {
-        val t = q.trim()
-        if (t.isEmpty()) webSearchHint.visibility = View.GONE
-        else { webSearchHint.visibility = View.VISIBLE; webSearchHint.text = "Cerca sul web: $t" }
+        val text = q.trim()
+        if (text.isEmpty()) webSearchHint.visibility = View.GONE
+        else {
+            webSearchHint.visibility = View.VISIBLE
+            webSearchHint.text = "Cerca con ${repo.getSearchEngine().label}: $text"
+        }
     }
 
     private fun runSearchFromBox() {
         val q = searchInput.text?.toString()?.trim().orEmpty()
         if (q.isEmpty()) return
         if (q.contains('.') && !q.contains(' ')) openInBrowser(normalizeUrl(q))
-        else openInBrowser("https://www.google.com/search?q=" + Uri.encode(q))
+        else openInBrowser(searchUrl(q))
         searchInput.setText("")
         refreshList()
     }
@@ -267,7 +270,7 @@ class MainActivity : AppCompatActivity() {
         when {
             match != null -> openInBrowser(normalizeUrl(match.url))
             text.contains('.') && !text.contains(' ') -> openInBrowser(normalizeUrl(text))
-            else -> openInBrowser("https://www.google.com/search?q=" + Uri.encode(text))
+            else -> openInBrowser(searchUrl(text))
         }
     }
 
@@ -295,6 +298,8 @@ class MainActivity : AppCompatActivity() {
         val u = raw.trim()
         return if (u.startsWith("http://") || u.startsWith("https://")) u else "https://$u"
     }
+
+    private fun searchUrl(query: String): String = repo.getSearchEngine().buildUrl(query)
 
     private fun showAppMenu(item: AppItem) {
         val options = arrayOf(
@@ -351,26 +356,48 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettings() {
-        val items = arrayOf("Esporta backup (JSON)", "Reset app predefinite", "Info voce / microfono",
-            "Suggerimento: trascina le icone per riordinarle")
+        val engine = repo.getSearchEngine()
+        val items = arrayOf(
+            "Motore di ricerca: ${engine.label}",
+            "Esporta backup (JSON)",
+            "Reset app predefinite",
+            "Info voce / microfono",
+            "Trascina le icone (tieni premuto)"
+        )
         MaterialAlertDialogBuilder(this).setTitle("Impostazioni").setItems(items) { _, which ->
             when (which) {
-                0 -> {
+                0 -> showSearchEnginePicker()
+                1 -> {
                     val json = com.google.gson.Gson().toJson(mapOf("apps" to apps, "categories" to categories))
                     startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                         type = "application/json"; putExtra(Intent.EXTRA_TEXT, json)
                     }, "Esporta backup"))
                 }
-                1 -> MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
+                2 -> MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
                     .setPositiveButton("Reset") { _, _ ->
                         apps = repo.resetDefaults(); categories = repo.loadCategories(); refreshList(); toast("App ripristinate")
                     }.setNegativeButton("Annulla", null).show()
-                2 -> MaterialAlertDialogBuilder(this).setTitle("Microfono")
+                3 -> MaterialAlertDialogBuilder(this).setTitle("Microfono")
                     .setMessage("Voce nativa Android.\nImpostazioni → App → Web Launcher → Microfono → Consentire")
                     .setPositiveButton("OK", null).show()
-                3 -> toast("Tieni premuto e trascina un'icona per spostarla")
+                4 -> toast("Tieni premuto un'icona e trascinala. Menu: tocco sui ⋮")
             }
         }.setNegativeButton("Chiudi", null).show()
+    }
+
+    private fun showSearchEnginePicker() {
+        val engines = SearchEngine.entries
+        val labels = engines.map { it.label }.toTypedArray()
+        val current = engines.indexOf(repo.getSearchEngine()).coerceAtLeast(0)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Motore di ricerca")
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                repo.setSearchEngine(engines[which])
+                toast("Motore: ${engines[which].label}")
+                dialog.dismiss()
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
     }
 
     private fun toast(msg: String) { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
