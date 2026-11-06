@@ -10,71 +10,74 @@
     :root {
       --bg: #0b1220; --bg-elevated: #111827; --card: rgba(30,41,59,0.72); --card-hover: rgba(51,65,85,0.85);
       --border: rgba(148,163,184,0.12); --text: #f1f5f9; --text-muted: #94a3b8; --accent: #3b82f6;
-      --accent-soft: rgba(59,130,246,0.18); --danger: #ef4444; --radius: 16px; --radius-sm: 10px;
+      --accent-soft: rgba(59,130,246,0.18); --danger: #ef4444; --radius: 16px; --radius-sm: 12px;
       --shadow: 0 8px 30px rgba(0,0,0,0.35); --header-h: 64px; --safe-bottom: env(safe-area-inset-bottom, 0px);
     }
     [data-theme="light"] {
-      --bg: #f1f5f9; --bg-elevated: #fff; --card: rgba(255,255,255,0.85); --card-hover: #fff;
+      --bg: #f1f5f9; --bg-elevated: #fff; --card: rgba(255,255,255,0.92); --card-hover: #fff;
       --border: rgba(15,23,42,0.08); --text: #0f172a; --text-muted: #64748b; --accent: #2563eb;
       --accent-soft: rgba(37,99,235,0.12); --shadow: 0 8px 30px rgba(15,23,42,0.08);
     }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
     html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
     body { display: flex; flex-direction: column; }
-    header { height: var(--header-h); min-height: var(--header-h); padding: 0.6rem 0.75rem; display: flex; align-items: center; gap: 0.5rem; background: var(--bg-elevated); border-bottom: 1px solid var(--border); z-index: 50; position: relative; }
+    header { height: var(--header-h); min-height: var(--header-h); padding: 0.6rem 0.75rem; display: flex; align-items: center; gap: 0.5rem; background: var(--bg-elevated); border-bottom: 1px solid var(--border); z-index: 50; }
     .omnibox-wrap { flex: 1; position: relative; display: flex; align-items: center; }
     .omnibox { width: 100%; padding: 0.7rem 2.8rem 0.7rem 1rem; border-radius: 999px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 0.95rem; outline: none; }
     .omnibox:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-    .btn-mic { position: absolute; right: 6px; width: 40px; height: 40px; border-radius: 50%; border: none; background: transparent; color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .btn-mic { position: absolute; right: 4px; width: 40px; height: 40px; border-radius: 50%; border: none; background: transparent; color: var(--text-muted); display: flex; align-items: center; justify-content: center; cursor: pointer; }
     .btn-mic.listening { background: var(--danger); color: #fff; }
-    .btn-icon { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; font-size: 1.2rem; }
+    .btn-icon { width: 44px; height: 44px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--text); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; font-size: 1.25rem; }
     .btn-icon.primary { background: var(--accent); border-color: transparent; color: #fff; }
     main { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 1.25rem 1rem calc(5.5rem + var(--safe-bottom)); -webkit-overflow-scrolling: touch; }
-    .categories-container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.75rem; }
-    .category-title { font-size: 0.95rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-bottom: 0.85rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 0.9rem; }
-    .app-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.45rem; padding: 0.9rem 0.5rem 0.75rem; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; user-select: none; }
+    .categories-container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.6rem; }
+    .category-title { font-size: 0.85rem; font-weight: 650; color: var(--text-muted); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 0.75rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 0.85rem; }
+    .app-card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0.45rem; padding: 0.95rem 0.5rem 0.8rem; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; user-select: none; transition: transform 0.15s; }
     .app-card:active { transform: scale(0.94); }
-    .app-card.pinned::before { content: "\2605"; position: absolute; top: 6px; left: 8px; font-size: 0.7rem; color: #fbbf24; z-index: 2; }
-    .app-icon { width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(145deg, #1e293b, #334155); display: flex; align-items: center; justify-content: center; font-weight: 700; color: #60a5fa; overflow: hidden; }
+    .app-card.pinned::after { content: "\2605"; position: absolute; top: 8px; right: 10px; font-size: 0.72rem; color: #f59e0b; z-index: 2; }
+    .app-icon { width: 54px; height: 54px; border-radius: 14px; background: linear-gradient(145deg, #1e293b, #334155); display: flex; align-items: center; justify-content: center; font-weight: 700; color: #60a5fa; overflow: hidden; }
     [data-theme="light"] .app-icon { background: linear-gradient(145deg, #e2e8f0, #cbd5e1); color: #2563eb; }
     .app-icon img { width: 30px; height: 30px; object-fit: contain; }
     .app-name { font-size: 0.78rem; text-align: center; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .card-actions { position: absolute; top: -5px; right: -5px; display: flex; gap: 3px; z-index: 5; opacity: 1; }
-    .btn-action { width: 28px; height: 28px; border-radius: 50%; border: none; font-size: 12px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-    .btn-edit { background: var(--accent); }
-    .btn-delete { background: var(--danger); }
-    .btn-pin { background: #f59e0b; }
-    .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; padding: 0.6rem 1rem calc(0.7rem + var(--safe-bottom)); background: var(--bg-elevated); border-top: 1px solid var(--border); display: flex; justify-content: space-around; align-items: center; z-index: 40; }
-    .bottom-btn { flex: 1; max-width: 110px; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2rem; background: none; border: none; color: var(--text-muted); font-size: 0.7rem; cursor: pointer; padding: 0.45rem; border-radius: 12px; }
+    .bottom-bar { position: fixed; bottom: 0; left: 0; right: 0; padding: 0.55rem 1rem calc(0.65rem + var(--safe-bottom)); background: var(--bg-elevated); border-top: 1px solid var(--border); display: flex; justify-content: space-around; align-items: center; z-index: 40; }
+    .bottom-btn { flex: 1; max-width: 110px; min-height: 48px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; background: none; border: none; color: var(--text-muted); font-size: 0.7rem; cursor: pointer; padding: 0.4rem; border-radius: 12px; }
     .bottom-btn.active, .bottom-btn:active { color: var(--accent); background: var(--accent-soft); }
     .bottom-btn svg { width: 22px; height: 22px; }
-    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: none; align-items: flex-end; justify-content: center; z-index: 100; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none; align-items: flex-end; justify-content: center; z-index: 100; }
     .modal-overlay.open { display: flex; }
-    .modal { background: var(--bg-elevated); width: 100%; max-width: 420px; border-radius: 20px 20px 0 0; padding: 1.4rem 1.3rem calc(1.4rem + var(--safe-bottom)); display: flex; flex-direction: column; gap: 1rem; max-height: 90vh; overflow-y: auto; }
+    .modal { background: var(--bg-elevated); width: 100%; max-width: 420px; border-radius: 20px 20px 0 0; padding: 1.35rem 1.25rem calc(1.35rem + var(--safe-bottom)); display: flex; flex-direction: column; gap: 0.9rem; max-height: 90vh; overflow-y: auto; }
     @media (min-width: 560px) { .modal-overlay { align-items: center; padding: 1rem; } .modal { border-radius: 20px; } }
-    .modal h3 { font-size: 1.15rem; font-weight: 650; }
+    .modal h3 { font-size: 1.1rem; font-weight: 650; }
     .modal label { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem; display: block; }
     .modal input, .modal select { width: 100%; padding: 0.75rem 0.9rem; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 0.95rem; outline: none; }
     .field { display: flex; flex-direction: column; }
-    .modal-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.3rem; }
-    .btn { padding: 0.75rem 1.2rem; border-radius: var(--radius-sm); border: none; font-size: 0.9rem; font-weight: 550; cursor: pointer; min-height: 44px; }
+    .modal-actions { display: flex; gap: 0.6rem; justify-content: flex-end; margin-top: 0.2rem; }
+    .btn { padding: 0.75rem 1.15rem; border-radius: var(--radius-sm); border: none; font-size: 0.9rem; font-weight: 550; cursor: pointer; min-height: 44px; }
     .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
     .btn-primary { background: var(--accent); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
     .settings-list { display: flex; flex-direction: column; gap: 0.5rem; }
     .settings-item { display: flex; align-items: center; justify-content: space-between; padding: 0.85rem 1rem; background: var(--bg); border-radius: var(--radius-sm); border: 1px solid var(--border); cursor: pointer; min-height: 48px; }
-    .settings-item span { display: flex; align-items: center; gap: 0.6rem; font-size: 0.95rem; }
+    .settings-item span { display: flex; align-items: center; gap: 0.55rem; font-size: 0.95rem; }
     .toggle { width: 44px; height: 26px; border-radius: 999px; background: #475569; position: relative; }
     .toggle::after { content: ""; position: absolute; width: 20px; height: 20px; border-radius: 50%; background: #fff; top: 3px; left: 3px; transition: transform 0.2s; }
     .toggle.on { background: var(--accent); }
     .toggle.on::after { transform: translateX(18px); }
+    .ctx-menu { position: fixed; z-index: 120; min-width: 200px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 0.35rem; display: none; }
+    .ctx-menu.open { display: block; }
+    .ctx-item { width: 100%; text-align: left; padding: 0.85rem 1rem; border: none; background: transparent; color: var(--text); font-size: 0.95rem; border-radius: 10px; cursor: pointer; display: flex; align-items: center; gap: 0.65rem; }
+    .ctx-item:active { background: var(--accent-soft); }
+    .ctx-item.danger { color: var(--danger); }
+    .ctx-backdrop { position: fixed; inset: 0; z-index: 110; display: none; background: transparent; }
+    .ctx-backdrop.open { display: block; }
     .toast { position: fixed; bottom: calc(5.2rem + var(--safe-bottom)); left: 50%; transform: translateX(-50%) translateY(20px); background: var(--bg-elevated); color: var(--text); padding: 0.7rem 1.2rem; border-radius: 999px; border: 1px solid var(--border); font-size: 0.9rem; z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.25s, transform 0.25s; max-width: 90%; text-align: center; }
     .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-    .voice-overlay { position: fixed; inset: 0; background: rgba(11,18,32,0.92); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 150; gap: 1.5rem; color: #fff; }
+    .voice-overlay { position: fixed; inset: 0; background: rgba(11,18,32,0.92); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 150; gap: 1.4rem; color: #fff; }
     .voice-overlay.open { display: flex; }
     .voice-circle { width: 90px; height: 90px; border-radius: 50%; background: var(--danger); display: flex; align-items: center; justify-content: center; }
-    .voice-text { font-size: 1.1rem; color: #cbd5e1; }
-    .voice-result { font-size: 1.3rem; font-weight: 600; min-height: 1.6em; text-align: center; padding: 0 1.5rem; }
+    .voice-text { font-size: 1.05rem; color: #cbd5e1; }
+    .voice-result { font-size: 1.25rem; font-weight: 600; min-height: 1.5em; text-align: center; padding: 0 1.5rem; }
     .empty-state { text-align: center; padding: 3rem 1.5rem; color: var(--text-muted); }
   </style>
 </head>
@@ -88,381 +91,52 @@
     </div>
     <button type="button" class="btn-icon primary" id="btnAdd" title="Aggiungi app">+</button>
   </header>
-
-  <main id="mainView">
-    <div class="categories-container" id="appsContainer"></div>
-  </main>
-
+  <main id="mainView"><div class="categories-container" id="appsContainer"></div></main>
   <nav class="bottom-bar">
-    <button type="button" class="bottom-btn active" data-action="home">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      Home
-    </button>
-    <button type="button" class="bottom-btn" data-action="voice">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-      Voce
-    </button>
-    <button type="button" class="bottom-btn" data-action="settings">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-      Impostazioni
-    </button>
+    <button type="button" class="bottom-btn active" data-action="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Home</button>
+    <button type="button" class="bottom-btn" data-action="voice"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>Voce</button>
+    <button type="button" class="bottom-btn" data-action="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Impostazioni</button>
   </nav>
-
-  <div class="modal-overlay" id="appModal">
-    <div class="modal">
-      <h3 id="modalTitle">Aggiungi Web App</h3>
-      <div class="field"><label for="appName">Nome</label><input type="text" id="appName" placeholder="es. GitHub" maxlength="40"></div>
-      <div class="field"><label for="appUrl">URL</label><input type="url" id="appUrl" placeholder="https://github.com" inputmode="url"></div>
-      <div class="field"><label for="appCat">Categoria</label><select id="appCat"></select></div>
-      <div class="field" id="newCatField" style="display:none"><label for="newCatName">Nuova categoria</label><input type="text" id="newCatName" maxlength="30"></div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="btnCancelApp">Annulla</button>
-        <button type="button" class="btn btn-primary" id="btnSaveApp">Salva</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-overlay" id="settingsModal">
-    <div class="modal">
-      <h3>Impostazioni</h3>
-      <div class="settings-list">
-        <div class="settings-item" id="toggleTheme"><span>Tema chiaro</span><div class="toggle" id="themeToggle"></div></div>
-        <div class="settings-item" id="btnExport"><span>Esporta backup</span></div>
-        <div class="settings-item" id="btnImport"><span>Importa backup</span></div>
-        <div class="settings-item" id="btnReset"><span style="color:var(--danger)">Reset app predefinite</span></div>
-      </div>
-      <div class="modal-actions"><button type="button" class="btn btn-ghost" id="btnCloseSettings">Chiudi</button></div>
-    </div>
-  </div>
-
-  <div class="voice-overlay" id="voiceOverlay">
-    <div class="voice-circle"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg></div>
-    <div class="voice-text">Ascolto...</div>
-    <div class="voice-result" id="voiceResult"></div>
-    <button type="button" class="btn btn-ghost" style="color:#94a3b8" id="btnCancelVoice">Annulla</button>
-  </div>
-
+  <div class="modal-overlay" id="appModal"><div class="modal"><h3 id="modalTitle">Aggiungi Web App</h3><div class="field"><label for="appName">Nome</label><input type="text" id="appName" placeholder="es. GitHub" maxlength="40"></div><div class="field"><label for="appUrl">URL</label><input type="url" id="appUrl" placeholder="https://github.com" inputmode="url"></div><div class="field"><label for="appCat">Categoria</label><select id="appCat"></select></div><div class="field" id="newCatField" style="display:none"><label for="newCatName">Nuova categoria</label><input type="text" id="newCatName" maxlength="30"></div><div class="modal-actions"><button type="button" class="btn btn-ghost" id="btnCancelApp">Annulla</button><button type="button" class="btn btn-primary" id="btnSaveApp">Salva</button></div></div></div>
+  <div class="modal-overlay" id="settingsModal"><div class="modal"><h3>Impostazioni</h3><div class="settings-list"><div class="settings-item" id="toggleTheme"><span>Tema chiaro</span><div class="toggle" id="themeToggle"></div></div><div class="settings-item" id="btnExport"><span>Esporta backup</span></div><div class="settings-item" id="btnImport"><span>Importa backup</span></div><div class="settings-item" id="btnReset"><span style="color:var(--danger)">Reset app predefinite</span></div></div><div class="modal-actions"><button type="button" class="btn btn-ghost" id="btnCloseSettings">Chiudi</button></div></div></div>
+  <div class="ctx-backdrop" id="ctxBackdrop"></div>
+  <div class="ctx-menu" id="ctxMenu"><button type="button" class="ctx-item" data-act="pin" id="ctxPin">\u2605 Preferiti</button><button type="button" class="ctx-item" data-act="edit">\u270e Modifica / Sposta</button><button type="button" class="ctx-item danger" data-act="delete">\u2715 Elimina</button></div>
+  <div class="voice-overlay" id="voiceOverlay"><div class="voice-circle"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg></div><div class="voice-text">Ascolto...</div><div class="voice-result" id="voiceResult"></div><button type="button" class="btn btn-ghost" style="color:#94a3b8" id="btnCancelVoice">Annulla</button></div>
   <div class="toast" id="toast"></div>
   <input type="file" id="importFile" accept=".json,application/json" style="display:none">
-
   <script>
-    const DEFAULT_APPS = [
-      { name: "ChatGPT", url: "https://chatgpt.com", cat: "AI Tools", pinned: true },
-      { name: "Claude", url: "https://claude.ai", cat: "AI Tools", pinned: false },
-      { name: "Gemini", url: "https://gemini.google.com", cat: "AI Tools", pinned: false },
-      { name: "DeepSeek", url: "https://chat.deepseek.com", cat: "AI Tools", pinned: false },
-      { name: "Grok", url: "https://x.com/i/grok", cat: "AI Tools", pinned: false },
-      { name: "Booking", url: "https://booking.com", cat: "Viaggi", pinned: false },
-      { name: "YouTube", url: "https://youtube.com", cat: "Intrattenimento", pinned: true },
-      { name: "Wikipedia", url: "https://it.wikipedia.org", cat: "Utility", pinned: false },
-      { name: "GitHub", url: "https://github.com", cat: "Produttivita", pinned: false },
-      { name: "Gmail", url: "https://mail.google.com", cat: "Produttivita", pinned: false }
-    ];
-    const DEFAULT_CATS = ["AI Tools", "Viaggi", "Shopping", "Produttivita", "Intrattenimento", "Utility"];
-    let apps = [];
-    let categories = [];
-    let editIndex = null;
-    let recognition = null;
-    let isListening = false;
-
-    function loadData() {
-      try {
-        var sa = localStorage.getItem("wl_apps");
-        var sc = localStorage.getItem("wl_cats");
-        apps = sa ? JSON.parse(sa) : JSON.parse(JSON.stringify(DEFAULT_APPS));
-        categories = sc ? JSON.parse(sc) : DEFAULT_CATS.slice();
-      } catch (e) {
-        apps = JSON.parse(JSON.stringify(DEFAULT_APPS));
-        categories = DEFAULT_CATS.slice();
-      }
-      apps = apps.map(function(a) { return Object.assign({ pinned: false }, a); });
-    }
-    function saveData() {
-      localStorage.setItem("wl_apps", JSON.stringify(apps));
-      localStorage.setItem("wl_cats", JSON.stringify(categories));
-    }
-    function applyTheme(theme) {
-      document.documentElement.setAttribute("data-theme", theme);
-      localStorage.setItem("wl_theme", theme);
-      var t = document.getElementById("themeToggle");
-      if (t) t.classList.toggle("on", theme === "light");
-    }
-    function initTheme() {
-      var saved = localStorage.getItem("wl_theme") || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-      applyTheme(saved);
-    }
-    function escapeHtml(str) {
-      return String(str).replace(/[&<>"']/g, function(c) { return ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[c]; });
-    }
-    function toast(msg) {
-      var el = document.getElementById("toast");
-      el.textContent = msg;
-      el.classList.add("show");
-      clearTimeout(window._toastT);
-      window._toastT = setTimeout(function() { el.classList.remove("show"); }, 2200);
-    }
-
-    async function openUrl(url) {
-      if (url.indexOf("http://") !== 0 && url.indexOf("https://") !== 0) url = "https://" + url;
-      try {
-        if (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) {
-          var Browser = window.Capacitor.Plugins && window.Capacitor.Plugins.Browser;
-          if (Browser && Browser.open) { await Browser.open({ url: url }); return; }
-        }
-      } catch (err) { console.warn(err); }
-      try { window.open(url, "_blank", "noopener,noreferrer"); }
-      catch (e) { location.href = url; }
-    }
-
-    function renderApps(filter) {
-      filter = filter || "";
-      var container = document.getElementById("appsContainer");
-      var q = filter.trim().toLowerCase();
-      var list = apps;
-      if (q) {
-        list = apps.filter(function(a) {
-          return a.name.toLowerCase().indexOf(q) >= 0 || a.url.toLowerCase().indexOf(q) >= 0 || a.cat.toLowerCase().indexOf(q) >= 0;
-        });
-      }
-      if (!list.length) {
-        container.innerHTML = '<div class="empty-state"><p>' + (q ? "Nessuna app trovata" : "Nessuna app") + '</p></div>';
-        return;
-      }
-      var catOrder = categories.slice();
-      list = list.slice().sort(function(a, b) {
-        if (a.pinned !== b.pinned) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
-        return catOrder.indexOf(a.cat) - catOrder.indexOf(b.cat);
-      });
-      var catsInUse = [];
-      list.forEach(function(a) { if (catsInUse.indexOf(a.cat) < 0) catsInUse.push(a.cat); });
-      var hasPinned = list.some(function(a) { return a.pinned; });
-      container.innerHTML = "";
-      if (hasPinned && !q) {
-        container.appendChild(createSection("Preferiti", list.filter(function(a) { return a.pinned; })));
-      }
-      catsInUse.forEach(function(cat) {
-        var catApps = list.filter(function(a) { return a.cat === cat && (!hasPinned || q || !a.pinned); });
-        if (catApps.length) container.appendChild(createSection(cat, catApps));
-      });
-    }
-
-    function createSection(title, catApps) {
-      var section = document.createElement("section");
-      section.innerHTML = '<h2 class="category-title">' + escapeHtml(title) + '</h2><div class="grid"></div>';
-      var grid = section.querySelector(".grid");
-      catApps.forEach(function(app) {
-        var index = apps.indexOf(app);
-        var initials = app.name.slice(0, 2).toUpperCase();
-        var domain = "";
-        try { domain = new URL(app.url).hostname; } catch (e) { domain = app.url; }
-        var favicon = "https://www.google.com/s2/favicons?domain=" + domain + "&sz=128";
-        var card = document.createElement("div");
-        card.className = "app-card" + (app.pinned ? " pinned" : "");
-        card.innerHTML =
-          '<div class="card-actions">' +
-            '<button type="button" class="btn-action btn-pin">' + (app.pinned ? "\u2605" : "\u2606") + '</button>' +
-            '<button type="button" class="btn-action btn-edit">\u270e</button>' +
-            '<button type="button" class="btn-action btn-delete">\u2715</button>' +
-          '</div>' +
-          '<div class="app-icon">' +
-            '<img src="' + favicon + '" alt="" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'">' +
-            '<span style="display:none">' + initials + '</span>' +
-          '</div>' +
-          '<span class="app-name">' + escapeHtml(app.name) + '</span>';
-        card.addEventListener("click", function(e) {
-          if (e.target.closest(".card-actions")) return;
-          openUrl(app.url);
-        });
-        card.querySelector(".btn-edit").addEventListener("click", function(e) { e.stopPropagation(); openEditModal(index); });
-        card.querySelector(".btn-delete").addEventListener("click", function(e) { e.stopPropagation(); deleteApp(index); });
-        card.querySelector(".btn-pin").addEventListener("click", function(e) { e.stopPropagation(); togglePin(index); });
-        grid.appendChild(card);
-      });
-      return section;
-    }
-
-    function openAddModal() {
-      editIndex = null;
-      document.getElementById("modalTitle").textContent = "Aggiungi Web App";
-      document.getElementById("appName").value = "";
-      document.getElementById("appUrl").value = "";
-      populateCatSelect("appCat");
-      document.getElementById("newCatField").style.display = "none";
-      document.getElementById("appModal").classList.add("open");
-    }
-    function openEditModal(index) {
-      editIndex = index;
-      var app = apps[index];
-      document.getElementById("modalTitle").textContent = "Modifica App";
-      document.getElementById("appName").value = app.name;
-      document.getElementById("appUrl").value = app.url;
-      populateCatSelect("appCat", app.cat);
-      document.getElementById("newCatField").style.display = "none";
-      document.getElementById("appModal").classList.add("open");
-    }
-    function populateCatSelect(selectId, selected) {
-      var sel = document.getElementById(selectId);
-      sel.innerHTML = categories.map(function(c) {
-        return '<option value="' + escapeHtml(c) + '"' + (c === selected ? ' selected' : '') + '>' + escapeHtml(c) + '</option>';
-      }).join('') + '<option value="__new__">+ Nuova categoria...</option>';
-    }
-    function closeAppModal() { document.getElementById("appModal").classList.remove("open"); editIndex = null; }
-    function saveApp() {
-      var name = document.getElementById("appName").value.trim();
-      var url = document.getElementById("appUrl").value.trim();
-      var cat = document.getElementById("appCat").value;
-      if (cat === "__new__") {
-        cat = document.getElementById("newCatName").value.trim();
-        if (!cat) return toast("Inserisci categoria");
-        if (categories.indexOf(cat) < 0) categories.push(cat);
-      }
-      if (!name || !url) return toast("Nome e URL obbligatori");
-      if (url.indexOf("http://") !== 0 && url.indexOf("https://") !== 0) url = "https://" + url;
-      if (editIndex !== null) {
-        apps[editIndex] = Object.assign({}, apps[editIndex], { name: name, url: url, cat: cat });
-        toast("App aggiornata");
-      } else {
-        apps.push({ name: name, url: url, cat: cat, pinned: false });
-        toast("App aggiunta");
-      }
-      saveData(); closeAppModal(); renderApps(document.getElementById("omnibox").value);
-    }
-    function deleteApp(index) {
-      var name = apps[index].name;
-      apps.splice(index, 1);
-      saveData(); renderApps(document.getElementById("omnibox").value);
-      toast('"' + name + '" eliminata');
-    }
-    function togglePin(index) {
-      apps[index].pinned = !apps[index].pinned;
-      saveData(); renderApps(document.getElementById("omnibox").value);
-      toast(apps[index].pinned ? "Aggiunta ai preferiti" : "Rimossa dai preferiti");
-    }
-
-    function initSpeech() {
-      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) return false;
-      recognition = new SR();
-      recognition.lang = "it-IT";
-      recognition.interimResults = true;
-      recognition.continuous = false;
-      recognition.onstart = function() {
-        isListening = true;
-        document.getElementById("btnMic").classList.add("listening");
-        document.getElementById("voiceOverlay").classList.add("open");
-        document.getElementById("voiceResult").textContent = "";
-      };
-      recognition.onresult = function(event) {
-        var transcript = "";
-        for (var i = event.resultIndex; i < event.results.length; i++) transcript += event.results[i][0].transcript;
-        document.getElementById("voiceResult").textContent = transcript;
-        if (event.results[event.results.length - 1].isFinal) handleVoiceResult(transcript.trim());
-      };
-      recognition.onerror = function(e) {
-        stopListening();
-        if (e.error === "not-allowed") toast("Permesso microfono negato");
-        else if (e.error !== "aborted") toast("Errore vocale");
-      };
-      recognition.onend = function() { stopListening(); };
-      return true;
-    }
-    function startListening() {
-      if (!recognition && !initSpeech()) { toast("Voce non supportata"); return; }
-      try { recognition.start(); } catch (e) {}
-    }
-    function stopListening() {
-      isListening = false;
-      document.getElementById("btnMic").classList.remove("listening");
-      document.getElementById("voiceOverlay").classList.remove("open");
-      try { if (recognition) recognition.stop(); } catch (e) {}
-    }
-    function handleVoiceResult(text) {
-      stopListening();
-      if (!text) return;
-      var match = apps.find(function(a) {
-        return a.name.toLowerCase().indexOf(text.toLowerCase()) >= 0 || text.toLowerCase().indexOf(a.name.toLowerCase()) >= 0;
-      });
-      if (match) { toast("Apro " + match.name); setTimeout(function() { openUrl(match.url); }, 400); return; }
-      if (text.indexOf(".") >= 0 && text.indexOf(" ") < 0) { openUrl(text.replace(/\s/g, "")); return; }
-      toast("Cerco: " + text);
-      setTimeout(function() { openUrl("https://www.google.com/search?q=" + encodeURIComponent(text)); }, 400);
-    }
-
-    function openSettings() { document.getElementById("settingsModal").classList.add("open"); }
-    function closeSettings() { document.getElementById("settingsModal").classList.remove("open"); }
-    function exportBackup() {
-      var data = { apps: apps, categories: categories, exportedAt: new Date().toISOString() };
-      var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a"); a.href = url; a.download = "web-launcher-backup.json"; a.click();
-      URL.revokeObjectURL(url); toast("Backup esportato"); closeSettings();
-    }
-    function importBackup(file) {
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        try {
-          var data = JSON.parse(e.target.result);
-          if (!Array.isArray(data.apps)) throw new Error("bad");
-          apps = data.apps.map(function(a) { return Object.assign({ pinned: false }, a); });
-          if (Array.isArray(data.categories)) categories = data.categories;
-          saveData(); renderApps(); toast("Backup importato"); closeSettings();
-        } catch (err) { toast("File non valido"); }
-      };
-      reader.readAsText(file);
-    }
-    function resetDefaults() {
-      if (!confirm("Ripristinare le app predefinite?")) return;
-      apps = JSON.parse(JSON.stringify(DEFAULT_APPS));
-      categories = DEFAULT_CATS.slice();
-      saveData(); renderApps(); toast("App ripristinate"); closeSettings();
-    }
-
-    function init() {
-      loadData(); initTheme(); renderApps();
-      var omnibox = document.getElementById("omnibox");
-      omnibox.addEventListener("keyup", function(e) {
-        var val = omnibox.value.trim();
-        if (e.key === "Enter" && val) {
-          if (val.indexOf(".") >= 0 && val.indexOf(" ") < 0) openUrl(val);
-          else openUrl("https://www.google.com/search?q=" + encodeURIComponent(val));
-          omnibox.value = ""; renderApps();
-        } else renderApps(val);
-      });
-      omnibox.addEventListener("input", function() { renderApps(omnibox.value); });
-      document.getElementById("btnAdd").addEventListener("click", openAddModal);
-      document.getElementById("btnMic").addEventListener("click", function() { if (isListening) stopListening(); else startListening(); });
-      document.getElementById("btnCancelVoice").addEventListener("click", stopListening);
-      document.getElementById("btnCancelApp").addEventListener("click", closeAppModal);
-      document.getElementById("btnSaveApp").addEventListener("click", saveApp);
-      document.getElementById("appCat").addEventListener("change", function(e) {
-        document.getElementById("newCatField").style.display = e.target.value === "__new__" ? "block" : "none";
-      });
-      document.getElementById("appModal").addEventListener("click", function(e) { if (e.target === e.currentTarget) closeAppModal(); });
-      document.querySelectorAll(".bottom-btn").forEach(function(btn) {
-        btn.addEventListener("click", function() {
-          var action = btn.getAttribute("data-action");
-          if (action === "home") { omnibox.value = ""; renderApps(); }
-          else if (action === "voice") startListening();
-          else if (action === "settings") openSettings();
-        });
-      });
-      document.getElementById("btnCloseSettings").addEventListener("click", closeSettings);
-      document.getElementById("settingsModal").addEventListener("click", function(e) { if (e.target === e.currentTarget) closeSettings(); });
-      document.getElementById("toggleTheme").addEventListener("click", function() {
-        var cur = document.documentElement.getAttribute("data-theme");
-        applyTheme(cur === "light" ? "dark" : "light");
-      });
-      document.getElementById("btnExport").addEventListener("click", exportBackup);
-      document.getElementById("btnImport").addEventListener("click", function() { document.getElementById("importFile").click(); });
-      document.getElementById("importFile").addEventListener("change", function(e) {
-        if (e.target.files[0]) importBackup(e.target.files[0]);
-        e.target.value = "";
-      });
-      document.getElementById("btnReset").addEventListener("click", resetDefaults);
-      if ("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(function() {});
-    }
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
-    else init();
+    var DEFAULT_APPS=[{name:"ChatGPT",url:"https://chatgpt.com",cat:"AI Tools",pinned:true},{name:"Claude",url:"https://claude.ai",cat:"AI Tools",pinned:false},{name:"Gemini",url:"https://gemini.google.com",cat:"AI Tools",pinned:false},{name:"DeepSeek",url:"https://chat.deepseek.com",cat:"AI Tools",pinned:false},{name:"Grok",url:"https://x.com/i/grok",cat:"AI Tools",pinned:false},{name:"Booking",url:"https://booking.com",cat:"Viaggi",pinned:false},{name:"YouTube",url:"https://youtube.com",cat:"Intrattenimento",pinned:true},{name:"Wikipedia",url:"https://it.wikipedia.org",cat:"Utility",pinned:false},{name:"GitHub",url:"https://github.com",cat:"Produttivita",pinned:false},{name:"Gmail",url:"https://mail.google.com",cat:"Produttivita",pinned:false}];
+    var DEFAULT_CATS=["AI Tools","Viaggi","Shopping","Produttivita","Intrattenimento","Utility"];
+    var apps=[],categories=[],editIndex=null,ctxIndex=null,recognition=null,isListening=false,longPressTimer=null,longPressMoved=false;
+    function loadData(){try{var sa=localStorage.getItem("wl_apps"),sc=localStorage.getItem("wl_cats");apps=sa?JSON.parse(sa):JSON.parse(JSON.stringify(DEFAULT_APPS));categories=sc?JSON.parse(sc):DEFAULT_CATS.slice()}catch(e){apps=JSON.parse(JSON.stringify(DEFAULT_APPS));categories=DEFAULT_CATS.slice()}apps=apps.map(function(a){return Object.assign({pinned:false},a)})}
+    function saveData(){localStorage.setItem("wl_apps",JSON.stringify(apps));localStorage.setItem("wl_cats",JSON.stringify(categories))}
+    function applyTheme(theme){document.documentElement.setAttribute("data-theme",theme);localStorage.setItem("wl_theme",theme);var t=document.getElementById("themeToggle");if(t)t.classList.toggle("on",theme==="light")}
+    function initTheme(){var saved=localStorage.getItem("wl_theme")||(window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark");applyTheme(saved)}
+    function escapeHtml(str){return String(str).replace(/[&<>"']/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c]})}
+    function toast(msg){var el=document.getElementById("toast");el.textContent=msg;el.classList.add("show");clearTimeout(window._toastT);window._toastT=setTimeout(function(){el.classList.remove("show")},2400)}
+    async function openUrl(url){if(url.indexOf("http://")!==0&&url.indexOf("https://")!==0)url="https://"+url;try{if(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()){var Browser=window.Capacitor.Plugins&&window.Capacitor.Plugins.Browser;if(Browser&&Browser.open){await Browser.open({url:url});return}}}catch(err){console.warn(err)}try{window.open(url,"_blank","noopener,noreferrer")}catch(e){location.href=url}}
+    function renderApps(filter){filter=filter||"";var container=document.getElementById("appsContainer");var q=filter.trim().toLowerCase();var list=apps;if(q){list=apps.filter(function(a){return a.name.toLowerCase().indexOf(q)>=0||a.url.toLowerCase().indexOf(q)>=0||a.cat.toLowerCase().indexOf(q)>=0})}if(!list.length){container.innerHTML='<div class="empty-state"><p>'+(q?"Nessuna app trovata":"Nessuna app")+'</p></div>';return}var catOrder=categories.slice();list=list.slice().sort(function(a,b){if(a.pinned!==b.pinned)return(b.pinned?1:0)-(a.pinned?1:0);return catOrder.indexOf(a.cat)-catOrder.indexOf(b.cat)});var catsInUse=[];list.forEach(function(a){if(catsInUse.indexOf(a.cat)<0)catsInUse.push(a.cat)});var hasPinned=list.some(function(a){return a.pinned});container.innerHTML="";if(hasPinned&&!q)container.appendChild(createSection("Preferiti",list.filter(function(a){return a.pinned})));catsInUse.forEach(function(cat){var catApps=list.filter(function(a){return a.cat===cat&&(!hasPinned||q||!a.pinned)});if(catApps.length)container.appendChild(createSection(cat,catApps))})}
+    function createSection(title,catApps){var section=document.createElement("section");section.innerHTML='<h2 class="category-title">'+escapeHtml(title)+'</h2><div class="grid"></div>';var grid=section.querySelector(".grid");catApps.forEach(function(app){var index=apps.indexOf(app);var initials=app.name.slice(0,2).toUpperCase();var domain="";try{domain=new URL(app.url).hostname}catch(e){domain=app.url}var favicon="https://www.google.com/s2/favicons?domain="+domain+"&sz=128";var card=document.createElement("div");card.className="app-card"+(app.pinned?" pinned":"");card.innerHTML='<div class="app-icon"><img src="'+favicon+'" alt="" loading="lazy" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'"><span style="display:none">'+initials+'</span></div><span class="app-name">'+escapeHtml(app.name)+'</span>';card.addEventListener("click",function(){if(longPressMoved)return;openUrl(app.url)});card.addEventListener("touchstart",function(e){longPressMoved=false;var touch=e.touches[0];var startX=touch.clientX,startY=touch.clientY;longPressTimer=setTimeout(function(){longPressMoved=true;openContextMenu(index,startX,startY);if(navigator.vibrate)try{navigator.vibrate(30)}catch(err){}},480);function onMove(ev){var t=ev.touches[0];if(Math.abs(t.clientX-startX)>12||Math.abs(t.clientY-startY)>12){clearTimeout(longPressTimer);longPressMoved=false}}function onEnd(){clearTimeout(longPressTimer);card.removeEventListener("touchmove",onMove);card.removeEventListener("touchend",onEnd);card.removeEventListener("touchcancel",onEnd)}card.addEventListener("touchmove",onMove,{passive:true});card.addEventListener("touchend",onEnd);card.addEventListener("touchcancel",onEnd)},{passive:true});card.addEventListener("contextmenu",function(e){e.preventDefault();openContextMenu(index,e.clientX,e.clientY)});grid.appendChild(card)});return section}
+    function openContextMenu(index,x,y){ctxIndex=index;var app=apps[index];var menu=document.getElementById("ctxMenu");document.getElementById("ctxPin").textContent=app.pinned?"\u2606 Rimuovi dai preferiti":"\u2605 Aggiungi ai preferiti";document.getElementById("ctxBackdrop").classList.add("open");menu.classList.add("open");var mw=220,mh=160;var left=Math.min(Math.max(8,x-20),window.innerWidth-mw-8);var top=Math.min(Math.max(8,y-10),window.innerHeight-mh-8);menu.style.left=left+"px";menu.style.top=top+"px"}
+    function closeContextMenu(){document.getElementById("ctxMenu").classList.remove("open");document.getElementById("ctxBackdrop").classList.remove("open");ctxIndex=null}
+    function openAddModal(){editIndex=null;document.getElementById("modalTitle").textContent="Aggiungi Web App";document.getElementById("appName").value="";document.getElementById("appUrl").value="";populateCatSelect("appCat");document.getElementById("newCatField").style.display="none";document.getElementById("appModal").classList.add("open")}
+    function openEditModal(index){editIndex=index;var app=apps[index];document.getElementById("modalTitle").textContent="Modifica / Sposta";document.getElementById("appName").value=app.name;document.getElementById("appUrl").value=app.url;populateCatSelect("appCat",app.cat);document.getElementById("newCatField").style.display="none";document.getElementById("appModal").classList.add("open")}
+    function populateCatSelect(selectId,selected){var sel=document.getElementById(selectId);sel.innerHTML=categories.map(function(c){return'<option value="'+escapeHtml(c)+'"'+(c===selected?" selected":"")+'>'+escapeHtml(c)+'</option>'}).join('')+'<option value="__new__">+ Nuova categoria...</option>'}
+    function closeAppModal(){document.getElementById("appModal").classList.remove("open");editIndex=null}
+    function saveApp(){var name=document.getElementById("appName").value.trim();var url=document.getElementById("appUrl").value.trim();var cat=document.getElementById("appCat").value;if(cat==="__new__"){cat=document.getElementById("newCatName").value.trim();if(!cat)return toast("Inserisci categoria");if(categories.indexOf(cat)<0)categories.push(cat)}if(!name||!url)return toast("Nome e URL obbligatori");if(url.indexOf("http://")!==0&&url.indexOf("https://")!==0)url="https://"+url;if(editIndex!==null){apps[editIndex]=Object.assign({},apps[editIndex],{name:name,url:url,cat:cat});toast("App aggiornata")}else{apps.push({name:name,url:url,cat:cat,pinned:false});toast("App aggiunta")}saveData();closeAppModal();renderApps(document.getElementById("omnibox").value)}
+    function deleteApp(index){var name=apps[index].name;apps.splice(index,1);saveData();renderApps(document.getElementById("omnibox").value);toast('"'+name+'" eliminata')}
+    function togglePin(index){apps[index].pinned=!apps[index].pinned;saveData();renderApps(document.getElementById("omnibox").value);toast(apps[index].pinned?"Aggiunta ai preferiti":"Rimossa dai preferiti")}
+    function initSpeech(){var SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR)return false;recognition=new SR();recognition.lang="it-IT";recognition.interimResults=true;recognition.continuous=false;recognition.onstart=function(){isListening=true;document.getElementById("btnMic").classList.add("listening");document.getElementById("voiceOverlay").classList.add("open");document.getElementById("voiceResult").textContent=""};recognition.onresult=function(event){var transcript="";for(var i=event.resultIndex;i<event.results.length;i++)transcript+=event.results[i][0].transcript;document.getElementById("voiceResult").textContent=transcript;if(event.results[event.results.length-1].isFinal)handleVoiceResult(transcript.trim())};recognition.onerror=function(e){stopListening();if(e.error==="not-allowed"||e.error==="service-not-allowed")toast("Microfono negato. Abilitalo nelle impostazioni del telefono/app");else if(e.error!=="aborted"&&e.error!=="no-speech")toast("Errore vocale: "+e.error)};recognition.onend=function(){stopListening()};return true}
+    function startListening(){if(!recognition&&!initSpeech()){toast("Ricerca vocale non supportata su questo dispositivo");return}try{recognition.start()}catch(e){toast("Impossibile avviare il microfono")}}
+    function stopListening(){isListening=false;document.getElementById("btnMic").classList.remove("listening");document.getElementById("voiceOverlay").classList.remove("open");try{if(recognition)recognition.stop()}catch(e){}}
+    function handleVoiceResult(text){stopListening();if(!text)return;var match=apps.find(function(a){return a.name.toLowerCase().indexOf(text.toLowerCase())>=0||text.toLowerCase().indexOf(a.name.toLowerCase())>=0});if(match){toast("Apro "+match.name);setTimeout(function(){openUrl(match.url)},350);return}if(text.indexOf(".")>=0&&text.indexOf(" ")<0){openUrl(text.replace(/\s/g,""));return}toast("Cerco: "+text);setTimeout(function(){openUrl("https://www.google.com/search?q="+encodeURIComponent(text))},350)}
+    function openSettings(){document.getElementById("settingsModal").classList.add("open")}
+    function closeSettings(){document.getElementById("settingsModal").classList.remove("open")}
+    function exportBackup(){var data={apps:apps,categories:categories,exportedAt:new Date().toISOString()};var blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});var url=URL.createObjectURL(blob);var a=document.createElement("a");a.href=url;a.download="web-launcher-backup.json";a.click();URL.revokeObjectURL(url);toast("Backup esportato");closeSettings()}
+    function importBackup(file){var reader=new FileReader();reader.onload=function(e){try{var data=JSON.parse(e.target.result);if(!Array.isArray(data.apps))throw new Error("bad");apps=data.apps.map(function(a){return Object.assign({pinned:false},a)});if(Array.isArray(data.categories))categories=data.categories;saveData();renderApps();toast("Backup importato");closeSettings()}catch(err){toast("File non valido")}};reader.readAsText(file)}
+    function resetDefaults(){if(!confirm("Ripristinare le app predefinite?"))return;apps=JSON.parse(JSON.stringify(DEFAULT_APPS));categories=DEFAULT_CATS.slice();saveData();renderApps();toast("App ripristinate");closeSettings()}
+    function init(){loadData();initTheme();renderApps();var omnibox=document.getElementById("omnibox");omnibox.addEventListener("keyup",function(e){var val=omnibox.value.trim();if(e.key==="Enter"&&val){if(val.indexOf(".")>=0&&val.indexOf(" ")<0)openUrl(val);else openUrl("https://www.google.com/search?q="+encodeURIComponent(val));omnibox.value="";renderApps()}else renderApps(val)});omnibox.addEventListener("input",function(){renderApps(omnibox.value)});document.getElementById("btnAdd").addEventListener("click",openAddModal);document.getElementById("btnMic").addEventListener("click",function(){if(isListening)stopListening();else startListening()});document.getElementById("btnCancelVoice").addEventListener("click",stopListening);document.getElementById("btnCancelApp").addEventListener("click",closeAppModal);document.getElementById("btnSaveApp").addEventListener("click",saveApp);document.getElementById("appCat").addEventListener("change",function(e){document.getElementById("newCatField").style.display=e.target.value==="__new__"?"block":"none"});document.getElementById("appModal").addEventListener("click",function(e){if(e.target===e.currentTarget)closeAppModal()});document.querySelectorAll(".bottom-btn").forEach(function(btn){btn.addEventListener("click",function(){var action=btn.getAttribute("data-action");if(action==="home"){omnibox.value="";renderApps()}else if(action==="voice")startListening();else if(action==="settings")openSettings()})});document.getElementById("btnCloseSettings").addEventListener("click",closeSettings);document.getElementById("settingsModal").addEventListener("click",function(e){if(e.target===e.currentTarget)closeSettings()});document.getElementById("toggleTheme").addEventListener("click",function(){var cur=document.documentElement.getAttribute("data-theme");applyTheme(cur==="light"?"dark":"light")});document.getElementById("btnExport").addEventListener("click",exportBackup);document.getElementById("btnImport").addEventListener("click",function(){document.getElementById("importFile").click()});document.getElementById("importFile").addEventListener("change",function(e){if(e.target.files[0])importBackup(e.target.files[0]);e.target.value=""});document.getElementById("btnReset").addEventListener("click",resetDefaults);document.getElementById("ctxBackdrop").addEventListener("click",closeContextMenu);document.getElementById("ctxMenu").addEventListener("click",function(e){var btn=e.target.closest(".ctx-item");if(!btn||ctxIndex===null)return;var act=btn.getAttribute("data-act");var idx=ctxIndex;closeContextMenu();if(act==="pin")togglePin(idx);else if(act==="edit")openEditModal(idx);else if(act==="delete"){if(confirm('Eliminare "'+apps[idx].name+'"?'))deleteApp(idx)}});if("serviceWorker" in navigator)navigator.serviceWorker.register("./sw.js").catch(function(){})}
+    if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
   </script>
 </body>
 </html>
