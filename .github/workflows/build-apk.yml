@@ -24,6 +24,17 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Genera PNG icon da SVG
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq imagemagick
+          convert -background none www/icon.svg -resize 512x512 www/icon-512.png
+          convert -background none www/icon.svg -resize 192x192 www/icon-192.png
+          mkdir -p resources
+          convert -background none www/icon.svg -resize 1024x1024 resources/icon.png
+          convert -background none www/icon.svg -resize 1024x1024 resources/splash.png
+          ls -la www/icon-*.png resources/
+
       - name: Installa dipendenze e prepara Android
         run: |
           npm install --legacy-peer-deps
