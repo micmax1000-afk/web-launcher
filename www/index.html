@@ -639,4 +639,51 @@
 
     function openEditModal(index) {
       const app = apps[index];
-      document.getElementById('editIndex').value 
+      document.getElementById('editIndex').value = index;
+      document.getElementById('editAppName').value = app.name;
+      document.getElementById('editAppUrl').value = app.url;
+      document.getElementById('editAppCat').value = app.cat;
+      document.getElementById('editModal').style.display = 'flex';
+    }
+    function closeEditModal() { document.getElementById('editModal').style.display = 'none'; }
+
+    function updateApp() {
+      const index = document.getElementById('editIndex').value;
+      const name = document.getElementById('editAppName').value.trim();
+      let url = document.getElementById('editAppUrl').value.trim();
+      const cat = document.getElementById('editAppCat').value;
+      if (!name || !url) return alert('Inserisci nome e URL');
+      if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
+      
+      apps[index] = { name, url, cat };
+      localStorage.setItem('my_web_apps', JSON.stringify(apps));
+      renderApps();
+      closeEditModal();
+    }
+
+    function saveApp() {
+      const name = document.getElementById('appName').value.trim();
+      let url = document.getElementById('appUrl').value.trim();
+      const cat = document.getElementById('appCat').value;
+      if (!name || !url) return alert('Inserisci nome e URL');
+      if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
+      apps.push({ name, url, cat });
+      localStorage.setItem('my_web_apps', JSON.stringify(apps));
+      renderApps();
+      closeModal();
+      document.getElementById('appName').value = '';
+      document.getElementById('appUrl').value = '';
+    }
+
+    function deleteApp(e, index) {
+      e.stopPropagation();
+      apps.splice(index, 1);
+      localStorage.setItem('my_web_apps', JSON.stringify(apps));
+      renderApps();
+    }
+
+    renderApps();
+    renderChatHistory();
+  </script>
+</body>
+</html>
