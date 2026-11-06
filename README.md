@@ -1,56 +1,22 @@
-# Web Launcher v2
+# Web Launcher (Android nativo)
 
-Launcher intelligente di web app (PWA + Capacitor) con ricerca vocale.
+Launcher di web app in **Kotlin / Android nativo**.
 
-## Novità rispetto alla v1
+## Funzioni
+- Griglia app con categorie e preferiti
+- Ricerca testo + **Cerca sul web**
+- **Voce nativa** (`RecognizerIntent` di Android, non WebView)
+- Tieni premuto su un\u2019app \u2192 Preferiti / Modifica / Elimina
+- Aggiungi app, backup JSON, reset
+- Apertura link in Chrome Custom Tabs
 
-### Grafica
-- Design moderno con glassmorphism e animazioni fluide
-- Tema chiaro / scuro (rispetta anche `prefers-color-scheme`)
-- Card migliorate, long-press per azioni su mobile
-- Bottom navigation
-- Toast al posto degli `alert`
-- Layout responsive ottimizzato
+## Voce
+Usa il riconoscimento vocale di sistema (Google).
+Richiede permesso **Microfono** e Google app / speech services.
 
-### Funzioni
-- **Ricerca vocale** (microfono) — Web Speech API in italiano
-- Preferiti (pin) con sezione dedicata
-- Categorie personalizzabili
-- Esporta / importa backup JSON
-- Reset alle app predefinite
-- Ricerca in tempo reale (nome, URL, categoria)
-- Omnibox intelligente (URL o ricerca Google)
-- Integrazione Capacitor Browser
-
-## Struttura
-
-```
-www/
-  index.html      # App completa
-  manifest.json
-  sw.js
-capacitor.config.json
-package.json
-```
-
-## Uso locale
-
-Apri semplicemente `www/index.html` nel browser, oppure:
+## Build
+Push su `main` \u2192 GitHub Actions genera l\u2019APK (`web-launcher-native-apk`).
 
 ```bash
-npx serve www
+./gradlew assembleDebug
 ```
-
-## Capacitor (Android)
-
-```bash
-npm install
-npx cap add android   # solo la prima volta
-npx cap sync
-npx cap open android
-```
-
-## Permessi
-
-- **Microfono**: richiesto solo quando si usa la ricerca vocale.
-- Su Android (Capacitor) assicurati di dichiarare il permesso microfono se necessario per il WebView.
