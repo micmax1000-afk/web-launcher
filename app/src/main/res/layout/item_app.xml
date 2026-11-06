@@ -14,9 +14,9 @@
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingTop="16dp"
+        android:paddingTop="12dp"
         android:paddingBottom="12dp"
-        android:paddingHorizontal="8dp">
+        android:paddingHorizontal="6dp">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -65,10 +65,23 @@
             android:id="@+id/pinBadge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="top|end"
+            android:layout_gravity="top|start"
+            android:paddingStart="4dp"
             android:text="\u2605"
             android:textColor="@color/star"
             android:textSize="12sp"
             android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/btnAppMenu"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_gravity="top|end"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/ic_menu_more"
+            android:contentDescription="Menu"
+            app:tint="@color/text_muted"
+            android:scaleType="centerInside"
+            android:padding="2dp" />
     </FrameLayout>
 </com.google.android.material.card.MaterialCardView>
