@@ -4,6 +4,7 @@ import android.net.Uri
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
@@ -19,7 +20,7 @@ sealed class ListRow {
 
 class LauncherAdapter(
     private val onClick: (AppItem) -> Unit,
-    private val onLongClick: (AppItem, View) -> Unit,
+    private val onMenu: (AppItem) -> Unit,
     private val onReorder: (fromAppId: String, toAppId: String) -> Unit
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
@@ -134,9 +135,10 @@ class LauncherAdapter(
             override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
                 super.onSelectedChanged(viewHolder, actionState)
                 if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null) {
-                    viewHolder.itemView.alpha = 0.75f
-                    viewHolder.itemView.scaleX = 1.05f
-                    viewHolder.itemView.scaleY = 1.05f
+                    viewHolder.itemView.alpha = 0.8f
+                    viewHolder.itemView.scaleX = 1.08f
+                    viewHolder.itemView.scaleY = 1.08f
+                    viewHolder.itemView.elevation = 12f
                 }
             }
 
@@ -145,6 +147,7 @@ class LauncherAdapter(
                 viewHolder.itemView.alpha = 1f
                 viewHolder.itemView.scaleX = 1f
                 viewHolder.itemView.scaleY = 1f
+                viewHolder.itemView.elevation = 0f
             }
         }
         return ItemTouchHelper(cb)
@@ -160,6 +163,7 @@ class LauncherAdapter(
         private val initials: TextView = view.findViewById(R.id.appInitials)
         private val icon: ImageView = view.findViewById(R.id.appIcon)
         private val pin: TextView = view.findViewById(R.id.pinBadge)
+        private val menuBtn: ImageButton = view.findViewById(R.id.btnAppMenu)
 
         fun bind(item: AppItem) {
             name.text = item.name
@@ -176,7 +180,10 @@ class LauncherAdapter(
                     transformations(RoundedCornersTransformation(16f))
                     listener(
                         onSuccess = { _, _ -> initials.visibility = View.GONE },
-                        onError = { _, _ -> icon.visibility = View.GONE; initials.visibility = View.VISIBLE }
+                        onError = { _, _ ->
+                            icon.visibility = View.GONE
+                            initials.visibility = View.VISIBLE
+                        }
                     )
                 }
             } else {
@@ -184,10 +191,8 @@ class LauncherAdapter(
             }
 
             itemView.setOnClickListener { onClick(item) }
-            itemView.setOnLongClickListener {
-                onLongClick(item, itemView)
-                true
-            }
+            itemView.setOnLongClickListener(null)
+            menuBtn.setOnClickListener { onMenu(item) }
         }
     }
 }
