@@ -115,10 +115,16 @@
       padding: 0.8rem 1rem;
       background: #1e293b;
       display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .ai-header-top {
+      display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-      gap: 0.5rem;
+      width: 100%;
     }
 
     .ai-selector {
@@ -282,7 +288,6 @@
       z-index: 2;
     }
 
-    /* Modal Generico / Impostazioni API */
     .modal {
       display: none;
       position: fixed;
@@ -348,15 +353,19 @@
     <!-- Sidebar Chat API -->
     <aside id="ai-sidebar">
       <div class="ai-header">
-        <select class="ai-selector" id="ai-provider">
-          <option value="gemini">Google Gemini (API)</option>
-          <option value="grok">xAI Grok (API)</option>
-        </select>
-        <button class="btn-icon" onclick="toggleAISidebar()">✕</button>
+        <div class="ai-header-top">
+          <select class="ai-selector" id="ai-provider">
+            <option value="gemini-flash">Gemini 2.5 Flash (Google)</option>
+            <option value="gemini-pro">Gemini 1.5 Pro (Google)</option>
+            <option value="grok">Grok Beta (xAI)</option>
+          </select>
+          <button class="btn-icon" onclick="clearChatHistory()" title="Elimina Cronologia Chat" style="width:32px; height:32px; font-size:0.8rem;">🗑️</button>
+          <button class="btn-icon" onclick="toggleAISidebar()" style="width:32px; height:32px; font-size:0.8rem;">✕</button>
+        </div>
       </div>
       <div class="chat-container">
         <div class="chat-messages" id="chat-messages">
-          <div class="message ai">Ciao! Configura la tua chiave API (icona 🔑 in alto) e scrivi qui sotto per iniziare a chattare con Gemini o Grok.</div>
+          <div class="message ai">Ciao! Configura la tua chiave API (icona 🔑 in alto) e scrivi qui sotto per iniziare.</div>
         </div>
         <div class="chat-input-area">
           <input type="text" class="chat-input" id="chat-input" placeholder="Scrivi un messaggio..." onkeyup="handleChatInput(event)">
@@ -370,10 +379,10 @@
   <div class="modal" id="apiModal">
     <div class="modal-content">
       <h3>Configura Chiavi API</h3>
-      <label style="font-size:0.85rem; color:var(--text-muted);">Chiave Gemini (Google AI Studio)</label>
+      <label style="font-size:0.85rem; color:var(--text-muted);">Chiave Gemini ( Google AI Studio )</label>
       <input type="password" id="geminiKey" placeholder="Inserisci Gemini API Key">
       
-      <label style="font-size:0.85rem; color:var(--text-muted);">Chiave Grok (xAI Console)</label>
+      <label style="font-size:0.85rem; color:var(--text-muted);">Chiave Grok ( xAI Console )</label>
       <input type="password" id="grokKey" placeholder="Inserisci Grok API Key">
       
       <div class="modal-buttons">
@@ -416,6 +425,9 @@
 
     let apps = JSON.parse(localStorage.getItem('my_web_apps')) || defaultApps;
     let apiKeys = JSON.parse(localStorage.getItem('my_api_keys')) || { gemini: '', grok: '' };
+    let chatHistory = JSON.parse(localStorage.getItem('my_chat_history')) || [
+      { sender: 'ai', text: 'Ciao! Configura la tua chiave API (icona 🔑 in alto) e scrivi qui sotto per iniziare.' }
+    ];
 
     const omnibox = document.getElementById('omnibox');
     const aiSidebar = document.getElementById('ai-sidebar');
@@ -499,48 +511,65 @@
       if (e.key === 'Enter') sendChatMessage();
     }
 
+    function renderChatHistory() {
+      chatMessages.innerHTML = '';
+      chatHistory.forEach(item => {
+        const msg = document.createElement('div');
+        msg.className = `message ${item.sender}`;
+        msg.innerText = item.text;
+        chatMessages.appendChild(msg);
+      });
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function clearChatHistory() {
+      chatHistory = [{ sender: 'ai', text: 'Cronologia eliminata. Scrivi un nuovo messaggio per iniziare.' }];
+      localStorage.removeItem('my_chat_history');
+      renderChatHistory();
+    }
+
     async function sendChatMessage() {
       const text = chatInput.value.trim();
       if (!text) return;
 
-      appendMessage(text, 'user');
+      chatHistory.push({ sender: 'user', text: text });
+      renderChatHistory();
       chatInput.value = '';
 
       const provider = document.getElementById('ai-provider').value;
-      const key = apiKeys[provider];
+      const isGrok = provider === 'grok';
+      const key = isGrok ? apiKeys.grok : apiKeys.gemini;
 
       if (!key) {
-        appendMessage(`Errore: Inserisci prima la chiave API per ${provider.toUpperCase()} cliccando sull'icona della chiave (🔑) in alto.`, 'ai');
+        chatHistory.push({ sender: 'ai', text: `Errore: Inserisci prima la chiave API per il servizio selezionato cliccando sull'icona della chiave (🔑) in alto.` });
+        renderChatHistory();
         return;
       }
 
-      appendMessage("Sto elaborando la risposta...", 'ai', true);
-      const loadingMsg = chatMessages.lastChild;
+      chatHistory.push({ sender: 'ai', text: 'Sto elaborando la risposta...' });
+      renderChatHistory();
 
       try {
         let reply = "";
-        if (provider === 'gemini') {
-          reply = await callGeminiAPI(text, key);
+        if (provider === 'gemini-flash') {
+          reply = await callGeminiAPI(text, key, 'gemini-2.5-flash');
+        } else if (provider === 'gemini-pro') {
+          reply = await callGeminiAPI(text, key, 'gemini-1.5-pro');
         } else if (provider === 'grok') {
           reply = await callGrokAPI(text, key);
         }
-        loadingMsg.innerText = reply;
+        chatHistory.pop(); // Rimuovi il messaggio di caricamento
+        chatHistory.push({ sender: 'ai', text: reply });
       } catch (err) {
-        loadingMsg.innerText = "Errore di connessione o chiave non valida: " + err.message;
+        chatHistory.pop();
+        chatHistory.push({ sender: 'ai', text: "Errore di connessione o chiave non valida: " + err.message });
       }
+      localStorage.setItem('my_chat_history', JSON.stringify(chatHistory));
+      renderChatHistory();
     }
 
-    function appendMessage(text, sender, isLoading = false) {
-      const msg = document.createElement('div');
-      msg.className = `message ${sender}`;
-      msg.innerText = text;
-      chatMessages.appendChild(msg);
-      chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
-
-    // Chiamata API Google Gemini (Modello gemini-1.5-flash)
-    async function callGeminiAPI(prompt, apiKey) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    async function callGeminiAPI(prompt, apiKey, modelName) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -551,7 +580,6 @@
       return data.candidates[0].content.parts[0].text;
     }
 
-    // Chiamata API xAI Grok (Endpoint compatibile OpenAI)
     async function callGrokAPI(prompt, apiKey) {
       const response = await fetch('https://api.x.ai/v1/chat/completions', {
         method: 'POST',
@@ -602,6 +630,8 @@
     }
 
     renderApps();
+    renderChatHistory();
   </script>
 </body>
-</html>
+                                                                                                    </html>
+                                                                                                    
