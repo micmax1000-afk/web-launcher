@@ -4,17 +4,17 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="6dp"
+    android:layout_margin="5dp"
     app:cardBackgroundColor="@color/card"
-    app:cardCornerRadius="16dp"
-    app:cardElevation="0dp"
+    app:cardCornerRadius="20dp"
+    app:cardElevation="2dp"
     app:strokeWidth="1dp"
-    app:strokeColor="#1A94A3B8">
+    app:strokeColor="#2294A3B8">
 
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingTop="14dp"
+        android:paddingTop="16dp"
         android:paddingBottom="12dp"
         android:paddingHorizontal="8dp">
 
@@ -25,18 +25,28 @@
             android:gravity="center_horizontal">
 
             <FrameLayout
-                android:layout_width="54dp"
-                android:layout_height="54dp">
+                android:layout_width="56dp"
+                android:layout_height="56dp">
 
                 <TextView
                     android:id="@+id/appInitials"
-                    android:layout_width="54dp"
-                    android:layout_height="54dp"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
                     android:gravity="center"
                     android:background="@drawable/bg_icon"
                     android:textColor="@color/accent"
                     android:textSize="16sp"
                     android:textStyle="bold" />
+
+                <ImageView
+                    android:id="@+id/appIcon"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:padding="10dp"
+                    android:scaleType="fitCenter"
+                    android:background="@drawable/bg_icon"
+                    android:visibility="gone"
+                    android:contentDescription="@null" />
             </FrameLayout>
 
             <TextView

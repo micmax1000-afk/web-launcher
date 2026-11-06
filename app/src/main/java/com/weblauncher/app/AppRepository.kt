@@ -18,13 +18,17 @@ class AppRepository(context: Context) {
         }
         return try {
             val type = object : TypeToken<MutableList<AppItem>>() {}.type
-            gson.fromJson<MutableList<AppItem>>(json, type) ?: defaultApps()
+            val list = gson.fromJson<MutableList<AppItem>>(json, type) ?: defaultApps()
+            list.forEachIndexed { i, a -> if (a.sortOrder == 0) a.sortOrder = i }
+            list.sortBy { it.sortOrder }
+            list
         } catch (_: Exception) {
             defaultApps()
         }
     }
 
     fun saveApps(apps: List<AppItem>) {
+        apps.forEachIndexed { i, a -> a.sortOrder = i }
         prefs.edit().putString(KEY_APPS, gson.toJson(apps)).apply()
     }
 
@@ -59,16 +63,16 @@ class AppRepository(context: Context) {
         )
 
         fun defaultApps() = mutableListOf(
-            AppItem(UUID.randomUUID().toString(), "ChatGPT", "https://chatgpt.com", "AI Tools", true),
-            AppItem(UUID.randomUUID().toString(), "Claude", "https://claude.ai", "AI Tools"),
-            AppItem(UUID.randomUUID().toString(), "Gemini", "https://gemini.google.com", "AI Tools"),
-            AppItem(UUID.randomUUID().toString(), "DeepSeek", "https://chat.deepseek.com", "AI Tools"),
-            AppItem(UUID.randomUUID().toString(), "Grok", "https://x.com/i/grok", "AI Tools"),
-            AppItem(UUID.randomUUID().toString(), "Booking", "https://booking.com", "Viaggi"),
-            AppItem(UUID.randomUUID().toString(), "YouTube", "https://youtube.com", "Intrattenimento", true),
-            AppItem(UUID.randomUUID().toString(), "Wikipedia", "https://it.wikipedia.org", "Utility"),
-            AppItem(UUID.randomUUID().toString(), "GitHub", "https://github.com", "Produttivita"),
-            AppItem(UUID.randomUUID().toString(), "Gmail", "https://mail.google.com", "Produttivita")
+            AppItem(UUID.randomUUID().toString(), "ChatGPT", "https://chatgpt.com", "AI Tools", true, 0),
+            AppItem(UUID.randomUUID().toString(), "Claude", "https://claude.ai", "AI Tools", false, 1),
+            AppItem(UUID.randomUUID().toString(), "Gemini", "https://gemini.google.com", "AI Tools", false, 2),
+            AppItem(UUID.randomUUID().toString(), "DeepSeek", "https://chat.deepseek.com", "AI Tools", false, 3),
+            AppItem(UUID.randomUUID().toString(), "Grok", "https://x.com/i/grok", "AI Tools", false, 4),
+            AppItem(UUID.randomUUID().toString(), "Booking", "https://booking.com", "Viaggi", false, 5),
+            AppItem(UUID.randomUUID().toString(), "YouTube", "https://youtube.com", "Intrattenimento", true, 6),
+            AppItem(UUID.randomUUID().toString(), "Wikipedia", "https://it.wikipedia.org", "Utility", false, 7),
+            AppItem(UUID.randomUUID().toString(), "GitHub", "https://github.com", "Produttivita", false, 8),
+            AppItem(UUID.randomUUID().toString(), "Gmail", "https://mail.google.com", "Produttivita", false, 9)
         )
     }
 }
