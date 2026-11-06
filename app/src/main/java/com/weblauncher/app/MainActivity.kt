@@ -11,8 +11,12 @@ import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.text.Editable
 import android.text.TextWatcher
+import android.view.autofill.AutofillManager
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.webkit.CookieManager
+import android.webkit.WebStorage
+import android.webkit.WebViewDatabase
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -159,12 +163,19 @@ class MainActivity : AppCompatActivity() {
         val s = webView.settings
         s.javaScriptEnabled = true
         s.domStorageEnabled = true
+        s.databaseEnabled = true
         s.loadWithOverviewMode = true
         s.useWideViewPort = true
         s.builtInZoomControls = true
         s.displayZoomControls = false
         s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
-        s.userAgentString = s.userAgentString + " WebLauncher/4"
+        s.cacheMode = WebSettings.LOAD_DEFAULT
+        @Suppress("DEPRECATION")
+        s.saveFormData = true
+        s.userAgentString = s.userAgentString + " WebLauncher/4.1"
+        webView.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -359,6 +370,11 @@ class MainActivity : AppCompatActivity() {
         val engine = repo.getSearchEngine()
         val items = arrayOf(
             "Motore di ricerca: ${engine.label}",
+            "Password e compilazione automatica",
+            "Cancella cronologia navigazione",
+            "Cancella cookie",
+            "Cancella cache",
+            "Cancella tutti i dati di navigazione",
             "Esporta backup (JSON)",
             "Reset app predefinite",
             "Info voce / microfono",
@@ -367,22 +383,88 @@ class MainActivity : AppCompatActivity() {
         MaterialAlertDialogBuilder(this).setTitle("Impostazioni").setItems(items) { _, which ->
             when (which) {
                 0 -> showSearchEnginePicker()
-                1 -> {
+                1 -> showPasswordInfo()
+                2 -> confirmClear("Cancellare la cronologia del browser?") {
+                    webView.clearHistory()
+                    toast("Cronologia cancellata")
+                }
+                3 -> confirmClear("Cancellare tutti i cookie?") {
+                    CookieManager.getInstance().removeAllCookies(null)
+                    CookieManager.getInstance().flush()
+                    toast("Cookie cancellati")
+                }
+                4 -> confirmClear("Cancellare la cache?") {
+                    webView.clearCache(true)
+                    toast("Cache cancellata")
+                }
+                5 -> confirmClear("Cancellare cronologia, cookie, cache e dati form?") {
+                    clearAllBrowsingData()
+                    toast("Dati di navigazione cancellati")
+                }
+                6 -> {
                     val json = com.google.gson.Gson().toJson(mapOf("apps" to apps, "categories" to categories))
                     startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                         type = "application/json"; putExtra(Intent.EXTRA_TEXT, json)
                     }, "Esporta backup"))
                 }
-                2 -> MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
+                7 -> MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
                     .setPositiveButton("Reset") { _, _ ->
                         apps = repo.resetDefaults(); categories = repo.loadCategories(); refreshList(); toast("App ripristinate")
                     }.setNegativeButton("Annulla", null).show()
-                3 -> MaterialAlertDialogBuilder(this).setTitle("Microfono")
+                8 -> MaterialAlertDialogBuilder(this).setTitle("Microfono")
                     .setMessage("Voce nativa Android.\nImpostazioni → App → Web Launcher → Microfono → Consentire")
                     .setPositiveButton("OK", null).show()
-                4 -> toast("Tieni premuto un'icona e trascinala. Menu: tocco sui ⋮")
+                9 -> toast("Tieni premuto un'icona e trascinala. Menu: tocco sui ⋮")
             }
         }.setNegativeButton("Chiudi", null).show()
+    }
+
+    private fun confirmClear(message: String, action: () -> Unit) {
+        MaterialAlertDialogBuilder(this)
+            .setMessage(message)
+            .setPositiveButton("Cancella") { _, _ -> action() }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
+    private fun clearAllBrowsingData() {
+        webView.clearHistory()
+        webView.clearCache(true)
+        webView.clearFormData()
+        CookieManager.getInstance().removeAllCookies(null)
+        CookieManager.getInstance().flush()
+        WebStorage.getInstance().deleteAllData()
+        try {
+            WebViewDatabase.getInstance(this).clearFormData()
+            WebViewDatabase.getInstance(this).clearHttpAuthUsernamePassword()
+        } catch (_: Exception) { }
+    }
+
+    private fun showPasswordInfo() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Password e login")
+            .setMessage(
+                "Web Launcher usa l'Autofill di Android.\n\n" +
+                "• Al login di un sito, il sistema può proporre di salvare la password " +
+                "(Google Password Manager o altro gestore attivo sul telefono).\n\n" +
+                "• Per gestire le password salvate: Impostazioni Android → Google → Autocompletamento → " +
+                "Password / Gestore password.\n\n" +
+                "• Per cancellare i dati form dell'app: Impostazioni → Cancella tutti i dati di navigazione.\n\n" +
+                "Le password non restano salvate solo dentro Web Launcher: usano il gestore sicuro del sistema."
+            )
+            .setPositiveButton("OK", null)
+            .setNeutralButton("Apri Autofill") { _, _ ->
+                try {
+                    startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE))
+                } catch (_: Exception) {
+                    try {
+                        startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                    } catch (_: Exception) {
+                        toast("Apri Impostazioni Android → Autocompletamento")
+                    }
+                }
+            }
+            .show()
     }
 
     private fun showSearchEnginePicker() {
