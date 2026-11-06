@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Web Launcher</string>
+    <string name="search_hint">Cerca app, URL o Google\u2026</string>
+    <string name="voice_prompt">Parla ora\u2026</string>
+    <string name="add_app">Aggiungi app</string>
+    <string name="settings">Impostazioni</string>
+    <string name="home">Home</string>
+    <string name="voice">Voce</string>
+    <string name="no_speech">Riconoscimento vocale non disponibile su questo dispositivo</string>
+    <string name="mic_denied">Permesso microfono negato</string>
+    <string name="favorites">Preferiti</string>
+</resources>
