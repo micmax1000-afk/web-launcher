@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Native Android APK
 
 on:
   push:
@@ -10,105 +10,42 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout del codice
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configura Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
-      - name: Configura Java (JDK 17)
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
+          distribution: temurin
+          java-version: "17"
 
-      - name: Genera PNG icon da SVG
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Genera icone PNG di fallback
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq imagemagick librsvg2-bin
-          if command -v rsvg-convert >/dev/null; then
-            rsvg-convert -w 512 -h 512 www/icon.svg -o www/icon-512.png
-            rsvg-convert -w 192 -h 192 www/icon.svg -o www/icon-192.png
-            mkdir -p resources
-            rsvg-convert -w 1024 -h 1024 www/icon.svg -o resources/icon.png
-            rsvg-convert -w 2732 -h 2732 www/icon.svg -o resources/splash.png
-          else
-            convert -background none www/icon.svg -resize 512x512 www/icon-512.png
-            convert -background none www/icon.svg -resize 192x192 www/icon-192.png
-            mkdir -p resources
-            convert -background none www/icon.svg -resize 1024x1024 resources/icon.png
-            convert -background none www/icon.svg -resize 2732x2732 resources/splash.png
-          fi
-          ls -la www/icon-*.png resources/
-
-      - name: Installa dipendenze e prepara Android
-        run: |
-          npm install --legacy-peer-deps
-          npx cap add android || true
-          npx @capacitor/assets generate --android --iconBackgroundColor '#0b1220' --iconBackgroundColorDark '#0b1220' --splashBackgroundColor '#0b1220' --splashBackgroundColorDark '#0b1220' || true
-          npx cap sync android
-
-      - name: Forza icona app nelle cartelle mipmap
-        run: |
-          for dens in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            DIR="android/app/src/main/res/mipmap-$dens"
-            mkdir -p "$DIR"
-            case $dens in
-              mdpi)   S=48 ;;
-              hdpi)   S=72 ;;
-              xhdpi)  S=96 ;;
-              xxhdpi) S=144 ;;
-              xxxhdpi) S=192 ;;
-            esac
-            if command -v rsvg-convert >/dev/null; then
-              rsvg-convert -w $S -h $S www/icon.svg -o "$DIR/ic_launcher.png"
-              rsvg-convert -w $S -h $S www/icon.svg -o "$DIR/ic_launcher_round.png"
-              rsvg-convert -w $S -h $S www/icon.svg -o "$DIR/ic_launcher_foreground.png" || true
-            else
-              convert -background none www/icon.svg -resize ${S}x${S} "$DIR/ic_launcher.png"
-              convert -background none www/icon.svg -resize ${S}x${S} "$DIR/ic_launcher_round.png"
-            fi
+          sudo apt-get install -y -qq imagemagick
+          for dens_size in "mdpi:48" "hdpi:72" "xhdpi:96" "xxhdpi:144" "xxxhdpi:192"; do
+            dens="${dens_size%%:*}"
+            size="${dens_size##*:}"
+            mkdir -p "app/src/main/res/mipmap-$dens"
+            convert -size ${size}x${size} xc:'#0B1220' \
+              -fill '#3B82F6' -draw "roundrectangle $((size*18/100)),$((size*18/100)) $((size*46/100)),$((size*46/100)) $((size*8/100)),$((size*8/100))" \
+              -fill '#10B981' -draw "roundrectangle $((size*54/100)),$((size*18/100)) $((size*82/100)),$((size*46/100)) $((size*8/100)),$((size*8/100))" \
+              -fill '#F59E0B' -draw "roundrectangle $((size*18/100)),$((size*54/100)) $((size*46/100)),$((size*82/100)) $((size*8/100)),$((size*8/100))" \
+              -fill '#EF4444' -draw "roundrectangle $((size*54/100)),$((size*54/100)) $((size*82/100)),$((size*82/100)) $((size*8/100)),$((size*8/100))" \
+              "app/src/main/res/mipmap-$dens/ic_launcher.png"
+            cp "app/src/main/res/mipmap-$dens/ic_launcher.png" "app/src/main/res/mipmap-$dens/ic_launcher_round.png"
           done
-          mkdir -p android/app/src/main/res/values
-          cat > android/app/src/main/res/values/ic_launcher_background.xml << 'XML'
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <color name="ic_launcher_background">#0B1220</color>
-          </resources>
-          XML
-          echo "Icone copiate:"
-          find android/app/src/main/res -name 'ic_launcher*' | head -30
 
-      - name: Permessi microfono e speech
+      - name: Gradle wrapper + build
         run: |
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ ! -f "$MANIFEST" ]; then
-            echo "Manifest non trovato!"
-            exit 1
-          fi
-          if ! grep -q "RECORD_AUDIO" "$MANIFEST"; then
-            if grep -q 'android.permission.INTERNET' "$MANIFEST"; then
-              sed -i 's|android.permission.INTERNET" />|android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />|' "$MANIFEST"
-            else
-              sed -i '/<manifest /a\    <uses-permission android:name="android.permission.RECORD_AUDIO" />' "$MANIFEST"
-            fi
-          fi
-          if ! grep -q "RecognitionService" "$MANIFEST"; then
-            sed -i 's|</manifest>|    <queries>\n        <intent>\n            <action android:name="android.speech.RecognitionService" />\n        </intent>\n    </queries>\n</manifest>|' "$MANIFEST"
-          fi
-          echo "=== Manifest snippet ==="
-          grep -E "uses-permission|RECORD_AUDIO|RecognitionService|queries" "$MANIFEST" || true
+          gradle wrapper --gradle-version 8.2
+          ./gradlew assembleDebug --stacktrace
 
-      - name: Compila APK con Gradle
-        run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleDebug
-
-      - name: Salva il file APK generato
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: web-launcher-native-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
