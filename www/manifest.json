@@ -1,19 +1,30 @@
 {
   "name": "Web Launcher",
   "short_name": "Launcher",
-  "description": "Launcher intelligente di web app con ricerca vocale",
+  "description": "Smart Web App Launcher with voice search",
   "start_url": "./index.html",
   "display": "standalone",
-  "orientation": "portrait-primary",
   "background_color": "#0b1220",
   "theme_color": "#0b1220",
+  "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/888/888839.png",
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ],
-  "categories": ["utilities", "productivity"]
+  ]
 }
