@@ -47,6 +47,13 @@ class AppRepository(context: Context) {
         prefs.edit().putString(KEY_CATS, gson.toJson(cats)).apply()
     }
 
+    fun getSearchEngine(): SearchEngine =
+        SearchEngine.fromName(prefs.getString(KEY_ENGINE, SearchEngine.GOOGLE.name))
+
+    fun setSearchEngine(engine: SearchEngine) {
+        prefs.edit().putString(KEY_ENGINE, engine.name).apply()
+    }
+
     fun resetDefaults(): MutableList<AppItem> {
         val apps = defaultApps()
         saveApps(apps)
@@ -57,6 +64,7 @@ class AppRepository(context: Context) {
     companion object {
         private const val KEY_APPS = "apps"
         private const val KEY_CATS = "categories"
+        private const val KEY_ENGINE = "search_engine"
 
         fun defaultCategories() = listOf(
             "AI Tools", "Viaggi", "Shopping", "Produttivita", "Intrattenimento", "Utility"
