@@ -90,7 +90,7 @@
       padding: 1.5rem 1rem 5rem 1rem;
     }
 
-    /* AI Sidebar Panel */
+    /* AI Sidebar Chat Panel */
     #ai-sidebar {
       position: absolute;
       top: 0;
@@ -118,6 +118,7 @@
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      gap: 0.5rem;
     }
 
     .ai-selector {
@@ -127,15 +128,71 @@
       padding: 0.4rem 0.6rem;
       border-radius: 0.5rem;
       font-size: 0.85rem;
-    }
-
-    #ai-frame {
       flex: 1;
-      width: 100%;
-      border: none;
-      background: #fff;
     }
 
+    /* Area Chat API */
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #0b1120;
+    }
+
+    .chat-messages {
+      flex: 1;
+      padding: 1rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+    }
+
+    .message {
+      max-width: 85%;
+      padding: 0.8rem 1rem;
+      border-radius: 1rem;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    .message.user {
+      background: var(--accent);
+      color: white;
+      align-self: flex-end;
+      border-bottom-right-radius: 0.2rem;
+    }
+
+    .message.ai {
+      background: #1e293b;
+      color: var(--text);
+      align-self: flex-start;
+      border-bottom-left-radius: 0.2rem;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .chat-input-area {
+      padding: 0.8rem;
+      background: #1e293b;
+      display: flex;
+      gap: 0.5rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .chat-input {
+      flex: 1;
+      background: #0f172a;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 0.7rem;
+      border-radius: 0.5rem;
+      color: white;
+      outline: none;
+      font-size: 0.9rem;
+    }
+
+    /* Grid App Launcher */
     .categories-container {
       max-width: 1200px;
       margin: 0 auto;
@@ -225,6 +282,7 @@
       z-index: 2;
     }
 
+    /* Modal Generico / Impostazioni API */
     .modal {
       display: none;
       position: fixed;
@@ -276,7 +334,8 @@
 
   <header>
     <input type="text" class="omnibox" id="omnibox" placeholder="Cerca app, digita URL o cerca sul web..." onkeyup="handleOmnibox(event)">
-    <button class="btn-icon btn-ai-toggle" onclick="toggleAISidebar()" title="Assistente AI">✨</button>
+    <button class="btn-icon" onclick="openApiModal()" title="Configura API Key">🔑</button>
+    <button class="btn-icon btn-ai-toggle" onclick="toggleAISidebar()" title="Chat AI">✨</button>
     <button class="btn-icon" onclick="openModal()" title="Aggiungi App">+</button>
   </header>
 
@@ -286,29 +345,50 @@
       <div class="categories-container" id="apps-container"></div>
     </main>
 
-    <!-- Sidebar AI Integrata -->
+    <!-- Sidebar Chat API -->
     <aside id="ai-sidebar">
       <div class="ai-header">
-        <span>🤖 AI Assistant</span>
-        <select class="ai-selector" id="ai-provider" onchange="switchAIProvider()">
-          <option value="https://chatgpt.com">ChatGPT</option>
-          <option value="https://gemini.google.com">Gemini</option>
-          <option value="https://claude.ai">Claude</option>
-          <option value="https://chat.deepseek.com">DeepSeek</option>
-          <option value="https://perplexity.ai">Perplexity</option>
+        <select class="ai-selector" id="ai-provider">
+          <option value="gemini">Google Gemini (API)</option>
+          <option value="grok">xAI Grok (API)</option>
         </select>
         <button class="btn-icon" onclick="toggleAISidebar()">✕</button>
       </div>
-      <iframe id="ai-frame" src="https://chatgpt.com"></iframe>
+      <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+          <div class="message ai">Ciao! Configura la tua chiave API (icona 🔑 in alto) e scrivi qui sotto per iniziare a chattare con Gemini o Grok.</div>
+        </div>
+        <div class="chat-input-area">
+          <input type="text" class="chat-input" id="chat-input" placeholder="Scrivi un messaggio..." onkeyup="handleChatInput(event)">
+          <button class="btn-icon" style="background:var(--accent);" onclick="sendChatMessage()">➤</button>
+        </div>
+      </div>
     </aside>
+  </div>
+
+  <!-- Modal Configurazione API Keys -->
+  <div class="modal" id="apiModal">
+    <div class="modal-content">
+      <h3>Configura Chiavi API</h3>
+      <label style="font-size:0.85rem; color:var(--text-muted);">Chiave Gemini (Google AI Studio)</label>
+      <input type="password" id="geminiKey" placeholder="Inserisci Gemini API Key">
+      
+      <label style="font-size:0.85rem; color:var(--text-muted);">Chiave Grok (xAI Console)</label>
+      <input type="password" id="grokKey" placeholder="Inserisci Grok API Key">
+      
+      <div class="modal-buttons">
+        <button class="btn-cancel" onclick="closeApiModal()">Annulla</button>
+        <button class="btn-icon" style="background:var(--accent); width:auto; padding:0 1rem;" onclick="saveApiKeys()">Salva</button>
+      </div>
+    </div>
   </div>
 
   <!-- Modal Aggiungi App -->
   <div class="modal" id="addModal">
     <div class="modal-content">
-      <h3>Aggiungi Web App / Tool AI</h3>
-      <input type="text" id="appName" placeholder="Nome (es. ChatGPT)">
-      <input type="url" id="appUrl" placeholder="URL (es. https://chatgpt.com)">
+      <h3>Aggiungi Web App</h3>
+      <input type="text" id="appName" placeholder="Nome (es. GitHub)">
+      <input type="url" id="appUrl" placeholder="URL (es. https://github.com)">
       <select id="appCat">
         <option value="AI Tools">AI Tools</option>
         <option value="Viaggi">Viaggi</option>
@@ -328,28 +408,19 @@
     const defaultApps = [
       { name: "ChatGPT", url: "https://chatgpt.com", cat: "AI Tools" },
       { name: "Claude", url: "https://claude.ai", cat: "AI Tools" },
-      { name: "Gemini", url: "https://gemini.google.com", cat: "AI Tools" },
-      { name: "DeepSeek", url: "https://chat.deepseek.com", cat: "AI Tools" },
-      { name: "Perplexity", url: "https://perplexity.ai", cat: "AI Tools" },
+      { name: "Gemini Web", url: "https://gemini.google.com", cat: "AI Tools" },
       { name: "Booking", url: "https://booking.com", cat: "Viaggi" },
-      { name: "Skyscanner", url: "https://skyscanner.it", cat: "Viaggi" },
-      { name: "EasyJet", url: "https://easyjet.com", cat: "Viaggi" },
-      { name: "AliExpress", url: "https://aliexpress.com", cat: "Shopping" },
-      { name: "eBay", url: "https://ebay.it", cat: "Shopping" },
-      { name: "Vinted", url: "https://vinted.it", cat: "Shopping" },
-      { name: "Canva", url: "https://canva.com", cat: "Produttività" },
-      { name: "Google Drive", url: "https://drive.google.com", cat: "Produttività" },
-      { name: "DeepL", url: "https://deepl.com", cat: "Produttività" },
       { name: "YouTube", url: "https://youtube.com", cat: "Intrattenimento" },
-      { name: "Prime Video", url: "https://primevideo.com", cat: "Intrattenimento" },
-      { name: "Reddit", url: "https://reddit.com", cat: "Intrattenimento" },
       { name: "Wikipedia", url: "https://it.wikipedia.org", cat: "Utility" }
     ];
 
     let apps = JSON.parse(localStorage.getItem('my_web_apps')) || defaultApps;
+    let apiKeys = JSON.parse(localStorage.getItem('my_api_keys')) || { gemini: '', grok: '' };
+
     const omnibox = document.getElementById('omnibox');
     const aiSidebar = document.getElementById('ai-sidebar');
-    const aiFrame = document.getElementById('ai-frame');
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
 
     function renderApps() {
       const container = document.getElementById('apps-container');
@@ -362,14 +433,12 @@
 
         const section = document.createElement('section');
         section.innerHTML = `<h2 class="category-title">${cat}</h2>`;
-        
         const grid = document.createElement('div');
         grid.className = 'grid';
 
         catApps.forEach(app => {
           const index = apps.indexOf(app);
           const initials = app.name.slice(0, 2).toUpperCase();
-          
           let domain = "";
           try { domain = new URL(app.url).hostname; } catch(e) { domain = app.url; }
           const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
@@ -385,53 +454,119 @@
             </div>
           `;
         });
-
         section.appendChild(grid);
         container.appendChild(section);
       });
     }
 
     async function openUrl(url) {
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
-        url = 'https://' + url;
-      }
-      
-      // Se siamo nell'app nativa Capacitor, usa il plugin Browser per aprire qualsiasi HTTPS senza blocchi
+      if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
       if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-        try {
-          await window.Capacitor.Plugins.Browser.open({ url: url });
-          return;
-        } catch (e) {
-          console.log("Browser plugin non disponibile, fallback su window.open");
-        }
+        try { await window.Capacitor.Plugins.Browser.open({ url: url }); return; } catch (e) {}
       }
-      
-      // Fallback per browser web standard
       window.open(url, '_blank');
     }
 
     function handleOmnibox(e) {
       const val = omnibox.value.trim();
-      if (e.key === 'Enter') {
-        if (!val) return;
-        if (val.includes('.') && !val.includes(' ')) {
-          openUrl(val);
-        } else {
-          openUrl(`https://www.google.com/search?q=${encodeURIComponent(val)}`);
-        }
+      if (e.key === 'Enter' && val) {
+        if (val.includes('.') && !val.includes(' ')) openUrl(val);
+        else openUrl(`https://www.google.com/search?q=${encodeURIComponent(val)}`);
         omnibox.value = '';
-      } else {
+      } else if (!e.key) {
         filterApps(val);
       }
     }
 
-    function toggleAISidebar() {
-      aiSidebar.classList.toggle('open');
+    function toggleAISidebar() { aiSidebar.classList.toggle('open'); }
+
+    function openApiModal() {
+      document.getElementById('geminiKey').value = apiKeys.gemini;
+      document.getElementById('grokKey').value = apiKeys.grok;
+      document.getElementById('apiModal').style.display = 'flex';
+    }
+    function closeApiModal() { document.getElementById('apiModal').style.display = 'none'; }
+
+    function saveApiKeys() {
+      apiKeys.gemini = document.getElementById('geminiKey').value.trim();
+      apiKeys.grok = document.getElementById('grokKey').value.trim();
+      localStorage.setItem('my_api_keys', JSON.stringify(apiKeys));
+      closeApiModal();
+      alert('Chiavi API salvate con successo!');
     }
 
-    function switchAIProvider() {
-      const providerUrl = document.getElementById('ai-provider').value;
-      aiFrame.src = providerUrl;
+    function handleChatInput(e) {
+      if (e.key === 'Enter') sendChatMessage();
+    }
+
+    async function sendChatMessage() {
+      const text = chatInput.value.trim();
+      if (!text) return;
+
+      appendMessage(text, 'user');
+      chatInput.value = '';
+
+      const provider = document.getElementById('ai-provider').value;
+      const key = apiKeys[provider];
+
+      if (!key) {
+        appendMessage(`Errore: Inserisci prima la chiave API per ${provider.toUpperCase()} cliccando sull'icona della chiave (🔑) in alto.`, 'ai');
+        return;
+      }
+
+      appendMessage("Sto elaborando la risposta...", 'ai', true);
+      const loadingMsg = chatMessages.lastChild;
+
+      try {
+        let reply = "";
+        if (provider === 'gemini') {
+          reply = await callGeminiAPI(text, key);
+        } else if (provider === 'grok') {
+          reply = await callGrokAPI(text, key);
+        }
+        loadingMsg.innerText = reply;
+      } catch (err) {
+        loadingMsg.innerText = "Errore di connessione o chiave non valida: " + err.message;
+      }
+    }
+
+    function appendMessage(text, sender, isLoading = false) {
+      const msg = document.createElement('div');
+      msg.className = `message ${sender}`;
+      msg.innerText = text;
+      chatMessages.appendChild(msg);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Chiamata API Google Gemini (Modello gemini-1.5-flash)
+    async function callGeminiAPI(prompt, apiKey) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message);
+      return data.candidates[0].content.parts[0].text;
+    }
+
+    // Chiamata API xAI Grok (Endpoint compatibile OpenAI)
+    async function callGrokAPI(prompt, apiKey) {
+      const response = await fetch('https://api.x.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'grok-beta',
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message);
+      return data.choices[0].message.content;
     }
 
     function filterApps(q) {
@@ -449,15 +584,12 @@
       const name = document.getElementById('appName').value.trim();
       let url = document.getElementById('appUrl').value.trim();
       const cat = document.getElementById('appCat').value;
-
-      if (!name || !url) return alert('Inserisci sia il nome che l\'URL');
+      if (!name || !url) return alert('Inserisci nome e URL');
       if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
-
       apps.push({ name, url, cat });
       localStorage.setItem('my_web_apps', JSON.stringify(apps));
       renderApps();
       closeModal();
-
       document.getElementById('appName').value = '';
       document.getElementById('appUrl').value = '';
     }
