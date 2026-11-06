@@ -270,23 +270,30 @@
       overflow: hidden;
     }
 
-    .btn-delete {
+    .card-actions {
       position: absolute;
       top: -6px;
       right: -6px;
+      display: flex;
+      gap: 2px;
+      z-index: 2;
+    }
+
+    .btn-action {
       width: 22px;
       height: 22px;
-      background: var(--danger);
-      color: white;
       border-radius: 50%;
       border: none;
-      font-size: 12px;
+      font-size: 11px;
       display: flex;
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      z-index: 2;
+      color: white;
     }
+
+    .btn-edit { background: var(--accent); }
+    .btn-delete { background: var(--danger); }
 
     .modal {
       display: none;
@@ -355,8 +362,7 @@
       <div class="ai-header">
         <div class="ai-header-top">
           <select class="ai-selector" id="ai-provider">
-            <option value="gemini-flash">Gemini 2.5 Flash (Google)</option>
-            <option value="gemini-pro">Gemini 1.5 Pro (Google)</option>
+            <option value="gemini-flash">Gemini 3.8 Flash (Google)</option>
             <option value="grok">Grok Beta (xAI)</option>
           </select>
           <button class="btn-icon" onclick="clearChatHistory()" title="Elimina Cronologia Chat" style="width:32px; height:32px; font-size:0.8rem;">🗑️</button>
@@ -413,6 +419,28 @@
     </div>
   </div>
 
+  <!-- Modal Modifica / Sposta App -->
+  <div class="modal" id="editModal">
+    <div class="modal-content">
+      <h3>Modifica / Sposta App</h3>
+      <input type="hidden" id="editIndex">
+      <input type="text" id="editAppName" placeholder="Nome">
+      <input type="url" id="editAppUrl" placeholder="URL">
+      <select id="editAppCat">
+        <option value="AI Tools">AI Tools</option>
+        <option value="Viaggi">Viaggi</option>
+        <option value="Shopping">Shopping</option>
+        <option value="Produttività">Produttività</option>
+        <option value="Intrattenimento">Intrattenimento</option>
+        <option value="Utility">Utility</option>
+      </select>
+      <div class="modal-buttons">
+        <button class="btn-cancel" onclick="closeEditModal()">Annulla</button>
+        <button class="btn-icon" style="background:var(--accent); width:auto; padding:0 1rem;" onclick="updateApp()">Salva</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const defaultApps = [
       { name: "ChatGPT", url: "https://chatgpt.com", cat: "AI Tools" },
@@ -457,7 +485,10 @@
 
           grid.innerHTML += `
             <div class="app-card" onclick="openUrl('${app.url}')">
-              <button class="btn-delete" onclick="deleteApp(event, ${index})">✕</button>
+              <div class="card-actions" onclick="event.stopPropagation()">
+                <button class="btn-action btn-edit" onclick="openEditModal(${index})" title="Modifica / Sposta">✏️</button>
+                <button class="btn-action btn-delete" onclick="deleteApp(event, ${index})" title="Elimina">✕</button>
+              </div>
               <div class="app-icon">
                 <img src="${faviconUrl}" alt="${app.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
                 <span style="display:none;">${initials}</span>
@@ -552,13 +583,11 @@
       try {
         let reply = "";
         if (provider === 'gemini-flash') {
-          reply = await callGeminiAPI(text, key, 'gemini-2.5-flash');
-        } else if (provider === 'gemini-pro') {
-          reply = await callGeminiAPI(text, key, 'gemini-1.5-pro');
+          reply = await callGeminiAPI(text, key);
         } else if (provider === 'grok') {
           reply = await callGrokAPI(text, key);
         }
-        chatHistory.pop(); // Rimuovi il messaggio di caricamento
+        chatHistory.pop();
         chatHistory.push({ sender: 'ai', text: reply });
       } catch (err) {
         chatHistory.pop();
@@ -568,8 +597,8 @@
       renderChatHistory();
     }
 
-    async function callGeminiAPI(prompt, apiKey, modelName) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+    async function callGeminiAPI(prompt, apiKey) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -608,30 +637,6 @@
     function openModal() { document.getElementById('addModal').style.display = 'flex'; }
     function closeModal() { document.getElementById('addModal').style.display = 'none'; }
 
-    function saveApp() {
-      const name = document.getElementById('appName').value.trim();
-      let url = document.getElementById('appUrl').value.trim();
-      const cat = document.getElementById('appCat').value;
-      if (!name || !url) return alert('Inserisci nome e URL');
-      if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'https://' + url;
-      apps.push({ name, url, cat });
-      localStorage.setItem('my_web_apps', JSON.stringify(apps));
-      renderApps();
-      closeModal();
-      document.getElementById('appName').value = '';
-      document.getElementById('appUrl').value = '';
-    }
-
-    function deleteApp(e, index) {
-      e.stopPropagation();
-      apps.splice(index, 1);
-      localStorage.setItem('my_web_apps', JSON.stringify(apps));
-      renderApps();
-    }
-
-    renderApps();
-    renderChatHistory();
-  </script>
-</body>
-                                                                                                    </html>
-                                                                                                    
+    function openEditModal(index) {
+      const app = apps[index];
+      document.getElementById('editIndex').value 
