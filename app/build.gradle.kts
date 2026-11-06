@@ -11,8 +11,8 @@ android {
         applicationId = "com.weblauncher.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "3.0.0"
+        versionCode = 4
+        versionName = "4.0.0"
     }
 
     buildTypes {
@@ -49,4 +49,5 @@ dependencies {
     implementation("androidx.browser:browser:1.7.0")
     implementation("androidx.activity:activity-ktx:1.8.2")
     implementation("com.google.code.gson:gson:2.10.1")
+    implementation("io.coil-kt:coil:2.5.0")
 }

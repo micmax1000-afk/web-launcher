@@ -5,5 +5,6 @@ data class AppItem(
     var name: String,
     var url: String,
     var category: String,
-    var pinned: Boolean = false
+    var pinned: Boolean = false,
+    var sortOrder: Int = 0
 )
