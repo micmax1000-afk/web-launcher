@@ -11,7 +11,6 @@ import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.text.Editable
 import android.text.TextWatcher
-import android.view.autofill.AutofillManager
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.webkit.CookieManager
@@ -35,7 +34,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -124,7 +122,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<View>(R.id.btnMic).setOnClickListener { requestMicAndListen() }
-        findViewById<MaterialButton>(R.id.btnAdd).setOnClickListener { showAddEditDialog(null) }
         findViewById<View>(R.id.btnWebBack).setOnClickListener { if (webView.canGoBack()) webView.goBack() }
         findViewById<View>(R.id.btnWebForward).setOnClickListener { if (webView.canGoForward()) webView.goForward() }
         findViewById<View>(R.id.btnWebRefresh).setOnClickListener { webView.reload() }
@@ -369,6 +366,7 @@ class MainActivity : AppCompatActivity() {
     private fun showSettings() {
         val engine = repo.getSearchEngine()
         val items = arrayOf(
+            "Aggiungi web app",
             "Motore di ricerca: ${engine.label}",
             "Password e compilazione automatica",
             "Cancella cronologia navigazione",
@@ -382,39 +380,40 @@ class MainActivity : AppCompatActivity() {
         )
         MaterialAlertDialogBuilder(this).setTitle("Impostazioni").setItems(items) { _, which ->
             when (which) {
-                0 -> showSearchEnginePicker()
-                1 -> showPasswordInfo()
-                2 -> confirmClear("Cancellare la cronologia del browser?") {
+                0 -> showAddEditDialog(null)
+                1 -> showSearchEnginePicker()
+                2 -> showPasswordInfo()
+                3 -> confirmClear("Cancellare la cronologia del browser?") {
                     webView.clearHistory()
                     toast("Cronologia cancellata")
                 }
-                3 -> confirmClear("Cancellare tutti i cookie?") {
+                4 -> confirmClear("Cancellare tutti i cookie?") {
                     CookieManager.getInstance().removeAllCookies(null)
                     CookieManager.getInstance().flush()
                     toast("Cookie cancellati")
                 }
-                4 -> confirmClear("Cancellare la cache?") {
+                5 -> confirmClear("Cancellare la cache?") {
                     webView.clearCache(true)
                     toast("Cache cancellata")
                 }
-                5 -> confirmClear("Cancellare cronologia, cookie, cache e dati form?") {
+                6 -> confirmClear("Cancellare cronologia, cookie, cache e dati form?") {
                     clearAllBrowsingData()
                     toast("Dati di navigazione cancellati")
                 }
-                6 -> {
+                7 -> {
                     val json = com.google.gson.Gson().toJson(mapOf("apps" to apps, "categories" to categories))
                     startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                         type = "application/json"; putExtra(Intent.EXTRA_TEXT, json)
                     }, "Esporta backup"))
                 }
-                7 -> MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
+                8 -> MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
                     .setPositiveButton("Reset") { _, _ ->
                         apps = repo.resetDefaults(); categories = repo.loadCategories(); refreshList(); toast("App ripristinate")
                     }.setNegativeButton("Annulla", null).show()
-                8 -> MaterialAlertDialogBuilder(this).setTitle("Microfono")
+                9 -> MaterialAlertDialogBuilder(this).setTitle("Microfono")
                     .setMessage("Voce nativa Android.\nImpostazioni → App → Web Launcher → Microfono → Consentire")
                     .setPositiveButton("OK", null).show()
-                9 -> toast("Tieni premuto un'icona e trascinala. Menu: tocco sui ⋮")
+                10 -> toast("Tieni premuto un'icona e trascinala. Menu: tocco sui ⋮")
             }
         }.setNegativeButton("Chiudi", null).show()
     }
