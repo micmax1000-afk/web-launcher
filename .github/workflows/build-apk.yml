@@ -24,13 +24,31 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Installa dipendenze, Plugin Browser e Genera Asset
+      - name: Installa dipendenze e prepara Android
         run: |
           npm install --legacy-peer-deps
           npm install @capacitor/browser@^5.0.0 @capacitor/assets --save-dev --legacy-peer-deps
-          npx capacitor-assets generate --android
+          npx capacitor-assets generate --android || true
           npx cap add android || true
           npx cap sync android
+
+      - name: Aggiungi permesso microfono (RECORD_AUDIO)
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if [ -f "$MANIFEST" ]; then
+            if ! grep -q "RECORD_AUDIO" "$MANIFEST"; then
+              if grep -q 'android.permission.INTERNET' "$MANIFEST"; then
+                sed -i 's|android.permission.INTERNET" />|android.permission.INTERNET" />\n    <uses-permission android:name="android.permission.RECORD_AUDIO" />|' "$MANIFEST"
+              else
+                sed -i '/<manifest /a\    <uses-permission android:name="android.permission.RECORD_AUDIO" />' "$MANIFEST"
+              fi
+            fi
+            echo "=== AndroidManifest (permessi) ==="
+            grep -E "uses-permission|RECORD_AUDIO|INTERNET" "$MANIFEST" || true
+          else
+            echo "Manifest non trovato!"
+            exit 1
+          fi
 
       - name: Compila APK con Gradle
         run: |
