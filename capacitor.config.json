@@ -1,5 +1,8 @@
 {
   "appId": "com.weblauncher.app",
   "appName": "Web Launcher",
-  "webDir": "www"
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
 }
