@@ -167,6 +167,68 @@ class AppRepository(context: Context) {
             )
         }
 
+        /** WebView resets uiMode to the system theme while it is created. Put the chosen theme back. */
+        fun restoreUiMode(context: Context) {
+            val mode = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
+                .getString(KEY_THEME, "dark") ?: "dark"
+            val expected = when (mode) {
+                "light" -> android.content.res.Configuration.UI_MODE_NIGHT_NO
+                "dark" -> android.content.res.Configuration.UI_MODE_NIGHT_YES
+                else -> return
+            }
+            val current = context.resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK
+            if (current == expected) return
+            val config = android.content.res.Configuration(context.resources.configuration)
+            config.uiMode = (config.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or expected
+            @Suppress("DEPRECATION")
+            context.resources.updateConfiguration(config, context.resources.displayMetrics)
+        }
+
+        fun isLightUi(context: Context): Boolean {
+            val mode = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
+                .getString(KEY_THEME, "dark") ?: "dark"
+            return when (mode) {
+                "light" -> true
+                "dark" -> false
+                else -> (context.resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK) !=
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+            }
+        }
+
+        data class UiPalette(
+            val bg: Int,
+            val elevated: Int,
+            val card: Int,
+            val text: Int,
+            val textMuted: Int,
+            val stroke: Int,
+            val iconTile: Int
+        )
+
+        fun palette(context: Context): UiPalette = if (isLightUi(context)) {
+            UiPalette(
+                bg = 0xFFF3F5FA.toInt(),
+                elevated = 0xFFFFFFFF.toInt(),
+                card = 0xFFFFFFFF.toInt(),
+                text = 0xFF121826.toInt(),
+                textMuted = 0xFF5C6B82.toInt(),
+                stroke = 0xFFE1E6F0.toInt(),
+                iconTile = 0xFFF7F8FC.toInt()
+            )
+        } else {
+            UiPalette(
+                bg = 0xFF0A0E17.toInt(),
+                elevated = 0xFF121826.toInt(),
+                card = 0xFF1A2333.toInt(),
+                text = 0xFFF0F4FA.toInt(),
+                textMuted = 0xFF8B9BB4.toInt(),
+                stroke = 0xFF2A3548.toInt(),
+                iconTile = 0xFF222C3F.toInt()
+            )
+        }
+
         fun defaultCategories() = listOf(
             "AI Tools", "Viaggi", "Shopping", "Produttivita", "Intrattenimento", "Utility"
         )

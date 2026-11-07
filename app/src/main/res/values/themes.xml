@@ -8,6 +8,7 @@
         <item name="android:navigationBarColor">@color/bg</item>
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:colorBackground">@color/bg</item>
+        <item name="android:forceDarkAllowed">false</item>
         <item name="colorSurface">@color/bg_elevated</item>
         <item name="colorOnSurface">@color/text</item>
         <item name="android:textColorPrimary">@color/text</item>

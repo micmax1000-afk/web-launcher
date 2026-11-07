@@ -196,7 +196,11 @@
                 android:padding="16dp" />
         </ScrollView>
 
-        <WebView android:id="@+id/webView" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+        <FrameLayout
+            android:id="@+id/webViewHost"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
     </LinearLayout>
 
     <FrameLayout
@@ -212,6 +216,7 @@
         app:layout_constraintEnd_toEndOf="parent">
 
         <LinearLayout
+            android:id="@+id/bottomBarSurface"
             android:layout_width="match_parent"
             android:layout_height="68dp"
             android:orientation="horizontal"
@@ -230,8 +235,8 @@
             </LinearLayout>
 
             <LinearLayout android:id="@+id/navSettings" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">
-                <ImageView android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_settings" app:tint="@color/text_muted" android:contentDescription="@string/settings" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings" android:textColor="@color/text_muted" android:textSize="11sp" android:layout_marginTop="3dp" />
+                <ImageView android:id="@+id/iconSettings" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_settings" app:tint="@color/text_muted" android:contentDescription="@string/settings" />
+                <TextView android:id="@+id/labelSettings" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings" android:textColor="@color/text_muted" android:textSize="11sp" android:layout_marginTop="3dp" />
             </LinearLayout>
         </LinearLayout>
     </FrameLayout>

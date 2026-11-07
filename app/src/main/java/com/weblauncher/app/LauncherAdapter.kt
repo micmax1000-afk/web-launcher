@@ -174,6 +174,7 @@ class LauncherAdapter(
     inner class HeaderVH(view: View) : RecyclerView.ViewHolder(view) {
         private val title: TextView = view.findViewById(R.id.sectionTitle)
         fun bind(t: String) {
+            title.setTextColor(AppRepository.palette(itemView.context).textMuted)
             title.text = t
             itemView.setOnLongClickListener {
                 onHeader(t)
@@ -190,6 +191,20 @@ class LauncherAdapter(
         private val menuBtn: ImageButton = view.findViewById(R.id.btnAppMenu)
 
         fun bind(item: AppItem) {
+            val palette = AppRepository.palette(itemView.context)
+            (itemView as? com.google.android.material.card.MaterialCardView)?.apply {
+                setCardBackgroundColor(palette.card)
+                strokeColor = palette.stroke
+            }
+            name.setTextColor(palette.text)
+            val density = itemView.resources.displayMetrics.density
+            fun tile() = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 14f * density
+                setColor(palette.iconTile)
+                setStroke((density).toInt().coerceAtLeast(1), palette.stroke)
+            }
+            initials.background = tile()
+            icon.background = tile()
             name.text = item.name
             initials.text = item.name.take(2).uppercase()
             initials.visibility = View.VISIBLE

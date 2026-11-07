@@ -65,6 +65,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var labelHome: TextView
     private lateinit var iconBrowser: ImageView
     private lateinit var labelBrowser: TextView
+    private lateinit var iconSettings: ImageView
+    private lateinit var labelSettings: TextView
 
     private var apps: MutableList<AppItem> = mutableListOf()
     private var categories: MutableList<String> = mutableListOf()
@@ -140,6 +142,27 @@ class MainActivity : AppCompatActivity() {
         setTheme(AppRepository.accentStyle(this))
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        // WebView must be created after the layout, then the theme restored.
+        // Creating it inside XML flips light mode back to the system night palette
+        // for every view inflated afterwards (cards and bottom bar).
+        webView = WebView(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        findViewById<android.widget.FrameLayout>(R.id.webViewHost).addView(webView)
+        AppRepository.restoreUiMode(this)
+        val palette = AppRepository.palette(this)
+        window.statusBarColor = palette.bg
+        window.navigationBarColor = palette.bg
+        findViewById<View>(android.R.id.content).setBackgroundColor(palette.bg)
+        findViewById<View>(R.id.bottomBarSurface).background =
+            android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 28f * resources.displayMetrics.density
+                setColor(palette.elevated)
+                setStroke(resources.displayMetrics.density.toInt().coerceAtLeast(1), palette.stroke)
+            }
 
         repo = AppRepository(this)
         apps = repo.loadApps()
@@ -150,7 +173,6 @@ class MainActivity : AppCompatActivity() {
         searchInput = findViewById(R.id.searchInput)
         webSearchHint = findViewById(R.id.webSearchHint)
         recycler = findViewById(R.id.recycler)
-        webView = findViewById(R.id.webView)
         recentsPanel = findViewById(R.id.recentsPanel)
         recentsList = findViewById(R.id.recentsList)
         webTitle = findViewById(R.id.webTitle)
@@ -161,6 +183,8 @@ class MainActivity : AppCompatActivity() {
         labelHome = findViewById(R.id.labelHome)
         iconBrowser = findViewById(R.id.iconBrowser)
         labelBrowser = findViewById(R.id.labelBrowser)
+        iconSettings = findViewById(R.id.iconSettings)
+        labelSettings = findViewById(R.id.labelSettings)
 
         setupWebView()
         setupLauncher()
@@ -311,11 +335,13 @@ class MainActivity : AppCompatActivity() {
         browserPanel.isVisible = tab == TAB_BROWSER
         if (tab == TAB_BROWSER) updateBrowserBody()
         val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
-        val muted = ContextCompat.getColor(this, R.color.text_muted)
+        val muted = AppRepository.palette(this).textMuted
         iconHome.setColorFilter(if (tab == TAB_HOME) accent else muted)
         labelHome.setTextColor(if (tab == TAB_HOME) accent else muted)
         iconBrowser.setColorFilter(if (tab == TAB_BROWSER) accent else muted)
         labelBrowser.setTextColor(if (tab == TAB_BROWSER) accent else muted)
+        iconSettings.setColorFilter(muted)
+        labelSettings.setTextColor(muted)
     }
 
     private fun openInBrowser(url: String) {
