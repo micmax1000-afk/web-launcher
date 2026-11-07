@@ -253,16 +253,17 @@ class MainActivity : AppCompatActivity() {
             }
             override fun onPageFinished(view: WebView?, url: String?) {
                 webProgress.isVisible = false
-                val title = view?.title ?: url.orEmpty()
-                webTitle.text = title
+                val pageUrl = url.orEmpty()
+                val safeTitle = view?.title?.trim().orEmpty().takeIf { isRealPageTitle(it, pageUrl) }
+                if (safeTitle != null) webTitle.text = safeTitle
                 val tab = webTabs.getOrNull(webTabIndex)
                 if (tab != null) {
-                    tab.title = title.ifBlank { tab.title }
-                    if (!url.isNullOrBlank()) tab.url = url
+                    if (safeTitle != null) tab.title = safeTitle
+                    if (pageUrl.startsWith("http")) tab.url = pageUrl
                 }
-                if (!webAddress.isFocused && !url.isNullOrBlank() && url != "about:blank") webAddress.setText(url)
-                if (!url.isNullOrBlank() && url.startsWith("http")) {
-                    if (tab?.privateMode != true) repo.addRecent(title, url)
+                if (!webAddress.isFocused && pageUrl.startsWith("http")) webAddress.setText(pageUrl)
+                if (pageUrl.startsWith("http")) {
+                    if (tab?.privateMode != true && safeTitle != null) repo.addRecent(safeTitle, pageUrl)
                     browserHasPage = true
                     updateBrowserBody()
                     renderTabStrip()
@@ -275,7 +276,13 @@ class MainActivity : AppCompatActivity() {
                 webProgress.isVisible = newProgress < 100
             }
             override fun onReceivedTitle(view: WebView?, title: String?) {
-                webTitle.text = title.orEmpty()
+                val pageUrl = view?.url.orEmpty()
+                val safeTitle = title?.trim().orEmpty().takeIf { isRealPageTitle(it, pageUrl) } ?: return
+                webTitle.text = safeTitle
+                val tab = webTabs.getOrNull(webTabIndex) ?: return
+                tab.title = safeTitle
+                if (!tab.privateMode && pageUrl.startsWith("http")) repo.addRecent(safeTitle, pageUrl)
+                renderTabStrip()
             }
         }
     }
@@ -416,16 +423,37 @@ class MainActivity : AppCompatActivity() {
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
         val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+        val muted = ContextCompat.getColor(this, R.color.text_muted)
         webTabs.forEachIndexed { index, tab ->
-            val chip = TextView(this).apply {
-                val label = if (tab.privateMode) "Privata" else tab.title.ifBlank { "Scheda" }
-                text = label.take(16)
-                textSize = 12f
-                setPadding(dp(12), dp(6), dp(12), dp(6))
-                setTextColor(if (index == webTabIndex) accent else ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+            val active = index == webTabIndex
+            val chip = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(10), dp(4), dp(2), dp(4))
                 setOnClickListener { switchToTab(index) }
-                setOnLongClickListener { webTabIndex = index; closeCurrentTab(); true }
+                setOnLongClickListener {
+                    webTabIndex = index
+                    closeCurrentTab()
+                    true
+                }
             }
+            chip.addView(TextView(this).apply {
+                val raw = if (tab.privateMode) "Privata" else tab.title.ifBlank { "Scheda" }
+                text = (if (raw == "about:blank") "Nuova scheda" else raw).take(16)
+                textSize = 12f
+                setTextColor(if (active) accent else muted)
+            })
+            chip.addView(TextView(this).apply {
+                text = "×"
+                textSize = 16f
+                setTextColor(if (active) accent else muted)
+                setPadding(dp(8), dp(2), dp(8), dp(2))
+                contentDescription = "Chiudi scheda"
+                setOnClickListener {
+                    webTabIndex = index
+                    closeCurrentTab()
+                }
+            })
             tabStrip.addView(chip)
         }
     }
@@ -437,6 +465,7 @@ class MainActivity : AppCompatActivity() {
             "Scheda privata",
             "Trova nella pagina",
             if (tab.desktop) "Versione mobile" else "Versione desktop",
+            "Svuota recenti",
             "Chiudi scheda"
         )
         MaterialAlertDialogBuilder(this).setTitle("Browser").setItems(options) { _, which ->
@@ -450,7 +479,12 @@ class MainActivity : AppCompatActivity() {
                     webView.reload()
                     toast(if (tab.desktop) "Versione desktop" else "Versione mobile")
                 }
-                4 -> closeCurrentTab()
+                4 -> confirmClear("Eliminare tutti i recenti?") {
+                    repo.clearRecents()
+                    if (!browserHasPage) renderRecents()
+                    toast("Recenti eliminati")
+                }
+                5 -> closeCurrentTab()
             }
         }.show()
     }
@@ -549,23 +583,62 @@ class MainActivity : AppCompatActivity() {
         if (!browserHasPage) renderRecents()
     }
 
+    private fun isRealPageTitle(title: String, url: String): Boolean {
+        if (title.isBlank() || url.isBlank() || url == "about:blank") return false
+        if (title == "about:blank" || title == "about:srcdoc") return false
+        return true
+    }
+
+    private fun recentLabel(site: RecentSite): String {
+        if (isRealPageTitle(site.title, site.url)) return site.title
+        return try {
+            Uri.parse(site.url).host?.removePrefix("www.") ?: site.url
+        } catch (_: Exception) {
+            site.url
+        }
+    }
+
     private fun renderRecents() {
         recentsList.removeAllViews()
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
-        recentsList.addView(TextView(this).apply {
+        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+        val items = repo.loadRecents()
+        val header = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        header.addView(TextView(this).apply {
             text = "Recenti"
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
             textSize = 20f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             setPadding(dp(4), dp(8), dp(4), dp(12))
         })
-        val items = repo.loadRecents()
+        if (items.isNotEmpty()) {
+            header.addView(TextView(this).apply {
+                text = "Svuota"
+                setTextColor(accent)
+                textSize = 14f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(dp(12), dp(8), dp(4), dp(12))
+                setOnClickListener {
+                    confirmClear("Eliminare tutti i recenti?") {
+                        repo.clearRecents()
+                        renderRecents()
+                        toast("Recenti eliminati")
+                    }
+                }
+            })
+        }
+        recentsList.addView(header)
         if (items.isEmpty()) {
             recentsList.addView(TextView(this).apply {
                 text = "Nessuna pagina ancora. Apri un'app dalla Home."
                 setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
                 textSize = 14f
+                setPadding(dp(4), 0, dp(4), 0)
             })
             return
         }
@@ -583,24 +656,57 @@ class MainActivity : AppCompatActivity() {
                 lp.bottomMargin = dp(8)
                 layoutParams = lp
                 setOnClickListener { openInBrowser(site.url) }
+                setOnLongClickListener {
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle(recentLabel(site))
+                        .setItems(arrayOf("Apri", "Elimina")) { dlg, which ->
+                            if (which == 0) openInBrowser(site.url)
+                            else {
+                                repo.removeRecent(site.url)
+                                renderRecents()
+                            }
+                            dlg.dismiss()
+                        }
+                        .show()
+                    true
+                }
+            }
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(10), dp(4), dp(10))
             }
             val box = android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.VERTICAL
-                setPadding(dp(14), dp(12), dp(14), dp(12))
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             box.addView(TextView(this).apply {
-                text = site.title
+                text = recentLabel(site)
                 setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
                 textSize = 15f
                 maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
             })
             box.addView(TextView(this).apply {
                 text = site.url
                 setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
                 textSize = 12f
                 maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
             })
-            card.addView(box)
+            row.addView(box)
+            row.addView(TextView(this).apply {
+                text = "×"
+                textSize = 20f
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                contentDescription = "Elimina dai recenti"
+                setOnClickListener {
+                    repo.removeRecent(site.url)
+                    renderRecents()
+                }
+            })
+            card.addView(row)
             recentsList.addView(card)
         }
     }
@@ -815,10 +921,10 @@ class MainActivity : AppCompatActivity() {
         row("Colore", accentLabel) { dialog.dismiss(); showAccentPicker() }
         section("PRIVACY")
         row("Password e compilazione", "Autofill di Android") { dialog.dismiss(); showPasswordInfo() }
-        row("Cancella cronologia") { dialog.dismiss(); confirmClear("Cancellare la cronologia del browser?") { webView.clearHistory(); toast("Cronologia cancellata") } }
+        row("Cancella cronologia", "Recenti e cronologia del browser") { dialog.dismiss(); confirmClear("Cancellare cronologia e recenti?") { clearHistoryAndRecents(); toast("Cronologia cancellata") } }
         row("Cancella cookie") { dialog.dismiss(); confirmClear("Cancellare tutti i cookie?") { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); toast("Cookie cancellati") } }
         row("Cancella cache") { dialog.dismiss(); confirmClear("Cancellare la cache?") { webView.clearCache(true); toast("Cache cancellata") } }
-        row("Cancella tutti i dati", "Cronologia, cookie, cache") { dialog.dismiss(); confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
+        row("Cancella tutti i dati", "Recenti, cronologia, cookie, cache") { dialog.dismiss(); confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
         section("BACKUP")
         val autoOn = repo.getAutoBackupUri() != null
         row(
@@ -875,8 +981,14 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun clearAllBrowsingData() {
+    private fun clearHistoryAndRecents() {
         webView.clearHistory()
+        repo.clearRecents()
+        if (!browserHasPage) renderRecents()
+    }
+
+    private fun clearAllBrowsingData() {
+        clearHistoryAndRecents()
         webView.clearCache(true)
         webView.clearFormData()
         CookieManager.getInstance().removeAllCookies(null)

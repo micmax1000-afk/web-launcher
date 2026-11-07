@@ -90,6 +90,13 @@ class AppRepository(context: Context) {
         prefs.edit().remove(KEY_RECENTS).apply()
     }
 
+    fun removeRecent(url: String) {
+        val list = loadRecents()
+        if (!list.removeAll { it.url == url }) return
+        if (list.isEmpty()) prefs.edit().remove(KEY_RECENTS).apply()
+        else prefs.edit().putString(KEY_RECENTS, gson.toJson(list)).apply()
+    }
+
 
     fun getAccent(): String = prefs.getString(KEY_ACCENT, "blue") ?: "blue"
 
