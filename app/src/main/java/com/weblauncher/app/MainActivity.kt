@@ -78,6 +78,18 @@ class MainActivity : AppCompatActivity() {
         if (granted) startVoiceRecognition() else toast(getString(R.string.mic_denied))
     }
 
+    private val exportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) writeBackupToUri(uri)
+    }
+
+    private val importLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) readBackupFromUri(uri)
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -131,6 +143,7 @@ class MainActivity : AppCompatActivity() {
             webTitle.text = ""
             showTab(TAB_HOME)
         }
+        findViewById<View>(R.id.btnWebAdd).setOnClickListener { offerAddCurrentPage() }
         findViewById<View>(R.id.btnWebExternal).setOnClickListener {
             val url = webView.url
             if (!url.isNullOrBlank() && url != "about:blank") {
@@ -169,7 +182,7 @@ class MainActivity : AppCompatActivity() {
         s.cacheMode = WebSettings.LOAD_DEFAULT
         @Suppress("DEPRECATION")
         s.saveFormData = true
-        s.userAgentString = s.userAgentString + " WebLauncher/4.1"
+        s.userAgentString = s.userAgentString + " WebLauncher/4.3"
         webView.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -373,7 +386,9 @@ class MainActivity : AppCompatActivity() {
             "Cancella cookie",
             "Cancella cache",
             "Cancella tutti i dati di navigazione",
-            "Esporta backup (JSON)",
+            "Backup su file / Drive",
+            "Ripristina da file / Drive",
+            "Condividi backup (testo)",
             "Reset app predefinite",
             "Info voce / microfono",
             "Trascina le icone (tieni premuto)"
@@ -400,20 +415,22 @@ class MainActivity : AppCompatActivity() {
                     clearAllBrowsingData()
                     toast("Dati di navigazione cancellati")
                 }
-                7 -> {
+                7 -> exportLauncher.launch("web-launcher-backup.json")
+                8 -> importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                9 -> {
                     val json = com.google.gson.Gson().toJson(mapOf("apps" to apps, "categories" to categories))
                     startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                         type = "application/json"; putExtra(Intent.EXTRA_TEXT, json)
-                    }, "Esporta backup"))
+                    }, "Condividi backup"))
                 }
-                8 -> MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
+                10 -> MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
                     .setPositiveButton("Reset") { _, _ ->
                         apps = repo.resetDefaults(); categories = repo.loadCategories(); refreshList(); toast("App ripristinate")
                     }.setNegativeButton("Annulla", null).show()
-                9 -> MaterialAlertDialogBuilder(this).setTitle("Microfono")
+                11 -> MaterialAlertDialogBuilder(this).setTitle("Microfono")
                     .setMessage("Voce nativa Android.\nImpostazioni → App → Web Launcher → Microfono → Consentire")
                     .setPositiveButton("OK", null).show()
-                10 -> toast("Tieni premuto un'icona e trascinala. Menu: tocco sui ⋮")
+                12 -> toast("Tieni premuto un'icona e trascinala. Menu: tocco sui ⋮")
             }
         }.setNegativeButton("Chiudi", null).show()
     }
@@ -444,26 +461,139 @@ class MainActivity : AppCompatActivity() {
             .setTitle("Password e login")
             .setMessage(
                 "Web Launcher usa l'Autofill di Android.\n\n" +
-                "• Al login di un sito, il sistema può proporre di salvare la password " +
-                "(Google Password Manager o altro gestore attivo sul telefono).\n\n" +
-                "• Per gestire le password salvate: Impostazioni Android → Google → Autocompletamento → " +
-                "Password / Gestore password.\n\n" +
-                "• Per cancellare i dati form dell'app: Impostazioni → Cancella tutti i dati di navigazione.\n\n" +
-                "Le password non restano salvate solo dentro Web Launcher: usano il gestore sicuro del sistema."
+                "• Al login di un sito, il sistema può proporre di salvare la password.\n\n" +
+                "• Per gestire le password: Impostazioni Android → Autocompletamento.\n\n" +
+                "• Per cancellare i dati form: Impostazioni → Cancella tutti i dati di navigazione."
             )
             .setPositiveButton("OK", null)
             .setNeutralButton("Apri Autofill") { _, _ ->
                 try {
                     startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE))
                 } catch (_: Exception) {
-                    try {
-                        startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
-                    } catch (_: Exception) {
-                        toast("Apri Impostazioni Android → Autocompletamento")
-                    }
+                    try { startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) }
+                    catch (_: Exception) { toast("Apri Impostazioni → Autocompletamento") }
                 }
             }
             .show()
+    }
+
+    private fun offerAddCurrentPage() {
+        val url = webView.url?.trim().orEmpty()
+        if (url.isBlank() || url == "about:blank" || !url.startsWith("http")) {
+            toast("Nessuna pagina valida da aggiungere")
+            return
+        }
+        val title = webView.title?.trim().orEmpty().ifBlank {
+            try { Uri.parse(url).host ?: "Sito" } catch (_: Exception) { "Sito" }
+        }
+        val options = arrayOf(
+            "Aggiungi a Home",
+            "Aggiungi ai Preferiti",
+            "Aggiungi e modifica nome"
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle(title)
+            .setMessage(url)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> addCurrentAsApp(title, url, pinned = false)
+                    1 -> addCurrentAsApp(title, url, pinned = true)
+                    2 -> {
+                        val et = TextInputEditText(this).apply {
+                            setText(title); setSingleLine(); setSelection(text?.length ?: 0)
+                        }
+                        val pad = (20 * resources.displayMetrics.density).toInt()
+                        val box = android.widget.FrameLayout(this).apply {
+                            setPadding(pad, pad / 2, pad, 0); addView(et)
+                        }
+                        MaterialAlertDialogBuilder(this)
+                            .setTitle("Nome app")
+                            .setView(box)
+                            .setPositiveButton("Salva") { _, _ ->
+                                val name = et.text?.toString()?.trim().orEmpty().ifBlank { title }
+                                addCurrentAsApp(name, url, pinned = false)
+                            }
+                            .setNegativeButton("Annulla", null)
+                            .show()
+                    }
+                }
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
+    private fun addCurrentAsApp(name: String, url: String, pinned: Boolean) {
+        val normalized = normalizeUrl(url)
+        val existing = apps.firstOrNull { it.url.equals(normalized, ignoreCase = true) }
+        if (existing != null) {
+            if (pinned && !existing.pinned) {
+                existing.pinned = true
+                repo.saveApps(apps)
+                refreshList()
+                toast("Già presente — aggiunta ai preferiti")
+            } else toast("Questa pagina è già tra le app")
+            return
+        }
+        val cat = "Utility"
+        if (cat !in categories) {
+            categories.add(cat)
+            repo.saveCategories(categories)
+        }
+        apps.add(AppItem(UUID.randomUUID().toString(), name.take(40), normalized, cat, pinned, apps.size))
+        repo.saveApps(apps)
+        refreshList()
+        toast(if (pinned) "Aggiunta ai preferiti" else "Aggiunta alla home")
+    }
+
+    private fun writeBackupToUri(uri: Uri) {
+        try {
+            val json = com.google.gson.Gson().toJson(
+                mapOf(
+                    "apps" to apps,
+                    "categories" to categories,
+                    "searchEngine" to repo.getSearchEngine().name
+                )
+            )
+            contentResolver.openOutputStream(uri)?.use { os ->
+                os.write(json.toByteArray(Charsets.UTF_8))
+            } ?: run { toast("Impossibile scrivere il file"); return }
+            toast("Backup salvato (puoi scegliere Drive)")
+        } catch (e: Exception) {
+            toast("Errore backup: ${e.message}")
+        }
+    }
+
+    private fun readBackupFromUri(uri: Uri) {
+        try {
+            val text = contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+                ?: run { toast("Impossibile leggere il file"); return }
+            val type = object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
+            val map = com.google.gson.Gson().fromJson<Map<String, Any>>(text, type)
+                ?: run { toast("File non valido"); return }
+            val appsJson = com.google.gson.Gson().toJson(map["apps"])
+            val catsJson = com.google.gson.Gson().toJson(map["categories"])
+            val appType = object : com.google.gson.reflect.TypeToken<MutableList<AppItem>>() {}.type
+            val catType = object : com.google.gson.reflect.TypeToken<MutableList<String>>() {}.type
+            val loadedApps = com.google.gson.Gson().fromJson<MutableList<AppItem>>(appsJson, appType)
+            val loadedCats = com.google.gson.Gson().fromJson<MutableList<String>>(catsJson, catType)
+            if (loadedApps.isNullOrEmpty()) { toast("Nessuna app nel backup"); return }
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Ripristina backup")
+                .setMessage("Sostituire le ${apps.size} app attuali con le ${loadedApps.size} del backup?")
+                .setPositiveButton("Ripristina") { _, _ ->
+                    apps = loadedApps
+                    categories = loadedCats ?: repo.loadCategories()
+                    repo.saveApps(apps)
+                    repo.saveCategories(categories)
+                    (map["searchEngine"] as? String)?.let { repo.setSearchEngine(SearchEngine.fromName(it)) }
+                    refreshList()
+                    toast("Backup ripristinato")
+                }
+                .setNegativeButton("Annulla", null)
+                .show()
+        } catch (e: Exception) {
+            toast("Errore ripristino: ${e.message}")
+        }
     }
 
     private fun showSearchEnginePicker() {
