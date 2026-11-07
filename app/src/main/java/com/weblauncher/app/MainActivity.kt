@@ -378,61 +378,99 @@ class MainActivity : AppCompatActivity() {
 
     private fun showSettings() {
         val engine = repo.getSearchEngine()
-        val items = arrayOf(
-            "Aggiungi web app",
-            "Motore di ricerca: ${engine.label}",
-            "Password e compilazione automatica",
-            "Cancella cronologia navigazione",
-            "Cancella cookie",
-            "Cancella cache",
-            "Cancella tutti i dati di navigazione",
-            "Backup su file / Drive",
-            "Ripristina da file / Drive",
-            "Condividi backup (testo)",
-            "Reset app predefinite",
-            "Info voce / microfono",
-            "Trascina le icone (tieni premuto)"
-        )
-        MaterialAlertDialogBuilder(this).setTitle("Impostazioni").setItems(items) { _, which ->
-            when (which) {
-                0 -> showAddEditDialog(null)
-                1 -> showSearchEnginePicker()
-                2 -> showPasswordInfo()
-                3 -> confirmClear("Cancellare la cronologia del browser?") {
-                    webView.clearHistory()
-                    toast("Cronologia cancellata")
-                }
-                4 -> confirmClear("Cancellare tutti i cookie?") {
-                    CookieManager.getInstance().removeAllCookies(null)
-                    CookieManager.getInstance().flush()
-                    toast("Cookie cancellati")
-                }
-                5 -> confirmClear("Cancellare la cache?") {
-                    webView.clearCache(true)
-                    toast("Cache cancellata")
-                }
-                6 -> confirmClear("Cancellare cronologia, cookie, cache e dati form?") {
-                    clearAllBrowsingData()
-                    toast("Dati di navigazione cancellati")
-                }
-                7 -> exportLauncher.launch("web-launcher-backup.json")
-                8 -> importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-                9 -> {
-                    val json = com.google.gson.Gson().toJson(mapOf("apps" to apps, "categories" to categories))
-                    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                        type = "application/json"; putExtra(Intent.EXTRA_TEXT, json)
-                    }, "Condividi backup"))
-                }
-                10 -> MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
-                    .setPositiveButton("Reset") { _, _ ->
-                        apps = repo.resetDefaults(); categories = repo.loadCategories(); refreshList(); toast("App ripristinate")
-                    }.setNegativeButton("Annulla", null).show()
-                11 -> MaterialAlertDialogBuilder(this).setTitle("Microfono")
-                    .setMessage("Voce nativa Android.\nImpostazioni → App → Web Launcher → Microfono → Consentire")
-                    .setPositiveButton("OK", null).show()
-                12 -> toast("Tieni premuto un'icona e trascinala. Menu: tocco sui ⋮")
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val scroll = android.widget.ScrollView(this)
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+        }
+        fun section(title: String) {
+            root.addView(TextView(this).apply {
+                text = title
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.accent))
+                textSize = 12f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                letterSpacing = 0.08f
+                setPadding(dp(4), dp(14), dp(4), dp(6))
+            })
+        }
+        fun row(label: String, sub: String? = null, onClick: () -> Unit) {
+            val card = com.google.android.material.card.MaterialCardView(this).apply {
+                radius = dp(16).toFloat()
+                setCardBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.card))
+                strokeWidth = dp(1)
+                strokeColor = ContextCompat.getColor(this@MainActivity, R.color.stroke)
+                cardElevation = 0f
+                val lp = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                lp.bottomMargin = dp(8)
+                layoutParams = lp
+                setOnClickListener { onClick() }
             }
-        }.setNegativeButton("Chiudi", null).show()
+            val box = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(dp(16), dp(12), dp(16), dp(12))
+            }
+            box.addView(TextView(this).apply {
+                text = label
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+                textSize = 15f
+            })
+            if (!sub.isNullOrBlank()) {
+                box.addView(TextView(this).apply {
+                    text = sub
+                    setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+                    textSize = 12f
+                    setPadding(0, dp(2), 0, 0)
+                })
+            }
+            card.addView(box)
+            root.addView(card)
+        }
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Impostazioni")
+            .setView(scroll)
+            .setNegativeButton("Chiudi", null)
+            .create()
+        section("APP")
+        row("Aggiungi web app", "Nome, URL e categoria") { dialog.dismiss(); showAddEditDialog(null) }
+        row("Motore di ricerca", engine.label) { dialog.dismiss(); showSearchEnginePicker() }
+        section("PRIVACY")
+        row("Password e compilazione", "Autofill di Android") { dialog.dismiss(); showPasswordInfo() }
+        row("Cancella cronologia") { dialog.dismiss(); confirmClear("Cancellare la cronologia del browser?") { webView.clearHistory(); toast("Cronologia cancellata") } }
+        row("Cancella cookie") { dialog.dismiss(); confirmClear("Cancellare tutti i cookie?") { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); toast("Cookie cancellati") } }
+        row("Cancella cache") { dialog.dismiss(); confirmClear("Cancellare la cache?") { webView.clearCache(true); toast("Cache cancellata") } }
+        row("Cancella tutti i dati", "Cronologia, cookie, cache") { dialog.dismiss(); confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
+        section("BACKUP")
+        row("Backup su file / Drive") { dialog.dismiss(); exportLauncher.launch("web-launcher-backup.json") }
+        row("Ripristina da file / Drive") { dialog.dismiss(); importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
+        row("Condividi backup") { dialog.dismiss();
+            val json = com.google.gson.Gson().toJson(mapOf("apps" to apps, "categories" to categories))
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "application/json"; putExtra(Intent.EXTRA_TEXT, json)
+            }, "Condividi backup"))
+        }
+        row("Reset app predefinite") {
+            dialog.dismiss()
+            MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
+                .setPositiveButton("Reset") { _, _ ->
+                    apps = repo.resetDefaults(); categories = repo.loadCategories(); refreshList(); toast("App ripristinate")
+                }.setNegativeButton("Annulla", null).show()
+        }
+        section("AIUTO")
+        row("Microfono", "Permesso voce") {
+            dialog.dismiss()
+            MaterialAlertDialogBuilder(this).setTitle("Microfono")
+                .setMessage("Voce nativa Android.\nImpostazioni → App → Web Launcher → Microfono → Consentire")
+                .setPositiveButton("OK", null).show()
+        }
+        row("Sposta le icone", "Tieni premuto e trascina") { dialog.dismiss(); toast("Tieni premuto un'icona e trascinala") }
+        scroll.addView(root)
+        dialog.show()
+        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), (resources.displayMetrics.heightPixels * 0.78f).toInt())
     }
 
     private fun confirmClear(message: String, action: () -> Unit) {
@@ -486,40 +524,64 @@ class MainActivity : AppCompatActivity() {
         val title = webView.title?.trim().orEmpty().ifBlank {
             try { Uri.parse(url).host ?: "Sito" } catch (_: Exception) { "Sito" }
         }
-        val options = arrayOf(
-            "Aggiungi a Home",
-            "Aggiungi ai Preferiti",
-            "Aggiungi e modifica nome"
-        )
-        MaterialAlertDialogBuilder(this)
-            .setTitle(title)
-            .setMessage(url)
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> addCurrentAsApp(title, url, pinned = false)
-                    1 -> addCurrentAsApp(title, url, pinned = true)
-                    2 -> {
-                        val et = TextInputEditText(this).apply {
-                            setText(title); setSingleLine(); setSelection(text?.length ?: 0)
-                        }
-                        val pad = (20 * resources.displayMetrics.density).toInt()
-                        val box = android.widget.FrameLayout(this).apply {
-                            setPadding(pad, pad / 2, pad, 0); addView(et)
-                        }
-                        MaterialAlertDialogBuilder(this)
-                            .setTitle("Nome app")
-                            .setView(box)
-                            .setPositiveButton("Salva") { _, _ ->
-                                val name = et.text?.toString()?.trim().orEmpty().ifBlank { title }
-                                addCurrentAsApp(name, url, pinned = false)
-                            }
-                            .setNegativeButton("Annulla", null)
-                            .show()
-                    }
-                }
-            }
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(20), dp(4), dp(20), dp(4))
+        }
+        val nameEt = TextInputEditText(this).apply {
+            setText(title)
+            setSingleLine()
+            setSelection(text?.length ?: 0)
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+        }
+        val til = TextInputLayout(this).apply {
+            hint = "Nome sulla home"
+            boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
+            addView(nameEt)
+        }
+        root.addView(til)
+        root.addView(TextView(this).apply {
+            text = url
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+            textSize = 12f
+            setPadding(dp(2), dp(10), dp(2), dp(14))
+            maxLines = 2
+        })
+        val row = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
+        fun actionBtn(label: String, filled: Boolean): com.google.android.material.button.MaterialButton {
+            val b = com.google.android.material.button.MaterialButton(this)
+            b.text = label
+            b.isAllCaps = false
+            b.cornerRadius = dp(16)
+            val lp = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            lp.marginEnd = if (filled) dp(8) else 0
+            b.layoutParams = lp
+            if (!filled) b.backgroundTintList = android.content.res.ColorStateList.valueOf(ContextCompat.getColor(this, R.color.card))
+            return b
+        }
+        val homeBtn = actionBtn("Home", true)
+        val favBtn = actionBtn("Preferiti", false)
+        row.addView(homeBtn)
+        row.addView(favBtn)
+        root.addView(row)
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Salva pagina")
+            .setView(root)
             .setNegativeButton("Annulla", null)
-            .show()
+            .create()
+        homeBtn.setOnClickListener {
+            val name = nameEt.text?.toString()?.trim().orEmpty().ifBlank { title }
+            dialog.dismiss()
+            addCurrentAsApp(name, url, pinned = false)
+        }
+        favBtn.setOnClickListener {
+            val name = nameEt.text?.toString()?.trim().orEmpty().ifBlank { title }
+            dialog.dismiss()
+            addCurrentAsApp(name, url, pinned = true)
+        }
+        dialog.show()
     }
 
     private fun addCurrentAsApp(name: String, url: String, pinned: Boolean) {

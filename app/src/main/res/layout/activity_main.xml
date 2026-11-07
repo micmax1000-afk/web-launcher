@@ -22,29 +22,9 @@
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingHorizontal="16dp"
-            android:paddingTop="16dp"
+            android:paddingTop="12dp"
             android:paddingBottom="8dp"
             android:background="@android:color/transparent">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Web Launcher"
-                android:textColor="@color/text"
-                android:textSize="26sp"
-                android:textStyle="bold"
-                android:letterSpacing="-0.03"
-                android:layout_marginBottom="4dp"
-                android:layout_marginStart="4dp" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Le tue app, un tap"
-                android:textColor="@color/text_muted"
-                android:textSize="13sp"
-                android:layout_marginBottom="14dp"
-                android:layout_marginStart="4dp" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
