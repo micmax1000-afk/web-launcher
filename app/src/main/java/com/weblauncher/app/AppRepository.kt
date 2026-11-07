@@ -1,9 +1,12 @@
 package com.weblauncher.app
 
 import android.content.Context
+import androidx.appcompat.app.AppCompatDelegate
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import java.util.UUID
+
+data class RecentSite(val title: String, val url: String)
 
 class AppRepository(context: Context) {
     private val prefs = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
@@ -60,6 +63,33 @@ class AppRepository(context: Context) {
         prefs.edit().putString(KEY_BACKUP_URI, uri).apply()
     }
 
+
+    fun getThemeMode(): String = prefs.getString(KEY_THEME, "dark") ?: "dark"
+
+    fun setThemeMode(mode: String) {
+        prefs.edit().putString(KEY_THEME, mode).apply()
+    }
+
+    fun loadRecents(): MutableList<RecentSite> {
+        val json = prefs.getString(KEY_RECENTS, null) ?: return mutableListOf()
+        return try {
+            val type = object : TypeToken<MutableList<RecentSite>>() {}.type
+            gson.fromJson<MutableList<RecentSite>>(json, type) ?: mutableListOf()
+        } catch (_: Exception) { mutableListOf() }
+    }
+
+    fun addRecent(title: String, url: String) {
+        if (!url.startsWith("http")) return
+        val list = loadRecents()
+        list.removeAll { it.url == url }
+        list.add(0, RecentSite(title.ifBlank { url }, url))
+        prefs.edit().putString(KEY_RECENTS, gson.toJson(list.take(12))).apply()
+    }
+
+    fun clearRecents() {
+        prefs.edit().remove(KEY_RECENTS).apply()
+    }
+
     fun resetDefaults(): MutableList<AppItem> {
         val apps = defaultApps()
         saveApps(apps)
@@ -72,6 +102,20 @@ class AppRepository(context: Context) {
         private const val KEY_CATS = "categories"
         private const val KEY_ENGINE = "search_engine"
         private const val KEY_BACKUP_URI = "auto_backup_uri"
+        private const val KEY_THEME = "theme_mode"
+        private const val KEY_RECENTS = "recents"
+
+        fun applySavedTheme(context: Context) {
+            val mode = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
+                .getString(KEY_THEME, "dark")
+            AppCompatDelegate.setDefaultNightMode(
+                when (mode) {
+                    "light" -> AppCompatDelegate.MODE_NIGHT_NO
+                    "system" -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+                    else -> AppCompatDelegate.MODE_NIGHT_YES
+                }
+            )
+        }
 
         fun defaultCategories() = listOf(
             "AI Tools", "Viaggi", "Shopping", "Produttivita", "Intrattenimento", "Utility"

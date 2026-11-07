@@ -31,6 +31,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.isVisible
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -50,6 +51,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var homePanel: View
     private lateinit var browserPanel: View
     private lateinit var webView: WebView
+    private lateinit var recentsPanel: View
+    private lateinit var recentsList: android.widget.LinearLayout
     private lateinit var webTitle: TextView
     private lateinit var webProgress: ProgressBar
     private lateinit var iconHome: ImageView
@@ -108,6 +111,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
+        AppRepository.applySavedTheme(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -121,6 +125,8 @@ class MainActivity : AppCompatActivity() {
         webSearchHint = findViewById(R.id.webSearchHint)
         recycler = findViewById(R.id.recycler)
         webView = findViewById(R.id.webView)
+        recentsPanel = findViewById(R.id.recentsPanel)
+        recentsList = findViewById(R.id.recentsList)
         webTitle = findViewById(R.id.webTitle)
         webProgress = findViewById(R.id.webProgress)
         iconHome = findViewById(R.id.iconHome)
@@ -157,7 +163,8 @@ class MainActivity : AppCompatActivity() {
             webView.loadUrl("about:blank")
             browserHasPage = false
             webTitle.text = ""
-            showTab(TAB_HOME)
+            showTab(TAB_BROWSER)
+            updateBrowserBody()
         }
         findViewById<View>(R.id.btnWebAdd).setOnClickListener { offerAddCurrentPage() }
         findViewById<View>(R.id.btnWebExternal).setOnClickListener {
@@ -168,6 +175,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
         showTab(TAB_HOME)
+        val night = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !night
     }
 
     private fun setupLauncher() {
@@ -176,11 +186,11 @@ class MainActivity : AppCompatActivity() {
             onMenu = { item -> showAppMenu(item) },
             onReorder = { fromId, toId -> applyReorder(fromId, toId) }
         )
-        val glm = GridLayoutManager(this, 3)
+        val glm = GridLayoutManager(this, 4)
         glm.spanSizeLookup = adapter.spanSizeLookup()
         recycler.layoutManager = glm
         recycler.adapter = adapter
-        adapter.itemTouchHelper().attachToRecyclerView(recycler)
+        adapter.attachTo(recycler)
         refreshList()
     }
 
@@ -214,7 +224,13 @@ class MainActivity : AppCompatActivity() {
             }
             override fun onPageFinished(view: WebView?, url: String?) {
                 webProgress.isVisible = false
-                webTitle.text = view?.title ?: url.orEmpty()
+                val title = view?.title ?: url.orEmpty()
+                webTitle.text = title
+                if (!url.isNullOrBlank() && url.startsWith("http")) {
+                    repo.addRecent(title, url)
+                    browserHasPage = true
+                    updateBrowserBody()
+                }
             }
         }
         webView.webChromeClient = object : WebChromeClient() {
@@ -230,9 +246,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupNav() {
         findViewById<View>(R.id.navHome).setOnClickListener { showTab(TAB_HOME) }
-        findViewById<View>(R.id.navBrowser).setOnClickListener {
-            if (browserHasPage) showTab(TAB_BROWSER) else toast("Nessuna pagina aperta — tocca un'app")
-        }
+        findViewById<View>(R.id.navBrowser).setOnClickListener { showTab(TAB_BROWSER) }
         findViewById<View>(R.id.navSettings).setOnClickListener { showSettings() }
     }
 
@@ -252,6 +266,7 @@ class MainActivity : AppCompatActivity() {
         currentTab = tab
         homePanel.isVisible = tab == TAB_HOME
         browserPanel.isVisible = tab == TAB_BROWSER
+        if (tab == TAB_BROWSER) updateBrowserBody()
         val accent = ContextCompat.getColor(this, R.color.accent)
         val muted = ContextCompat.getColor(this, R.color.text_muted)
         iconHome.setColorFilter(if (tab == TAB_HOME) accent else muted)
@@ -265,6 +280,69 @@ class MainActivity : AppCompatActivity() {
         showTab(TAB_BROWSER)
         webView.loadUrl(url)
         webTitle.text = url
+        updateBrowserBody()
+    }
+
+    private fun updateBrowserBody() {
+        recentsPanel.isVisible = !browserHasPage
+        webView.isVisible = browserHasPage
+        if (!browserHasPage) renderRecents()
+    }
+
+    private fun renderRecents() {
+        recentsList.removeAllViews()
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        recentsList.addView(TextView(this).apply {
+            text = "Recenti"
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+            textSize = 20f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(4), dp(8), dp(4), dp(12))
+        })
+        val items = repo.loadRecents()
+        if (items.isEmpty()) {
+            recentsList.addView(TextView(this).apply {
+                text = "Nessuna pagina ancora. Apri un'app dalla Home."
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+                textSize = 14f
+            })
+            return
+        }
+        items.forEach { site ->
+            val card = com.google.android.material.card.MaterialCardView(this).apply {
+                radius = dp(14).toFloat()
+                setCardBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.card))
+                strokeWidth = dp(1)
+                strokeColor = ContextCompat.getColor(this@MainActivity, R.color.stroke)
+                cardElevation = 0f
+                val lp = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+                lp.bottomMargin = dp(8)
+                layoutParams = lp
+                setOnClickListener { openInBrowser(site.url) }
+            }
+            val box = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+            }
+            box.addView(TextView(this).apply {
+                text = site.title
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+                textSize = 15f
+                maxLines = 1
+            })
+            box.addView(TextView(this).apply {
+                text = site.url
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+                textSize = 12f
+                maxLines = 1
+            })
+            card.addView(box)
+            recentsList.addView(card)
+        }
     }
 
     private fun applyReorder(fromId: String, toId: String) {
@@ -339,15 +417,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun showAppMenu(item: AppItem) {
         val options = arrayOf(
+            "Sposta",
             if (item.pinned) "Rimuovi dai preferiti" else "Aggiungi ai preferiti",
-            "Modifica / Sposta categoria", "Elimina"
+            "Modifica",
+            "Elimina"
         )
         MaterialAlertDialogBuilder(this).setTitle(item.name).setItems(options) { _, which ->
             when (which) {
-                0 -> { item.pinned = !item.pinned; persistApps(); refreshList()
-                    toast(if (item.pinned) "Aggiunta ai preferiti" else "Rimossa dai preferiti") }
-                1 -> showAddEditDialog(item)
-                2 -> MaterialAlertDialogBuilder(this).setMessage("Eliminare \"${item.name}\"?")
+                0 -> adapter.startDrag(item.id)
+                1 -> {
+                    item.pinned = !item.pinned
+                    persistApps(); refreshList()
+                    toast(if (item.pinned) "Aggiunta ai preferiti" else "Rimossa dai preferiti")
+                }
+                2 -> showAddEditDialog(item)
+                3 -> MaterialAlertDialogBuilder(this).setMessage("Eliminare \"${item.name}\"?")
                     .setPositiveButton("Elimina") { _, _ ->
                         apps.removeAll { it.id == item.id }; persistApps(); refreshList(); toast("Eliminata")
                     }.setNegativeButton("Annulla", null).show()
@@ -453,6 +537,12 @@ class MainActivity : AppCompatActivity() {
         section("APP")
         row("Aggiungi web app", "Nome, URL e categoria") { dialog.dismiss(); showAddEditDialog(null) }
         row("Motore di ricerca", engine.label) { dialog.dismiss(); showSearchEnginePicker() }
+        val themeLabel = when (repo.getThemeMode()) {
+            "light" -> "Chiaro"
+            "system" -> "Sistema"
+            else -> "Scuro"
+        }
+        row("Tema", themeLabel) { dialog.dismiss(); showThemePicker() }
         section("PRIVACY")
         row("Password e compilazione", "Autofill di Android") { dialog.dismiss(); showPasswordInfo() }
         row("Cancella cronologia") { dialog.dismiss(); confirmClear("Cancellare la cronologia del browser?") { webView.clearHistory(); toast("Cronologia cancellata") } }
@@ -730,6 +820,22 @@ class MainActivity : AppCompatActivity() {
             .setSingleChoiceItems(labels, current) { dialog, which ->
                 repo.setSearchEngine(engines[which])
                 toast("Motore: ${engines[which].label}")
+                dialog.dismiss()
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
+
+    private fun showThemePicker() {
+        val modes = arrayOf("dark", "light", "system")
+        val labels = arrayOf("Scuro", "Chiaro", "Sistema")
+        val current = modes.indexOf(repo.getThemeMode()).coerceAtLeast(0)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Tema")
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                repo.setThemeMode(modes[which])
+                AppRepository.applySavedTheme(this)
                 dialog.dismiss()
             }
             .setNegativeButton("Annulla", null)

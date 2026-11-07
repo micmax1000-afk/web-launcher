@@ -106,7 +106,7 @@ class LauncherAdapter(
 
     fun spanSizeLookup() = object : GridLayoutManager.SpanSizeLookup() {
         override fun getSpanSize(position: Int): Int {
-            return if (rows.getOrNull(position) is ListRow.Header) 3 else 1
+            return if (rows.getOrNull(position) is ListRow.Header) 4 else 1
         }
     }
 
@@ -130,7 +130,7 @@ class LauncherAdapter(
 
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
 
-            override fun isLongPressDragEnabled(): Boolean = true
+            override fun isLongPressDragEnabled(): Boolean = false
 
             override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
                 super.onSelectedChanged(viewHolder, actionState)
@@ -150,7 +150,24 @@ class LauncherAdapter(
                 viewHolder.itemView.elevation = 0f
             }
         }
-        return ItemTouchHelper(cb)
+        val helper = ItemTouchHelper(cb)
+        touchHelper = helper
+        return helper
+    }
+
+    private var touchHelper: ItemTouchHelper? = null
+    private var attached: RecyclerView? = null
+
+    fun attachTo(recyclerView: RecyclerView) {
+        attached = recyclerView
+        (touchHelper ?: itemTouchHelper()).attachToRecyclerView(recyclerView)
+    }
+
+    fun startDrag(appId: String) {
+        val pos = rows.indexOfFirst { (it as? ListRow.App)?.item?.id == appId }
+        if (pos < 0) return
+        val vh = attached?.findViewHolderForAdapterPosition(pos) ?: return
+        touchHelper?.startDrag(vh)
     }
 
     inner class HeaderVH(view: View) : RecyclerView.ViewHolder(view) {
@@ -190,9 +207,12 @@ class LauncherAdapter(
                 icon.visibility = View.GONE
             }
 
+            menuBtn.visibility = View.GONE
             itemView.setOnClickListener { onClick(item) }
-            itemView.setOnLongClickListener(null)
-            menuBtn.setOnClickListener { onMenu(item) }
+            itemView.setOnLongClickListener {
+                onMenu(item)
+                true
+            }
         }
     }
 }

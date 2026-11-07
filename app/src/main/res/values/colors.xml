@@ -1,19 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#0A0E17</color>
-    <color name="bg_elevated">#121826</color>
-    <color name="card">#1A2333</color>
-    <color name="card_pressed">#243044</color>
-    <color name="text">#F0F4FA</color>
-    <color name="text_muted">#8B9BB4</color>
-    <color name="accent">#5B8CFF</color>
-    <color name="accent_soft">#335B8CFF</color>
-    <color name="accent_glow">#1A5B8CFF</color>
-    <color name="danger">#FF6B7A</color>
-    <color name="star">#FFC14D</color>
-    <color name="stroke">#2A3548</color>
-    <color name="stroke_soft">#1E2838</color>
+    <color name="bg">#F3F5FA</color>
+    <color name="bg_elevated">#FFFFFF</color>
+    <color name="card">#FFFFFF</color>
+    <color name="card_pressed">#E7ECF5</color>
+    <color name="text">#121826</color>
+    <color name="text_muted">#5C6B82</color>
+    <color name="accent">#3D6EF5</color>
+    <color name="accent_soft">#333D6EF5</color>
+    <color name="accent_glow">#1A3D6EF5</color>
+    <color name="danger">#D64555</color>
+    <color name="star">#E0A020</color>
+    <color name="stroke">#E1E6F0</color>
+    <color name="stroke_soft">#EEF1F6</color>
     <color name="ic_launcher_background">#0A0E17</color>
-    <color name="nav_indicator">#5B8CFF</color>
-    <color name="search_bg">#151D2C</color>
+    <color name="nav_indicator">#3D6EF5</color>
+    <color name="search_bg">#EEF2F8</color>
+    <color name="icon_tile">#F7F8FC</color>
 </resources>
