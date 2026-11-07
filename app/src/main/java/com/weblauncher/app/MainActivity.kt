@@ -1112,6 +1112,21 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun showAccentPicker() {
+        val modes = arrayOf("blue", "amber", "green")
+        val labels = arrayOf("Blu", "Ambra", "Verde")
+        val current = modes.indexOf(repo.getAccent()).coerceAtLeast(0)
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Colore")
+            .setSingleChoiceItems(labels, current) { dialog, which ->
+                repo.setAccent(modes[which])
+                dialog.dismiss()
+                recreate()
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
     private fun toast(msg: String) { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
 
     private class WebTab(
