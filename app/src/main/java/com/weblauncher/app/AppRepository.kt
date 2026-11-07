@@ -54,6 +54,12 @@ class AppRepository(context: Context) {
         prefs.edit().putString(KEY_ENGINE, engine.name).apply()
     }
 
+    fun getAutoBackupUri(): String? = prefs.getString(KEY_BACKUP_URI, null)?.takeIf { it.isNotBlank() }
+
+    fun setAutoBackupUri(uri: String?) {
+        prefs.edit().putString(KEY_BACKUP_URI, uri).apply()
+    }
+
     fun resetDefaults(): MutableList<AppItem> {
         val apps = defaultApps()
         saveApps(apps)
@@ -65,6 +71,7 @@ class AppRepository(context: Context) {
         private const val KEY_APPS = "apps"
         private const val KEY_CATS = "categories"
         private const val KEY_ENGINE = "search_engine"
+        private const val KEY_BACKUP_URI = "auto_backup_uri"
 
         fun defaultCategories() = listOf(
             "AI Tools", "Viaggi", "Shopping", "Produttivita", "Intrattenimento", "Utility"

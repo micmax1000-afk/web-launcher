@@ -84,6 +84,22 @@ class MainActivity : AppCompatActivity() {
         if (uri != null) writeBackupToUri(uri)
     }
 
+    private val autoBackupLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != RESULT_OK) return@registerForActivityResult
+        val uri = result.data?.data ?: return@registerForActivityResult
+        try {
+            contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+        } catch (_: Exception) { }
+        repo.setAutoBackupUri(uri.toString())
+        writeBackupToUri(uri, quiet = true)
+        toast("Backup automatico attivo")
+    }
+
     private val importLauncher = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -217,7 +233,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.navBrowser).setOnClickListener {
             if (browserHasPage) showTab(TAB_BROWSER) else toast("Nessuna pagina aperta — tocca un'app")
         }
-        findViewById<View>(R.id.navVoice).setOnClickListener { requestMicAndListen() }
         findViewById<View>(R.id.navSettings).setOnClickListener { showSettings() }
     }
 
@@ -258,7 +273,7 @@ class MainActivity : AppCompatActivity() {
         if (fromIdx < 0 || toIdx < 0 || fromIdx == toIdx) return
         val item = apps.removeAt(fromIdx)
         apps.add(toIdx, item)
-        repo.saveApps(apps)
+        persistApps()
     }
 
     private fun refreshList() {
@@ -329,12 +344,12 @@ class MainActivity : AppCompatActivity() {
         )
         MaterialAlertDialogBuilder(this).setTitle(item.name).setItems(options) { _, which ->
             when (which) {
-                0 -> { item.pinned = !item.pinned; repo.saveApps(apps); refreshList()
+                0 -> { item.pinned = !item.pinned; persistApps(); refreshList()
                     toast(if (item.pinned) "Aggiunta ai preferiti" else "Rimossa dai preferiti") }
                 1 -> showAddEditDialog(item)
                 2 -> MaterialAlertDialogBuilder(this).setMessage("Eliminare \"${item.name}\"?")
                     .setPositiveButton("Elimina") { _, _ ->
-                        apps.removeAll { it.id == item.id }; repo.saveApps(apps); refreshList(); toast("Eliminata")
+                        apps.removeAll { it.id == item.id }; persistApps(); refreshList(); toast("Eliminata")
                     }.setNegativeButton("Annulla", null).show()
             }
         }.show()
@@ -372,7 +387,7 @@ class MainActivity : AppCompatActivity() {
                     existing.name = name; existing.url = normalizeUrl(url); existing.category = cat
                     toast("App aggiornata")
                 }
-                repo.saveApps(apps); refreshList()
+                persistApps(); refreshList()
             }.setNegativeButton("Annulla", null).show()
     }
 
@@ -445,6 +460,25 @@ class MainActivity : AppCompatActivity() {
         row("Cancella cache") { dialog.dismiss(); confirmClear("Cancellare la cache?") { webView.clearCache(true); toast("Cache cancellata") } }
         row("Cancella tutti i dati", "Cronologia, cookie, cache") { dialog.dismiss(); confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
         section("BACKUP")
+        val autoOn = repo.getAutoBackupUri() != null
+        row(
+            if (autoOn) "Backup automatico su Drive" else "Attiva backup automatico su Drive",
+            if (autoOn) "Attivo — si aggiorna da solo" else "Scegli un file su Drive, una volta"
+        ) {
+            dialog.dismiss()
+            if (autoOn) {
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Backup automatico")
+                    .setMessage("Ogni modifica viene scritta sul file Drive che hai scelto.")
+                    .setPositiveButton("Cambia file") { _, _ -> startAutoBackupSetup() }
+                    .setNeutralButton("Disattiva") { _, _ ->
+                        repo.setAutoBackupUri(null)
+                        toast("Backup automatico disattivato")
+                    }
+                    .setNegativeButton("Chiudi", null)
+                    .show()
+            } else startAutoBackupSetup()
+        }
         row("Backup su file / Drive") { dialog.dismiss(); exportLauncher.launch("web-launcher-backup.json") }
         row("Ripristina da file / Drive") { dialog.dismiss(); importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
         row("Condividi backup") { dialog.dismiss();
@@ -590,7 +624,7 @@ class MainActivity : AppCompatActivity() {
         if (existing != null) {
             if (pinned && !existing.pinned) {
                 existing.pinned = true
-                repo.saveApps(apps)
+                persistApps()
                 refreshList()
                 toast("Già presente — aggiunta ai preferiti")
             } else toast("Questa pagina è già tra le app")
@@ -602,12 +636,36 @@ class MainActivity : AppCompatActivity() {
             repo.saveCategories(categories)
         }
         apps.add(AppItem(UUID.randomUUID().toString(), name.take(40), normalized, cat, pinned, apps.size))
-        repo.saveApps(apps)
+        persistApps()
         refreshList()
         toast(if (pinned) "Aggiunta ai preferiti" else "Aggiunta alla home")
     }
 
-    private fun writeBackupToUri(uri: Uri) {
+    private fun persistApps() {
+        repo.saveApps(apps)
+        autoBackupNow()
+    }
+
+    private fun autoBackupNow() {
+        val raw = repo.getAutoBackupUri() ?: return
+        writeBackupToUri(Uri.parse(raw), quiet = true)
+    }
+
+    private fun startAutoBackupSetup() {
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/json"
+            putExtra(Intent.EXTRA_TITLE, "web-launcher-backup.json")
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            )
+        }
+        autoBackupLauncher.launch(intent)
+    }
+
+    private fun writeBackupToUri(uri: Uri, quiet: Boolean = false) {
         try {
             val json = com.google.gson.Gson().toJson(
                 mapOf(
@@ -618,10 +676,15 @@ class MainActivity : AppCompatActivity() {
             )
             contentResolver.openOutputStream(uri)?.use { os ->
                 os.write(json.toByteArray(Charsets.UTF_8))
-            } ?: run { toast("Impossibile scrivere il file"); return }
-            toast("Backup salvato (puoi scegliere Drive)")
+            } ?: run {
+                if (!quiet) toast("Impossibile scrivere il file")
+                else repo.setAutoBackupUri(null)
+                return
+            }
+            if (!quiet) toast("Backup salvato (puoi scegliere Drive)")
         } catch (e: Exception) {
-            toast("Errore backup: ${e.message}")
+            if (quiet) repo.setAutoBackupUri(null)
+            else toast("Errore backup: ${e.message}")
         }
     }
 
@@ -645,7 +708,7 @@ class MainActivity : AppCompatActivity() {
                 .setPositiveButton("Ripristina") { _, _ ->
                     apps = loadedApps
                     categories = loadedCats ?: repo.loadCategories()
-                    repo.saveApps(apps)
+                    persistApps()
                     repo.saveCategories(categories)
                     (map["searchEngine"] as? String)?.let { repo.setSearchEngine(SearchEngine.fromName(it)) }
                     refreshList()
