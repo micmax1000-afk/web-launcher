@@ -919,46 +919,28 @@ class MainActivity : AppCompatActivity() {
             else -> "Blu"
         }
         row("Colore", accentLabel) { dialog.dismiss(); showAccentPicker() }
+        row("App predefinite", "Cancella le tue e torna a quelle iniziali") {
+            dialog.dismiss()
+            MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite? Le icone che hai aggiunto spariscono.")
+                .setPositiveButton("Ripristina") { _, _ ->
+                    apps = repo.resetDefaults(); categories = repo.loadCategories(); refreshList(); toast("App ripristinate")
+                }.setNegativeButton("Annulla", null).show()
+        }
         section("PRIVACY")
         row("Password e compilazione", "Autofill di Android") { dialog.dismiss(); showPasswordInfo() }
         row("Cancella cronologia", "Recenti e cronologia del browser") { dialog.dismiss(); confirmClear("Cancellare cronologia e recenti?") { clearHistoryAndRecents(); toast("Cronologia cancellata") } }
         row("Cancella cookie") { dialog.dismiss(); confirmClear("Cancellare tutti i cookie?") { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); toast("Cookie cancellati") } }
         row("Cancella cache") { dialog.dismiss(); confirmClear("Cancellare la cache?") { webView.clearCache(true); toast("Cache cancellata") } }
         row("Cancella tutti i dati", "Recenti, cronologia, cookie, cache") { dialog.dismiss(); confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
-        section("BACKUP")
+        section("DATI")
         val autoOn = repo.getAutoBackupUri() != null
-        row(
-            if (autoOn) "Backup automatico su Drive" else "Attiva backup automatico su Drive",
-            if (autoOn) "Attivo — si aggiorna da solo" else "Scegli un file su Drive, una volta"
-        ) {
+        row("Backup", if (autoOn) "Automatico attivo · file, Drive o condividi" else "File, Drive o condivisione") {
             dialog.dismiss()
-            if (autoOn) {
-                MaterialAlertDialogBuilder(this)
-                    .setTitle("Backup automatico")
-                    .setMessage("Ogni modifica viene scritta sul file Drive che hai scelto.")
-                    .setPositiveButton("Cambia file") { _, _ -> startAutoBackupSetup() }
-                    .setNeutralButton("Disattiva") { _, _ ->
-                        repo.setAutoBackupUri(null)
-                        toast("Backup automatico disattivato")
-                    }
-                    .setNegativeButton("Chiudi", null)
-                    .show()
-            } else startAutoBackupSetup()
+            showBackupMenu()
         }
-        row("Backup su file / Drive") { dialog.dismiss(); exportLauncher.launch("web-launcher-backup.json") }
-        row("Ripristina da file / Drive") { dialog.dismiss(); importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
-        row("Condividi backup") { dialog.dismiss();
-            val json = com.google.gson.Gson().toJson(mapOf("apps" to apps, "categories" to categories))
-            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                type = "application/json"; putExtra(Intent.EXTRA_TEXT, json)
-            }, "Condividi backup"))
-        }
-        row("Reset app predefinite") {
+        row("Ripristina", "Da un file di backup") {
             dialog.dismiss()
-            MaterialAlertDialogBuilder(this).setMessage("Ripristinare le app predefinite?")
-                .setPositiveButton("Reset") { _, _ ->
-                    apps = repo.resetDefaults(); categories = repo.loadCategories(); refreshList(); toast("App ripristinate")
-                }.setNegativeButton("Annulla", null).show()
+            importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
         }
         section("AIUTO")
         row("Microfono", "Permesso voce") {
@@ -971,6 +953,55 @@ class MainActivity : AppCompatActivity() {
         scroll.addView(root)
         dialog.show()
         dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), (resources.displayMetrics.heightPixels * 0.78f).toInt())
+    }
+
+    private fun showBackupMenu() {
+        val autoOn = repo.getAutoBackupUri() != null
+        val options = arrayOf(
+            "Salva su file o Drive",
+            "Condividi",
+            if (autoOn) "Backup automatico: attivo" else "Attiva backup automatico"
+        )
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Backup")
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> exportLauncher.launch("web-launcher-backup.json")
+                    1 -> shareBackup()
+                    2 -> if (autoOn) showAutoBackupManager() else startAutoBackupSetup()
+                }
+            }
+            .setNegativeButton("Chiudi", null)
+            .show()
+    }
+
+    private fun showAutoBackupManager() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Backup automatico")
+            .setMessage("Ogni modifica viene scritta sul file che hai scelto, anche su Drive.")
+            .setPositiveButton("Cambia file") { _, _ -> startAutoBackupSetup() }
+            .setNeutralButton("Disattiva") { _, _ ->
+                repo.setAutoBackupUri(null)
+                toast("Backup automatico disattivato")
+            }
+            .setNegativeButton("Chiudi", null)
+            .show()
+    }
+
+    private fun backupJson(): String = com.google.gson.Gson().toJson(
+        mapOf(
+            "apps" to apps,
+            "categories" to categories,
+            "searchEngine" to repo.getSearchEngine().name
+        )
+    )
+
+    private fun shareBackup() {
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_TEXT, backupJson())
+            putExtra(Intent.EXTRA_SUBJECT, "web-launcher-backup.json")
+        }, "Condividi backup"))
     }
 
     private fun confirmClear(message: String, action: () -> Unit) {
@@ -1139,13 +1170,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun writeBackupToUri(uri: Uri, quiet: Boolean = false) {
         try {
-            val json = com.google.gson.Gson().toJson(
-                mapOf(
-                    "apps" to apps,
-                    "categories" to categories,
-                    "searchEngine" to repo.getSearchEngine().name
-                )
-            )
+            val json = backupJson()
             contentResolver.openOutputStream(uri)?.use { os ->
                 os.write(json.toByteArray(Charsets.UTF_8))
             } ?: run {
