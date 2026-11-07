@@ -1,14 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<TextView
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/sectionTitle"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:paddingHorizontal="10dp"
-    android:paddingTop="18dp"
-    android:paddingBottom="6dp"
-    android:textColor="@color/text_muted"
-    android:textSize="11sp"
-    android:textAllCaps="true"
-    android:letterSpacing="0.14"
-    android:textStyle="bold" />
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingHorizontal="12dp"
+    android:paddingTop="20dp"
+    android:paddingBottom="8dp">
+
+    <View
+        android:layout_width="6dp"
+        android:layout_height="6dp"
+        android:background="@drawable/bg_section_dot"
+        android:layout_marginEnd="8dp" />
+
+    <TextView
+        android:id="@+id/sectionTitle"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="@color/text_muted"
+        android:textSize="12sp"
+        android:textAllCaps="true"
+        android:letterSpacing="0.12"
+        android:textStyle="bold" />
+</LinearLayout>

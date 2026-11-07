@@ -4,13 +4,14 @@
         <item name="colorPrimary">@color/accent</item>
         <item name="colorOnPrimary">@android:color/white</item>
         <item name="colorSecondary">@color/accent</item>
-        <item name="android:statusBarColor">@color/bg_elevated</item>
-        <item name="android:navigationBarColor">@color/bg_elevated</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:colorBackground">@color/bg</item>
         <item name="colorSurface">@color/bg_elevated</item>
         <item name="colorOnSurface">@color/text</item>
         <item name="android:textColorPrimary">@color/text</item>
         <item name="android:textColorSecondary">@color/text_muted</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 </resources>
