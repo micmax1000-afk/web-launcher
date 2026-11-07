@@ -17,4 +17,6 @@
     <color name="nav_indicator">#5B8CFF</color>
     <color name="search_bg">#151D2C</color>
     <color name="icon_tile">#222C3F</color>
+    <color name="accent_amber">#E2A15A</color>
+    <color name="accent_green">#2FBF71</color>
 </resources>

@@ -21,6 +21,7 @@ sealed class ListRow {
 class LauncherAdapter(
     private val onClick: (AppItem) -> Unit,
     private val onMenu: (AppItem) -> Unit,
+    private val onHeader: (String) -> Unit,
     private val onReorder: (fromAppId: String, toAppId: String) -> Unit
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
@@ -172,7 +173,13 @@ class LauncherAdapter(
 
     inner class HeaderVH(view: View) : RecyclerView.ViewHolder(view) {
         private val title: TextView = view.findViewById(R.id.sectionTitle)
-        fun bind(t: String) { title.text = t }
+        fun bind(t: String) {
+            title.text = t
+            itemView.setOnLongClickListener {
+                onHeader(t)
+                true
+            }
+        }
     }
 
     inner class AppVH(view: View) : RecyclerView.ViewHolder(view) {
@@ -188,11 +195,12 @@ class LauncherAdapter(
             initials.visibility = View.VISIBLE
             pin.visibility = if (item.pinned) View.VISIBLE else View.GONE
 
+            val local = item.iconPath?.let { java.io.File(it) }?.takeIf { it.exists() }
             val host = try { Uri.parse(item.url).host } catch (_: Exception) { null }
-            if (!host.isNullOrBlank()) {
-                val fav = "https://www.google.com/s2/favicons?domain=$host&sz=128"
+            val source: Any? = local ?: host?.let { "https://www.google.com/s2/favicons?domain=$it&sz=128" }
+            if (source != null) {
                 icon.visibility = View.VISIBLE
-                icon.load(fav) {
+                icon.load(source) {
                     crossfade(true)
                     transformations(RoundedCornersTransformation(16f))
                     listener(

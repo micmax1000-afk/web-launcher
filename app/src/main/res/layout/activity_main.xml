@@ -73,7 +73,7 @@
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:src="@drawable/ic_nav_mic"
                         android:contentDescription="@string/voice"
-                        app:tint="@color/accent" />
+                        app:tint="?attr/colorPrimary" />
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
@@ -85,7 +85,7 @@
             android:paddingHorizontal="20dp"
             android:paddingTop="8dp"
             android:paddingBottom="2dp"
-            android:textColor="@color/accent"
+            android:textColor="?attr/colorPrimary"
             android:textSize="13sp"
             android:textStyle="bold"
             android:visibility="gone" />
@@ -114,32 +114,72 @@
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="52dp"
+            android:layout_height="48dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@color/bg_elevated"
-            android:paddingHorizontal="6dp">
+            android:paddingHorizontal="4dp">
 
-            <ImageButton android:id="@+id/btnWebBack" android:layout_width="42dp" android:layout_height="42dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_previous" app:tint="@color/text" android:contentDescription="Indietro" />
-            <ImageButton android:id="@+id/btnWebForward" android:layout_width="42dp" android:layout_height="42dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_next" app:tint="@color/text" android:contentDescription="Avanti" />
-            <ImageButton android:id="@+id/btnWebRefresh" android:layout_width="42dp" android:layout_height="42dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_popup_sync" app:tint="@color/text" android:contentDescription="Aggiorna" />
+            <ImageButton android:id="@+id/btnWebBack" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_previous" app:tint="@color/text" android:contentDescription="Indietro" />
+            <ImageButton android:id="@+id/btnWebForward" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_next" app:tint="@color/text" android:contentDescription="Avanti" />
 
-            <TextView android:id="@+id/webTitle" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:textColor="@color/text" android:textSize="13sp" android:maxLines="1" android:ellipsize="end" android:paddingHorizontal="8dp" android:textStyle="bold" />
+            <EditText
+                android:id="@+id/webAddress"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_search"
+                android:hint="Cerca o scrivi un indirizzo"
+                android:textColor="@color/text"
+                android:textColorHint="@color/text_muted"
+                android:textSize="13sp"
+                android:paddingHorizontal="12dp"
+                android:singleLine="true"
+                android:imeOptions="actionGo"
+                android:inputType="textUri"
+                android:importantForAutofill="no" />
 
+            <ImageButton android:id="@+id/btnWebRefresh" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_popup_sync" app:tint="@color/text" android:contentDescription="Aggiorna" />
             <ImageButton
                 android:id="@+id/btnWebAdd"
-                android:layout_width="42dp"
-                android:layout_height="42dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:src="@android:drawable/btn_star_big_off"
                 app:tint="@color/star"
                 android:contentDescription="Aggiungi a home" />
-
-            <ImageButton android:id="@+id/btnWebExternal" android:layout_width="42dp" android:layout_height="42dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_menu_share" app:tint="@color/text_muted" android:contentDescription="Apri esterno" />
-            <ImageButton android:id="@+id/btnWebClose" android:layout_width="42dp" android:layout_height="42dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_menu_close_clear_cancel" app:tint="@color/danger" android:contentDescription="Chiudi" />
+            <ImageButton android:id="@+id/btnWebMenu" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_menu_more" app:tint="@color/text" android:contentDescription="Menu browser" />
+            <TextView android:id="@+id/webTitle" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
         </LinearLayout>
 
-        <ProgressBar android:id="@+id/webProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="3dp" android:max="100" android:progress="0" android:progressTint="@color/accent" android:visibility="gone" />
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:background="@color/bg_elevated"
+            android:scrollbars="none">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:gravity="center_vertical"
+                android:paddingHorizontal="8dp">
+                <LinearLayout
+                    android:id="@+id/tabStrip"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical" />
+                <ImageButton
+                    android:id="@+id/btnNewTab"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:src="@android:drawable/ic_input_add"
+                    app:tint="?attr/colorPrimary"
+                    android:contentDescription="Nuova scheda" />
+            </LinearLayout>
+        </HorizontalScrollView>
+
+        <ProgressBar android:id="@+id/webProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="3dp" android:max="100" android:progress="0" android:progressTint="?attr/colorPrimary" android:visibility="gone" />
 
         <ScrollView
             android:id="@+id/recentsPanel"
@@ -180,8 +220,8 @@
             android:paddingHorizontal="6dp">
 
             <LinearLayout android:id="@+id/navHome" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">
-                <ImageView android:id="@+id/iconHome" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_home" app:tint="@color/accent" android:contentDescription="@string/home" />
-                <TextView android:id="@+id/labelHome" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/home" android:textColor="@color/accent" android:textSize="11sp" android:textStyle="bold" android:layout_marginTop="3dp" />
+                <ImageView android:id="@+id/iconHome" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_home" app:tint="?attr/colorPrimary" android:contentDescription="@string/home" />
+                <TextView android:id="@+id/labelHome" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/home" android:textColor="?attr/colorPrimary" android:textSize="11sp" android:textStyle="bold" android:layout_marginTop="3dp" />
             </LinearLayout>
 
             <LinearLayout android:id="@+id/navBrowser" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">

@@ -6,5 +6,7 @@ data class AppItem(
     var url: String,
     var category: String,
     var pinned: Boolean = false,
-    var sortOrder: Int = 0
+    var sortOrder: Int = 0,
+    var iconPath: String? = null,
+    var openCount: Int = 0
 )

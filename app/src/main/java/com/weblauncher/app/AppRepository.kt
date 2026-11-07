@@ -90,6 +90,38 @@ class AppRepository(context: Context) {
         prefs.edit().remove(KEY_RECENTS).apply()
     }
 
+
+    fun getAccent(): String = prefs.getString(KEY_ACCENT, "blue") ?: "blue"
+
+    fun setAccent(name: String) {
+        prefs.edit().putString(KEY_ACCENT, name).apply()
+    }
+
+    fun renameCategory(from: String, to: String) {
+        val i = loadCategories().indexOf(from)
+        if (i < 0 || to.isBlank() || to == from) return
+        val cats = loadCategories()
+        cats[i] = to
+        saveCategories(cats)
+    }
+
+    fun deleteCategory(name: String) {
+        val cats = loadCategories()
+        cats.remove(name)
+        if (cats.isEmpty()) cats.add("Utility")
+        saveCategories(cats)
+    }
+
+    fun moveCategory(name: String, delta: Int) {
+        val cats = loadCategories()
+        val i = cats.indexOf(name)
+        val j = i + delta
+        if (i < 0 || j !in cats.indices) return
+        val item = cats.removeAt(i)
+        cats.add(j, item)
+        saveCategories(cats)
+    }
+
     fun resetDefaults(): MutableList<AppItem> {
         val apps = defaultApps()
         saveApps(apps)
@@ -103,7 +135,18 @@ class AppRepository(context: Context) {
         private const val KEY_ENGINE = "search_engine"
         private const val KEY_BACKUP_URI = "auto_backup_uri"
         private const val KEY_THEME = "theme_mode"
+        private const val KEY_ACCENT = "accent"
         private const val KEY_RECENTS = "recents"
+
+        fun accentStyle(context: Context): Int {
+            val accent = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
+                .getString(KEY_ACCENT, "blue")
+            return when (accent) {
+                "amber" -> R.style.Theme_WebLauncher_Amber
+                "green" -> R.style.Theme_WebLauncher_Green
+                else -> R.style.Theme_WebLauncher
+            }
+        }
 
         fun applySavedTheme(context: Context) {
             val mode = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)

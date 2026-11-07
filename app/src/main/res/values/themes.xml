@@ -13,4 +13,14 @@
         <item name="android:textColorPrimary">@color/text</item>
         <item name="android:textColorSecondary">@color/text_muted</item>
     </style>
+
+    <style name="Theme.WebLauncher.Amber" parent="Theme.WebLauncher">
+        <item name="colorPrimary">@color/accent_amber</item>
+        <item name="colorSecondary">@color/accent_amber</item>
+    </style>
+    <style name="Theme.WebLauncher.Green" parent="Theme.WebLauncher">
+        <item name="colorPrimary">@color/accent_green</item>
+        <item name="colorSecondary">@color/accent_green</item>
+    </style>
 </resources>
+
