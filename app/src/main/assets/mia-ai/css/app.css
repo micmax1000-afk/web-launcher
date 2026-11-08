@@ -242,7 +242,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .sheet-body { overflow-y: auto; padding: 4px 18px 18px; }
 .field { display: block; margin-top: 14px; }
 .field > span { display: block; font-size: 14px; color: var(--muted); margin-bottom: 6px; }
-.field input:not([type=range]), .field select, .field textarea {
+.field input:not([type=range]):not([type=checkbox]), .field select, .field textarea {
   width: 100%; padding: 10px 12px;
   border: 1px solid var(--border); border-radius: 12px;
   background: var(--bg); outline: none;
@@ -334,4 +334,4 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tag.free { background: rgba(34,193,195,.18); color: var(--accent-2); }
 .check-field { display: flex; align-items: flex-start; gap: 10px; }
 .check-field > span { margin: 0; color: var(--text); font-size: 15px; }
-.check-field input { width: 20px; height: 20px; margin-top: 2px; flex: none; accent-color: var(--accent); }
+.field.check-field input { width: 20px; height: 20px; margin-top: 2px; flex: none; accent-color: var(--accent); }
