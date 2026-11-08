@@ -11,8 +11,8 @@ android {
         applicationId = "com.weblauncher.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 27
-        versionName = "5.4.0"
+        versionCode = 28
+        versionName = "5.5.0"
     }
 
     buildTypes {
@@ -48,4 +48,7 @@ dependencies {
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.3.1")
+    implementation("androidx.media3:media3-session:1.3.1")
 }
