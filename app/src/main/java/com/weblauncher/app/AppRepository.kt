@@ -131,6 +131,9 @@ class AppRepository(context: Context) {
     fun searchSuggestions(): Boolean = prefs.getBoolean(KEY_SUGGEST, true)
     fun setSearchSuggestions(on: Boolean) { prefs.edit().putBoolean(KEY_SUGGEST, on).apply() }
 
+    fun aiVoice(): Boolean = prefs.getBoolean(KEY_AI_VOICE, true)
+    fun setAiVoice(on: Boolean) { prefs.edit().putBoolean(KEY_AI_VOICE, on).apply() }
+
     fun textZoom(): Int = prefs.getInt(KEY_TEXT_ZOOM, 100)
     fun setTextZoom(v: Int) { prefs.edit().putInt(KEY_TEXT_ZOOM, v).apply() }
 
@@ -224,6 +227,7 @@ class AppRepository(context: Context) {
         private const val KEY_HIDE_BARS = "hide_bars_on_scroll"
         private const val KEY_MOST_USED = "show_most_used"
         private const val KEY_SUGGEST = "search_suggestions"
+        private const val KEY_AI_VOICE = "ai_voice"
         private const val KEY_TEXT_ZOOM = "text_zoom"
         private const val KEY_DARK_SITES = "dark_sites"
         private const val KEY_TABS = "open_tabs"

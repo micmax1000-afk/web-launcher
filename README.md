@@ -26,3 +26,9 @@ L'app [mia-ai-app](https://github.com/micmax1000-afk/mia-ai-app) è inclusa in `
 e si apre dentro il browser (Impostazioni → App integrate → Mia AI).
 Microfono e lettura vocale usano la voce nativa di Android.
 Per aggiornarla: `./scripts/update-mia-ai.sh`.
+
+## AI nel launcher
+Usa provider, chiave e modello configurati in Mia AI (pagina ponte `assets/wl-ai/bridge.html`
+sulla stessa origine, con il codice dei provider di Mia AI):
+riassumi pagina, chiedi alla pagina, risposta rapida dalla ricerca, spiegazione del testo selezionato,
+comandi vocali interpretati dall'AI.

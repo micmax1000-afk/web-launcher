@@ -70,6 +70,7 @@ class MainActivity : AppCompatActivity() {
     /** Disk work (history, backup) off the UI thread: keeps scrolling and page loads smooth. */
     private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var lastRecorded = ""
+    private val ai by lazy { AiBridge(findViewById(android.R.id.content), assetLoader) }
     private val assetLoader by lazy {
         androidx.webkit.WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", androidx.webkit.WebViewAssetLoader.AssetsPathHandler(this))
@@ -295,6 +296,10 @@ class MainActivity : AppCompatActivity() {
         })
         searchInput.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) { runSearchFromBox(); true } else false
+        }
+        findViewById<View>(R.id.aiSearchHint).setOnClickListener {
+            val q = searchInput.text?.toString()?.trim().orEmpty()
+            if (q.isNotEmpty()) { searchInput.setText(""); askAi(q) }
         }
         webSearchHint.setOnClickListener {
             val q = searchInput.text?.toString()?.trim().orEmpty()
@@ -1101,6 +1106,8 @@ class MainActivity : AppCompatActivity() {
         item("Nuova scheda") { openNewTab(false) }
         item("Nuova scheda senza cronologia") { openNewTab(true) }
         item("Schede aperte (${webTabs.size})") { showTabSwitcher() }
+        item("✨ Riassumi pagina", hasPage) { summarizePage() }
+        item("✨ Chiedi alla pagina", hasPage) { askThePage() }
         item("Cronologia") { showHistoryPage() }
         item("Download") { showDownloadsPage() }
         item("Trova nella pagina", hasPage) { showFindDialog() }
@@ -1365,7 +1372,11 @@ class MainActivity : AppCompatActivity() {
             suggestList.addView(r)
         }
         if (looksLikeUrl(q)) row(R.drawable.ic_web_forward, q, "Vai al sito") { openInBrowser(normalizeUrl(q)) }
-        else row(R.drawable.ic_search, q, "Cerca con ${repo.getSearchEngine().label}") { openInBrowser(searchUrl(q)) }
+        else {
+            row(R.drawable.ic_search, q, "Cerca con ${repo.getSearchEngine().label}") { openInBrowser(searchUrl(q)) }
+            row(R.drawable.ic_ai, "Chiedi all'AI", q, com.google.android.material.color.MaterialColors.getColor(
+                this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())) { askAi(q) }
+        }
         appHits.forEach { a ->
             row(R.drawable.ic_web_star_filled, a.name, displayUrl(normalizeUrl(a.url)),
                 ContextCompat.getColor(this, R.color.star)) { openApp(a) }
@@ -1865,9 +1876,327 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         io.shutdown()
+        runCatching { ai.destroy() }
         tts?.shutdown()
         tts = null
         super.onDestroy()
+    }
+
+    // ======================= AI (provider and key from Mia AI) =======================
+
+    private fun aiReady(): Boolean {
+        if (!ai.supported()) { toast("Aggiorna \"Android System WebView\" dal Play Store per usare l'AI"); return false }
+        return true
+    }
+
+    /** Markdown subset -> styled text (bold, code, headings, bullet lists). */
+    private fun formatAi(md: String): CharSequence {
+        val html = md.trim().lines().joinToString("<br>") { raw ->
+            var line = android.text.TextUtils.htmlEncode(raw)
+            val heading = Regex("^#{1,6}\\s+(.*)").find(line)
+            if (heading != null) line = "<b>${heading.groupValues[1]}</b>"
+            line = line.replace(Regex("^\\s*[-*•]\\s+"), "&nbsp;&nbsp;• ")
+            line = line.replace(Regex("\\*\\*(.+?)\\*\\*"), "<b>$1</b>")
+            line = line.replace(Regex("(?<![*\\w])\\*(?!\\s)(.+?)(?<!\\s)\\*(?![*\\w])"), "<i>$1</i>")
+            line = line.replace(Regex("`([^`]+)`"), "<tt>$1</tt>")
+            line
+        }
+        return androidx.core.text.HtmlCompat.fromHtml(html, androidx.core.text.HtmlCompat.FROM_HTML_MODE_COMPACT)
+    }
+
+    private fun jsString(raw: String?): String =
+        runCatching { org.json.JSONTokener(raw ?: "").nextValue() as? String }.getOrNull().orEmpty()
+
+    /** Visible text of the current page (trimmed), for summaries and questions. */
+    private fun readPage(onText: (title: String, url: String, text: String) -> Unit) {
+        val url = webView.url?.takeIf { it.startsWith("http") || MiaAi.isMiaUrl(it) }
+        if (url == null || !browserHasPage) { toast("Apri prima una pagina"); return }
+        val js = "(function(){var b=document.body;var t=b?(b.innerText||''):'';" +
+            "t=t.replace(/\\n{3,}/g,'\\n\\n');return t.substring(0,24000);})()"
+        webView.evaluateJavascript(js) { raw ->
+            val text = jsString(raw).trim()
+            if (text.length < 40) toast("Questa pagina ha poco testo da leggere")
+            else onText(webView.title.orEmpty(), url, text)
+        }
+    }
+
+    private fun summarizePage() {
+        if (!aiReady()) return
+        readPage { title, url, text ->
+            showAiSheet(
+                title = "Riassunto",
+                context = pageContext(title, url, text),
+                firstQuestion = "Riassumi questa pagina in italiano: una frase iniziale, poi 5-8 punti chiave. Niente introduzioni.",
+                showFirstQuestion = false
+            )
+        }
+    }
+
+    private fun askThePage() {
+        if (!aiReady()) return
+        readPage { title, url, text ->
+            showAiSheet(title = "Chiedi alla pagina", context = pageContext(title, url, text), firstQuestion = null,
+                hint = "Es. quanto costa? quali sono gli orari?")
+        }
+    }
+
+    private fun pageContext(title: String, url: String, text: String) =
+        "Ecco il contenuto della pagina web «$title» ($url). Rispondi usando queste informazioni; " +
+            "se la risposta non c'è, dillo.\n\n--- PAGINA ---\n$text\n--- FINE PAGINA ---\n\n"
+
+    private fun askAi(question: String) {
+        if (!aiReady()) return
+        showAiSheet(title = "Risposta AI", context = null, firstQuestion = question)
+    }
+
+    private fun explainSelection(sel: String) {
+        if (!aiReady()) return
+        showAiSheet(
+            title = "Spiegazione",
+            context = null,
+            firstQuestion = "Spiega in modo semplice, in italiano, questo testo. Se non è in italiano, prima traducilo.\n\n«${sel.take(4000)}»",
+            showFirstQuestion = false,
+            quote = sel.take(300)
+        )
+    }
+
+    /**
+     * Bottom sheet chat: the page context (if any) is prepended to the first question,
+     * follow-up questions keep the whole conversation.
+     */
+    private fun showAiSheet(
+        title: String,
+        context: String?,
+        firstQuestion: String?,
+        showFirstQuestion: Boolean = true,
+        hint: String = "Fai un'altra domanda…",
+        quote: String? = null
+    ) {
+        val palette = AppRepository.palette(this)
+        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        val history = mutableListOf<Pair<String, String>>()
+        var running = 0
+
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(18), dp(4), dp(18), dp(12))
+        }
+        val head = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(8))
+        }
+        head.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_ai); setColorFilter(accent)
+            layoutParams = android.widget.LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(10) }
+        })
+        val headBox = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        headBox.addView(TextView(this).apply {
+            text = title; textSize = 19f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text)
+        })
+        val modelLabel = TextView(this).apply { textSize = 12f; setTextColor(palette.textMuted) }
+        headBox.addView(modelLabel)
+        head.addView(headBox)
+        root.addView(head)
+        ai.status { ok, label -> modelLabel.text = if (ok) label else "Da configurare in Mia AI" }
+
+        val chat = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        val scroll = android.widget.ScrollView(this).apply {
+            addView(chat)
+            layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+        }
+        root.addView(scroll)
+        if (quote != null) chat.addView(TextView(this).apply {
+            text = "«$quote»"; textSize = 14f; setTextColor(palette.textMuted)
+            setTypeface(typeface, android.graphics.Typeface.ITALIC)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 12f * d; setColor(palette.iconTile) }
+        })
+
+        val input = EditText(this).apply {
+            this.hint = hint
+            textSize = 15f
+            setTextColor(palette.text); setHintTextColor(palette.textMuted)
+            maxLines = 4
+            imeOptions = EditorInfo.IME_ACTION_SEND
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 22f * d; setColor(palette.iconTile); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+            }
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val sendBtn = android.widget.ImageButton(this).apply {
+            setImageResource(R.drawable.ic_web_forward)
+            setColorFilter(android.graphics.Color.WHITE)
+            background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(accent) }
+            contentDescription = "Invia"
+            layoutParams = android.widget.LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginStart = dp(8) }
+        }
+        val inputRow = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, dp(10), 0, 0)
+            addView(input); addView(sendBtn)
+        }
+        root.addView(inputRow)
+
+        fun bubble(text: CharSequence, user: Boolean): TextView = TextView(this).apply {
+            this.text = text
+            textSize = if (user) 14f else 16f
+            setLineSpacing(0f, 1.15f)
+            setTextColor(if (user) palette.textMuted else palette.text)
+            if (user) setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextIsSelectable(!user)
+            setPadding(0, dp(if (user) 14 else 6), 0, dp(6))
+            chat.addView(this)
+        }
+
+        fun actions(answer: String) {
+            val row = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
+            fun chip(label: String, onClick: () -> Unit) = row.addView(TextView(this).apply {
+                text = label; textSize = 13f; setTextColor(accent)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 16f * d; setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+                }
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(8) }
+                setOnClickListener { onClick() }
+            })
+            chip("Copia") { copyText("Risposta AI", answer) }
+            chip("Condividi") {
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"; putExtra(Intent.EXTRA_TEXT, answer)
+                }, "Condividi risposta"))
+            }
+            chip("Leggi") { speak(answer, 1f) }
+            chat.addView(row)
+        }
+
+        fun send(question: String, visible: Boolean) {
+            if (question.isBlank() || running != 0) return
+            val content = if (history.isEmpty() && context != null) context + question else question
+            history.add("user" to content)
+            if (visible) bubble(question, true)
+            val answerView = bubble("…", false)
+            input.setText("")
+            sendBtn.alpha = 0.4f
+            scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+            running = ai.ask(history, AI_SYSTEM, object : AiBridge.Listener {
+                override fun onPartial(text: String) {
+                    answerView.text = formatAi(text)
+                }
+                override fun onDone(text: String, model: String) {
+                    running = 0; sendBtn.alpha = 1f
+                    history.add("assistant" to text)
+                    answerView.text = formatAi(text)
+                    if (model.isNotBlank()) modelLabel.text = model
+                    actions(text)
+                    scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+                }
+                override fun onError(message: String, noKey: Boolean) {
+                    running = 0; sendBtn.alpha = 1f
+                    history.removeAt(history.lastIndex)
+                    answerView.text = message
+                    answerView.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.danger))
+                    if (noKey) chat.addView(com.google.android.material.button.MaterialButton(this@MainActivity).apply {
+                        text = "Configura in Mia AI"
+                        isAllCaps = false
+                        setOnClickListener { sheet.dismiss(); openMiaAi() }
+                    })
+                }
+            })
+        }
+        sendBtn.setOnClickListener { send(input.text?.toString()?.trim().orEmpty(), true) }
+        input.setOnEditorActionListener { _, id, _ ->
+            if (id == EditorInfo.IME_ACTION_SEND) { send(input.text?.toString()?.trim().orEmpty(), true); true } else false
+        }
+        sheet.setOnDismissListener { if (running != 0) ai.cancel(running); tts?.stop() }
+        sheet.setContentView(root)
+        root.layoutParams?.height = (resources.displayMetrics.heightPixels * 0.78f).toInt()
+        root.minimumHeight = (resources.displayMetrics.heightPixels * 0.78f).toInt()
+        sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+        sheet.behavior.skipCollapsed = true
+        sheet.show()
+        if (firstQuestion != null) send(firstQuestion, showFirstQuestion)
+        else input.requestFocus()
+    }
+
+    private fun openMiaAi() {
+        if (apps.none { MiaAi.isMiaUrl(it.url) }) addMiaToHome()
+        openInBrowser(MiaAi.URL)
+    }
+
+    /** Text selection toolbar inside pages: adds "Chiedi all'AI". */
+    override fun onActionModeStarted(mode: android.view.ActionMode) {
+        super.onActionModeStarted(mode)
+        if (currentTab != TAB_BROWSER || !::webView.isInitialized || !webView.hasFocus()) return
+        mode.menu.add(android.view.Menu.NONE, MENU_AI, 0, "Chiedi all'AI").setOnMenuItemClickListener {
+            webView.evaluateJavascript("window.getSelection().toString()") { raw ->
+                val sel = jsString(raw).trim()
+                mode.finish()
+                if (sel.isNotEmpty()) explainSelection(sel)
+            }
+            true
+        }
+    }
+
+    /**
+     * Voice: short phrases keep the instant behaviour; longer commands are interpreted
+     * by the AI ("apri YouTube e cerca ricette di pasta", "riassumi la pagina"...).
+     */
+    private fun interpretVoice(text: String, fallback: () -> Unit) {
+        if (!ai.supported()) { fallback(); return }
+        toast("✨ Sto capendo…")
+        val appList = apps.take(60).joinToString("\n") { "- ${it.name}: ${normalizeUrl(it.url)}" }
+        val prompt = "Comando vocale: «$text»\n\nApp salvate:\n$appList\n\n" +
+            "Rispondi SOLO con un oggetto JSON, senza altro testo. Azioni possibili:\n" +
+            "{\"action\":\"open_url\",\"url\":\"...\"} per aprire un sito o una ricerca dentro un sito " +
+            "(es. YouTube: https://www.youtube.com/results?search_query=..., Amazon: https://www.amazon.it/s?k=..., " +
+            "Maps: https://www.google.com/maps/search/...). Usa l'indirizzo delle app salvate quando corrisponde.\n" +
+            "{\"action\":\"search\",\"query\":\"...\"} per una ricerca web\n" +
+            "{\"action\":\"ask\",\"question\":\"...\"} per una domanda a cui rispondere a parole\n" +
+            "{\"action\":\"summarize\"} per riassumere la pagina aperta\n" +
+            "{\"action\":\"new_tab\"}, {\"action\":\"close_all_tabs\"}, {\"action\":\"history\"}, " +
+            "{\"action\":\"downloads\"}, {\"action\":\"settings\"}"
+        ai.ask(listOf("user" to prompt), "Sei l'interprete dei comandi vocali di un browser. Rispondi solo con JSON valido.",
+            object : AiBridge.Listener {
+                override fun onDone(text: String, model: String) {
+                    val json = Regex("\\{[\\s\\S]*\\}").find(text)?.value
+                    val o = runCatching { org.json.JSONObject(json ?: "") }.getOrNull()
+                    if (o == null) { fallback(); return }
+                    when (o.optString("action")) {
+                        "open_url" -> {
+                            val url = o.optString("url").takeIf { it.startsWith("http") } ?: return fallback()
+                            val app = apps.firstOrNull { a -> hostOf(normalizeUrl(a.url)) == hostOf(url) }
+                            if (app != null && app.locked) authenticate("Apri ${app.name}", strict = false) { openInBrowser(url) }
+                            else openInBrowser(url)
+                        }
+                        "search" -> openInBrowser(searchUrl(o.optString("query").ifBlank { text }))
+                        "ask" -> askAi(o.optString("question").ifBlank { text })
+                        "summarize" -> { showTab(TAB_BROWSER); summarizePage() }
+                        "new_tab" -> openNewTab(false)
+                        "close_all_tabs" -> {
+                            webTabs.clear(); webTabs.add(WebTab()); webTabIndex = 0
+                            restoreTab(webTabs[0]); renderTabStrip(); toast("Schede chiuse")
+                        }
+                        "history" -> showHistoryPage()
+                        "downloads" -> showDownloadsPage()
+                        "settings" -> showTab(TAB_SETTINGS)
+                        else -> fallback()
+                    }
+                }
+                override fun onError(message: String, noKey: Boolean) { fallback() }
+            })
     }
 
     private fun openExternally() {
@@ -2163,10 +2492,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateWebHint(q: String) {
         val text = q.trim()
-        if (text.isEmpty()) webSearchHint.visibility = View.GONE
-        else {
+        val aiHint = findViewById<TextView>(R.id.aiSearchHint)
+        if (text.isEmpty()) {
+            webSearchHint.visibility = View.GONE
+            aiHint.visibility = View.GONE
+        } else {
             webSearchHint.visibility = View.VISIBLE
             webSearchHint.text = "Cerca con ${repo.getSearchEngine().label}: $text"
+            aiHint.visibility = if (looksLikeUrl(text)) View.GONE else View.VISIBLE
+            aiHint.text = "✨ Chiedi all'AI: $text"
         }
     }
 
@@ -2185,12 +2519,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleVoiceText(text: String) {
         toast("Hai detto: $text")
-        val match = findAppByName(text, voice = true)
-        when {
-            match != null -> openApp(match)
-            looksLikeUrl(text) -> openInBrowser(normalizeUrl(text))
-            else -> openInBrowser(searchUrl(text))
+        val fallback = {
+            val match = findAppByName(text, voice = true)
+            when {
+                match != null -> openApp(match)
+                looksLikeUrl(text) -> openInBrowser(normalizeUrl(text))
+                else -> openInBrowser(searchUrl(text))
+            }
         }
+        val words = text.trim().split(Regex("\\s+")).size
+        val simple = findAppByName(text) != null || looksLikeUrl(text) || words <= 3
+        if (repo.aiVoice() && !simple) interpretVoice(text, fallback) else fallback()
     }
 
     /** Exact name first; then a single partial match; for voice also "apri X" and names inside the phrase. */
@@ -2444,6 +2783,25 @@ class MainActivity : AppCompatActivity() {
             applyDarkSites()
             if (browserHasPage) webView.reload()
             renderSettings()
+        }
+
+        section("INTELLIGENZA ARTIFICIALE")
+        val aiRowSub = "Usa provider, chiave e modello di Mia AI"
+        row("Assistente AI", aiRowSub, value = "Configura") { openMiaAi() }
+        row("Comandi vocali con AI", "Es. «apri YouTube e cerca ricette di pasta»", switch = repo.aiVoice()) {
+            repo.setAiVoice(!repo.aiVoice()); renderSettings()
+        }
+        row("Cosa sa fare", "Riassumi, chiedi alla pagina, spiega il testo selezionato…") {
+            MaterialAlertDialogBuilder(this).setTitle("✨ AI nel launcher")
+                .setMessage(
+                    "• Menu ⋮ → Riassumi pagina\n" +
+                    "• Menu ⋮ → Chiedi alla pagina\n" +
+                    "• Scrivi una domanda nella ricerca → «Chiedi all'AI»\n" +
+                    "• Seleziona del testo in una pagina → «Chiedi all'AI»\n" +
+                    "• Microfono: comandi lunghi, es. «apri Amazon e cerca cuffie bluetooth»\n\n" +
+                    "Il testo viene inviato al provider scelto in Mia AI solo quando usi queste funzioni."
+                )
+                .setPositiveButton("OK", null).show()
         }
 
         section("APP INTEGRATE")
@@ -2905,6 +3263,10 @@ class MainActivity : AppCompatActivity() {
         private const val TAB_SETTINGS = 2
         private const val STATE_TAB = "current_tab"
         private val SUGGEST_TAG = Any()
+        private const val MENU_AI = 0x5A1
+        private const val AI_SYSTEM =
+            "Sei l'assistente di un browser per smartphone. Rispondi in italiano, in modo chiaro e conciso, " +
+                "con elenchi puntati quando aiutano. Niente preamboli."
         private const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
