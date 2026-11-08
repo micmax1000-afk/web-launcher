@@ -67,6 +67,27 @@ class MainActivity : AppCompatActivity() {
     private var suggestToken = 0
     private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var relockPending = false
+    private val assetLoader by lazy {
+        androidx.webkit.WebViewAssetLoader.Builder()
+            .addPathHandler("/assets/", androidx.webkit.WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
+    }
+    private var tts: android.speech.tts.TextToSpeech? = null
+    private var ttsReady = false
+    private var pendingSpeech: Pair<String, Float>? = null
+    private var speechReply: androidx.webkit.JavaScriptReplyProxy? = null
+
+    private val webSpeechLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val reply = speechReply ?: return@registerForActivityResult
+        speechReply = null
+        val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim()
+        val msg = org.json.JSONObject()
+        if (result.resultCode == RESULT_OK && !text.isNullOrEmpty()) msg.put("t", "result").put("text", text)
+        else msg.put("t", "error").put("error", "no-speech")
+        runCatching { reply.postMessage(msg.toString()) }
+    }
     private lateinit var addressIcon: ImageView
     private lateinit var settingsPanel: View
     private lateinit var settingsList: android.widget.LinearLayout
@@ -385,6 +406,7 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, !repo.blockThirdPartyCookies())
 
         applyDarkSites()
+        setupMiaBridge()
         webView.setOnScrollChangeListener { _, _, y, _, oldY -> onWebScroll(y, oldY) }
         webView.setOnLongClickListener {
             val hit = webView.hitTestResult
@@ -409,12 +431,17 @@ class MainActivity : AppCompatActivity() {
                 return try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); true } catch (_: Exception) { true }
             }
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): android.webkit.WebResourceResponse? {
-                if (!blockAdsOn || request == null) return null
+                if (request == null) return null
+                if (request.url?.host == MiaAi.HOST) return assetLoader.shouldInterceptRequest(request.url)
+                if (!blockAdsOn) return null
                 return AdBlocker.intercept(request.url?.host, request.isForMainFrame)
             }
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 AdBlocker.resetCount()
                 showBars()
+                if (MiaAi.isMiaUrl(url) &&
+                    !androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)
+                ) view?.evaluateJavascript(MiaAi.SPEECH_SHIM, null)
                 webProgress.isVisible = true; webProgress.progress = 0
             }
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -852,7 +879,7 @@ class MainActivity : AppCompatActivity() {
         s.cacheMode = if (tab.privateMode) WebSettings.LOAD_NO_CACHE else WebSettings.LOAD_DEFAULT
     }
 
-    private fun displayUrl(url: String): String = try {
+    private fun displayUrl(url: String): String = if (MiaAi.isMiaUrl(url)) MiaAi.NAME else try {
         val u = Uri.parse(url)
         val host = u.host?.removePrefix("www.") ?: url
         if (u.scheme == "http") "⚠ $host" else host
@@ -1748,6 +1775,89 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
+    private fun addMiaToHome() {
+        if (apps.any { MiaAi.isMiaUrl(it.url) }) { toast("Mia AI è già nella home"); return }
+        val id = UUID.randomUUID().toString()
+        val icon = try {
+            val dir = java.io.File(filesDir, "icons").apply { mkdirs() }
+            val dest = java.io.File(dir, id)
+            assets.open("mia-ai/icon.png").use { input -> dest.outputStream().use { input.copyTo(it) } }
+            dest.absolutePath
+        } catch (_: Exception) { null }
+        val cat = "AI"
+        if (cat !in categories) { categories.add(0, cat); repo.saveCategories(categories) }
+        apps.add(AppItem(id, MiaAi.NAME, MiaAi.URL, cat, true, apps.size, icon))
+        persistApps(); refreshList()
+        toast("Mia AI aggiunta ai preferiti")
+    }
+
+    /** Native voice input + text-to-speech for Mia AI, reachable only from its private origin. */
+    private fun setupMiaBridge() {
+        if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.WEB_MESSAGE_LISTENER)) return
+        val origins = setOf(MiaAi.ORIGIN)
+        androidx.webkit.WebViewCompat.addWebMessageListener(webView, MiaAi.BRIDGE, origins) { _, message, sourceOrigin, isMainFrame, reply ->
+            if (!isMainFrame || sourceOrigin.toString().trimEnd('/') != MiaAi.ORIGIN) return@addWebMessageListener
+            val m = runCatching { org.json.JSONObject(message.data ?: "") }.getOrNull() ?: return@addWebMessageListener
+            when (m.optString("t")) {
+                "listen" -> {
+                    speechReply = reply
+                    if (!isSpeechAvailable()) {
+                        runCatching { reply.postMessage("{\"t\":\"error\",\"error\":\"not-allowed\"}") }
+                        toast(getString(R.string.no_speech))
+                        return@addWebMessageListener
+                    }
+                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                        putExtra(RecognizerIntent.EXTRA_LANGUAGE, m.optString("lang", "it-IT"))
+                        putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.voice_prompt))
+                    }
+                    try { webSpeechLauncher.launch(intent) } catch (_: Exception) {
+                        runCatching { reply.postMessage("{\"t\":\"error\",\"error\":\"not-allowed\"}") }
+                    }
+                }
+                "speak" -> speak(m.optString("text"), m.optDouble("rate", 1.0).toFloat())
+                "stop" -> tts?.stop()
+            }
+        }
+        if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, MiaAi.SPEECH_SHIM, origins)
+        }
+    }
+
+    private fun speak(text: String, rate: Float) {
+        if (text.isBlank()) return
+        val clean = text.replace(Regex("[*_#`>|]"), " ").replace(Regex("\\s+"), " ").trim()
+        if (tts == null) {
+            pendingSpeech = clean to rate
+            tts = android.speech.tts.TextToSpeech(this) { status ->
+                ttsReady = status == android.speech.tts.TextToSpeech.SUCCESS
+                if (ttsReady) {
+                    tts?.language = Locale.ITALIAN
+                    pendingSpeech?.let { (t, r) -> speakNow(t, r) }
+                } else toast("Sintesi vocale non disponibile")
+                pendingSpeech = null
+            }
+            return
+        }
+        if (ttsReady) speakNow(clean, rate) else pendingSpeech = clean to rate
+    }
+
+    private fun speakNow(text: String, rate: Float) {
+        val engine = tts ?: return
+        engine.setSpeechRate(rate.coerceIn(0.5f, 2f))
+        // TTS has a per-utterance length limit: speak long answers in chunks
+        val max = android.speech.tts.TextToSpeech.getMaxSpeechInputLength() - 1
+        text.chunked(max).forEachIndexed { i, part ->
+            engine.speak(part, if (i == 0) android.speech.tts.TextToSpeech.QUEUE_FLUSH else android.speech.tts.TextToSpeech.QUEUE_ADD, null, "wl_$i")
+        }
+    }
+
+    override fun onDestroy() {
+        tts?.shutdown()
+        tts = null
+        super.onDestroy()
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -2322,6 +2432,13 @@ class MainActivity : AppCompatActivity() {
             applyDarkSites()
             if (browserHasPage) webView.reload()
             renderSettings()
+        }
+
+        section("APP INTEGRATE")
+        val miaOnHome = apps.any { MiaAi.isMiaUrl(it.url) }
+        row("Mia AI", "Chat AI personale: Gemini, OpenRouter, Groq, Ollama…",
+            value = if (miaOnHome) "Apri" else "Aggiungi") {
+            if (miaOnHome) openInBrowser(MiaAi.URL) else { addMiaToHome(); renderSettings() }
         }
 
         section("PRIVACY E SICUREZZA")

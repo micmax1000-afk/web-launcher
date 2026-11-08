@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0b1020" id="themeColor">
+<meta name="color-scheme" content="dark light">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<title>Mia AI</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <button type="button" class="icon-btn" id="menuBtn" aria-label="Conversazioni">☰</button>
+    <button type="button" class="title" id="modelBtn" aria-label="Cambia modello">
+      <strong id="chatTitle">Mia AI</strong>
+      <small id="modelHint">—</small>
+    </button>
+    <button type="button" class="icon-btn" id="newChatBtn" aria-label="Nuova chat">＋</button>
+  </header>
+
+  <main id="messages" aria-live="polite">
+    <div class="empty" id="emptyState">
+      <img src="icons/icon.svg" alt="" width="72" height="72">
+      <h1>Ciao 👋</h1>
+      <p>Scrivi un messaggio per iniziare.</p>
+      <p class="hint" id="setupHint" hidden>Prima apri <button type="button" class="link" data-open-settings>Impostazioni</button> e scegli il provider AI.</p>
+      <div class="suggestions">
+        <button type="button" class="chip" data-prompt="Spiegami in modo semplice come funziona l'intelligenza artificiale">Come funziona l'AI?</button>
+        <button type="button" class="chip" data-prompt="Aiutami a scrivere una email cortese per chiedere un appuntamento">Scrivi una email</button>
+        <button type="button" class="chip" data-prompt="Dammi 5 idee per una cena veloce con quello che ho in frigo: uova, zucchine, formaggio">Idee per cena</button>
+      </div>
+    </div>
+  </main>
+
+  <div class="pending-att" id="pendingAtt" hidden></div>
+  <form class="composer" id="composer" autocomplete="off">
+    <button type="button" class="attach-btn" id="attachBtn" aria-label="Allega file">📎</button>
+    <button type="button" class="mic-btn" id="micBtn" aria-label="Microfono" hidden>🎤</button>
+    <input type="file" id="fileInput" multiple hidden
+      accept="image/*,application/pdf,.pdf,text/*,.txt,.md,.csv,.json,.xml,.html,.css,.js,.ts,.py,.java,.kt,.c,.cpp,.go,.rs,.php,.sh,.sql,.yaml,.yml,.log,.srt">
+    <textarea id="input" rows="1" placeholder="Scrivi un messaggio…" enterkeyhint="send"></textarea>
+    <button type="submit" class="send-btn" id="sendBtn" aria-label="Invia">➤</button>
+  </form>
+</div>
+
+<!-- Drawer conversazioni -->
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <strong>Conversazioni</strong>
+    <button type="button" class="btn small" id="drawerNew">＋ Nuova</button>
+  </div>
+  <ul class="conv-list" id="convList"></ul>
+  <div class="drawer-foot">
+    <button type="button" class="btn ghost" data-open-settings>⚙️ Impostazioni</button>
+  </div>
+</aside>
+
+<!-- Impostazioni -->
+<div class="sheet" id="settings" hidden role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="sheet-card">
+    <div class="sheet-head">
+      <strong id="settingsTitle">Impostazioni</strong>
+      <button type="button" class="icon-btn" id="closeSettings" aria-label="Chiudi">✕</button>
+    </div>
+    <div class="sheet-body">
+      <label class="field">
+        <span>Provider AI</span>
+        <select id="provider"></select>
+      </label>
+      <p class="hint" id="providerHint"></p>
+
+      <label class="field">
+        <span>Indirizzo API (base URL)</span>
+        <input id="baseUrl" type="url" inputmode="url" spellcheck="false" autocapitalize="off">
+      </label>
+
+      <label class="field">
+        <span>Chiave API <small id="keyOptional">(facoltativa)</small></span>
+        <div class="row">
+          <input id="apiKey" type="password" spellcheck="false" autocapitalize="off" autocomplete="off">
+          <button type="button" class="btn small ghost" id="toggleKey">👁</button>
+        </div>
+      </label>
+
+      <label class="field">
+        <span>Modello</span>
+        <div class="row">
+          <input id="model" spellcheck="false" autocapitalize="off" placeholder="Premi «Carica modelli»">
+          <button type="button" class="btn small" id="loadModels">Carica modelli</button>
+        </div>
+      </label>
+      <p class="hint" id="modelsStatus"></p>
+      <div class="model-browser" id="modelBrowser" hidden>
+        <div class="row">
+          <input id="modelSearch" type="search" placeholder="Cerca modello…" spellcheck="false" autocapitalize="off">
+          <label class="toggle"><input type="checkbox" id="onlyFree"> Solo gratis</label>
+        </div>
+        <ul class="model-results" id="modelResults"></ul>
+      </div>
+
+      <label class="field">
+        <span>Istruzioni di sistema (personalità)</span>
+        <textarea id="systemPrompt" rows="3"></textarea>
+      </label>
+
+      <label class="field">
+        <span>Creatività: <b id="tempValue">0.7</b></span>
+        <input id="temperature" type="range" min="0" max="1.5" step="0.1">
+      </label>
+
+      <label class="field check-field">
+        <input type="checkbox" id="autoFallback">
+        <span>Se il modello è occupato, prova da solo gli altri modelli dell'elenco ▾</span>
+      </label>
+
+      <label class="field">
+        <span>Tema</span>
+        <select id="theme">
+          <option value="auto">Automatico</option>
+          <option value="dark">Scuro</option>
+          <option value="light">Chiaro</option>
+        </select>
+      </label>
+
+      <div class="danger">
+        <button type="button" class="btn ghost" id="exportBtn">Esporta chat (JSON)</button>
+        <button type="button" class="btn danger-btn" id="clearAll">Elimina tutte le chat</button>
+      </div>
+      <p class="hint">Chiavi e conversazioni restano solo su questo dispositivo.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Cambio rapido modello -->
+<div class="sheet" id="picker" hidden role="dialog" aria-modal="true" aria-labelledby="pickerTitle">
+  <div class="sheet-card">
+    <div class="sheet-head">
+      <strong id="pickerTitle">Scegli il modello</strong>
+      <button type="button" class="icon-btn" id="closePicker" aria-label="Chiudi">✕</button>
+    </div>
+    <div class="sheet-body">
+      <ul class="conv-list pick-list" id="pickerList"></ul>
+      <button type="button" class="btn ghost full" data-open-settings>＋ Aggiungi un modello o un provider</button>
+      <p class="hint">Ogni modello che usi viene aggiunto qui. Le chiavi si inseriscono una volta per provider in Impostazioni.</p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="js/markdown.js"></script>
+<script src="js/providers.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

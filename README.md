@@ -20,3 +20,9 @@ Push su qualsiasi branch o pull request → GitHub Actions genera l’APK di ant
 ```bash
 ./gradlew assembleDebug
 ```
+
+## Mia AI integrata
+L'app [mia-ai-app](https://github.com/micmax1000-afk/mia-ai-app) è inclusa in `app/src/main/assets/mia-ai`
+e si apre dentro il browser (Impostazioni → App integrate → Mia AI).
+Microfono e lettura vocale usano la voce nativa di Android.
+Per aggiornarla: `./scripts/update-mia-ai.sh`.
