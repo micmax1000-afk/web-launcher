@@ -109,6 +109,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var labelBrowser: TextView
     private lateinit var iconSettings: ImageView
     private lateinit var labelSettings: TextView
+    private val news by lazy { NewsRepository(this) }
+    private lateinit var newsAdapter: NewsAdapter
+    private var newsItems: List<NewsItem> = emptyList()
+    private var newsUpdatedAt = 0L
+    private var newsLoading = false
+    private var newsCat = NEWS_ALL
 
     private var apps: MutableList<AppItem> = mutableListOf()
     private var categories: MutableList<String> = mutableListOf()
@@ -283,6 +289,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnEmptyAdd).setOnClickListener { showAddEditDialog(null) }
         setupWebView()
         setupLauncher()
+        setupNews()
         setupNav()
         setupBack()
 
@@ -340,7 +347,11 @@ class MainActivity : AppCompatActivity() {
         }
         restoreSavedTabs()
         renderTabStrip()
-        showTab(if (savedInstanceState?.getInt(STATE_TAB) == TAB_SETTINGS) TAB_SETTINGS else TAB_HOME)
+        showTab(when (savedInstanceState?.getInt(STATE_TAB)) {
+            TAB_SETTINGS -> TAB_SETTINGS
+            TAB_NEWS -> TAB_NEWS
+            else -> TAB_HOME
+        })
         if (savedInstanceState == null) openShortcut(intent)
         val night = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -681,6 +692,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupNav() {
         findViewById<View>(R.id.navHome).setOnClickListener { showTab(TAB_HOME) }
         findViewById<View>(R.id.navBrowser).setOnClickListener { showTab(TAB_BROWSER) }
+        findViewById<View>(R.id.navNews).setOnClickListener { showTab(TAB_NEWS) }
         findViewById<View>(R.id.navSettings).setOnClickListener { showTab(TAB_SETTINGS) }
     }
 
@@ -692,6 +704,7 @@ class MainActivity : AppCompatActivity() {
                     currentTab == TAB_BROWSER && webView.canGoBack() -> webView.goBack()
                     currentTab == TAB_BROWSER -> showTab(TAB_HOME)
                     currentTab == TAB_SETTINGS -> showTab(TAB_HOME)
+                    currentTab == TAB_NEWS -> showTab(TAB_HOME)
                     else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
                 }
             }
@@ -705,7 +718,9 @@ class MainActivity : AppCompatActivity() {
         homePanel.isVisible = tab == TAB_HOME
         browserPanel.isVisible = tab == TAB_BROWSER
         settingsPanel.isVisible = tab == TAB_SETTINGS
+        findViewById<View>(R.id.newsPanel).isVisible = tab == TAB_NEWS
         if (tab == TAB_SETTINGS) renderSettings()
+        if (tab == TAB_NEWS) onNewsShown()
         if (tab == TAB_BROWSER) { ensureTabLoaded(); updateBrowserBody() }
         val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
         val muted = AppRepository.palette(this).textMuted
@@ -713,6 +728,8 @@ class MainActivity : AppCompatActivity() {
         labelHome.setTextColor(if (tab == TAB_HOME) accent else muted)
         iconBrowser.setColorFilter(if (tab == TAB_BROWSER) accent else muted)
         labelBrowser.setTextColor(if (tab == TAB_BROWSER) accent else muted)
+        findViewById<ImageView>(R.id.iconNews).setColorFilter(if (tab == TAB_NEWS) accent else muted)
+        findViewById<TextView>(R.id.labelNews).setTextColor(if (tab == TAB_NEWS) accent else muted)
         iconSettings.setColorFilter(if (tab == TAB_SETTINGS) accent else muted)
         labelSettings.setTextColor(if (tab == TAB_SETTINGS) accent else muted)
     }
@@ -2167,7 +2184,8 @@ class MainActivity : AppCompatActivity() {
             "{\"action\":\"ask\",\"question\":\"...\"} per una domanda a cui rispondere a parole\n" +
             "{\"action\":\"summarize\"} per riassumere la pagina aperta\n" +
             "{\"action\":\"new_tab\"}, {\"action\":\"close_all_tabs\"}, {\"action\":\"history\"}, " +
-            "{\"action\":\"downloads\"}, {\"action\":\"settings\"}"
+            "{\"action\":\"downloads\"}, {\"action\":\"settings\"}, {\"action\":\"news\"} per le notizie, " +
+            "{\"action\":\"briefing\"} per il riassunto delle notizie del giorno"
         ai.ask(listOf("user" to prompt), "Sei l'interprete dei comandi vocali di un browser. Rispondi solo con JSON valido.",
             object : AiBridge.Listener {
                 override fun onDone(text: String, model: String) {
@@ -2192,11 +2210,303 @@ class MainActivity : AppCompatActivity() {
                         "history" -> showHistoryPage()
                         "downloads" -> showDownloadsPage()
                         "settings" -> showTab(TAB_SETTINGS)
+                        "news" -> showTab(TAB_NEWS)
+                        "briefing" -> { showTab(TAB_NEWS); newsBriefing() }
                         else -> fallback()
                     }
                 }
                 override fun onError(message: String, noKey: Boolean) { fallback() }
             })
+    }
+
+    // ======================= News aggregator =======================
+
+    private fun setupNews() {
+        newsAdapter = NewsAdapter(
+            onClick = { openInBrowser(it.link) },
+            onLong = { showNewsMenu(it) }
+        )
+        val list = findViewById<RecyclerView>(R.id.newsList)
+        list.layoutManager = androidx.recyclerview.widget.LinearLayoutManager(this)
+        list.adapter = newsAdapter
+        val refresh = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.newsRefresh)
+        refresh.setOnChildScrollUpCallback { _, _ -> list.canScrollVertically(-1) }
+        refresh.setOnRefreshListener { refreshNews() }
+        refresh.setColorSchemeColors(com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt()))
+        findViewById<View>(R.id.btnNewsSources).setOnClickListener { showNewsSources() }
+        findViewById<View>(R.id.btnNewsBrief).setOnClickListener { newsBriefing() }
+        val palette = AppRepository.palette(this)
+        findViewById<View>(R.id.newsPanel).setBackgroundColor(palette.bg)
+        findViewById<TextView>(R.id.newsHeading).setTextColor(palette.text)
+        findViewById<TextView>(R.id.newsUpdated).setTextColor(palette.textMuted)
+        findViewById<TextView>(R.id.newsEmpty).setTextColor(palette.textMuted)
+        findViewById<android.widget.ImageButton>(R.id.btnNewsSources).setColorFilter(palette.text)
+    }
+
+    private fun onNewsShown() {
+        if (newsItems.isEmpty()) {
+            val (cached, updated) = news.cached()
+            newsItems = cached
+            newsUpdatedAt = updated
+            renderNews()
+        }
+        if (!newsLoading && System.currentTimeMillis() - newsUpdatedAt > 15 * 60_000L) refreshNews()
+    }
+
+    private fun refreshNews() {
+        if (newsLoading) return
+        newsLoading = true
+        val refresh = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.newsRefresh)
+        refresh.isRefreshing = true
+        findViewById<TextView>(R.id.newsUpdated).text = "Aggiornamento…"
+        Thread {
+            val (items, failed) = runCatching { news.refresh() }.getOrElse { emptyList<NewsItem>() to emptyList() }
+            runOnUiThread {
+                newsLoading = false
+                refresh.isRefreshing = false
+                if (items.isNotEmpty()) {
+                    newsItems = items
+                    newsUpdatedAt = System.currentTimeMillis()
+                } else if (newsItems.isEmpty() && news.enabledIds().isNotEmpty()) {
+                    toast("Nessuna notizia: controlla la connessione")
+                }
+                if (failed.isNotEmpty() && items.isNotEmpty()) {
+                    toast("Non raggiungibili: " + failed.take(3).joinToString(", ") + if (failed.size > 3) "…" else "")
+                }
+                renderNews()
+            }
+        }.start()
+    }
+
+    private fun renderNews() {
+        val palette = AppRepository.palette(this)
+        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val cats = NewsRepository.CATEGORY_ORDER.filter { c -> newsItems.any { it.cat == c } }
+        if (newsCat != NEWS_ALL && newsCat !in cats) newsCat = NEWS_ALL
+        val chips = findViewById<android.widget.LinearLayout>(R.id.newsChips)
+        chips.removeAllViews()
+        (listOf(NEWS_ALL) + cats).forEach { c ->
+            val active = c == newsCat
+            chips.addView(TextView(this).apply {
+                text = c
+                textSize = 14f
+                setTypeface(typeface, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+                setTextColor(if (active) android.graphics.Color.WHITE else palette.text)
+                setPadding(dp(16), dp(8), dp(16), dp(8))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 18f * d
+                    setColor(if (active) accent else palette.card)
+                    setStroke(d.toInt().coerceAtLeast(1), if (active) accent else palette.stroke)
+                }
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginEnd = dp(8) }
+                setOnClickListener {
+                    newsCat = c
+                    renderNews()
+                    findViewById<RecyclerView>(R.id.newsList).scrollToPosition(0)
+                }
+            })
+        }
+        val shown = if (newsCat == NEWS_ALL) newsItems else newsItems.filter { it.cat == newsCat }
+        newsAdapter.submit(shown)
+        val empty = findViewById<TextView>(R.id.newsEmpty)
+        empty.isVisible = shown.isEmpty() && !newsLoading
+        empty.text = if (news.enabledIds().isEmpty()) "Nessuna fonte attiva.\nTocca ⚙ in alto per sceglierle."
+            else "Trascina in giù per caricare le notizie"
+        if (!newsLoading) findViewById<TextView>(R.id.newsUpdated).text =
+            if (newsUpdatedAt > 0) "Aggiornate ${NewsAdapter.ago(newsUpdatedAt)} · ${news.enabledIds().size} fonti" else ""
+    }
+
+    private fun showNewsMenu(item: NewsItem) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(item.title)
+            .setItems(arrayOf("✨ Riassumi con AI", "Apri in nuova scheda", "Condividi", "Copia link", "Nascondi ${item.source}")) { _, w ->
+                when (w) {
+                    0 -> summarizeNews(item)
+                    1 -> openInNewTab(item.link)
+                    2 -> startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "${item.title}\n${item.link}")
+                    }, "Condividi notizia"))
+                    3 -> copyText("Link", item.link)
+                    4 -> {
+                        news.setEnabled(item.sourceId, false)
+                        newsItems = newsItems.filter { it.sourceId != item.sourceId }
+                        renderNews()
+                        toast("${item.source} nascosta. La riattivi da ⚙")
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun summarizeNews(item: NewsItem) {
+        if (!aiReady()) return
+        toast("✨ Leggo l'articolo…")
+        Thread {
+            val text = runCatching { news.articleText(item.link) }.getOrDefault("")
+            runOnUiThread {
+                val body = if (text.length > 400) text else "${item.summary}\n\n(Testo completo non disponibile: forse è a pagamento.)"
+                showAiSheet(
+                    title = "Riassunto · ${item.source}",
+                    context = pageContext(item.title, item.link, body),
+                    firstQuestion = "Riassumi questa notizia in italiano: una frase iniziale e 3-5 punti chiave. Se il testo è incompleto, dillo.",
+                    showFirstQuestion = false
+                )
+            }
+        }.start()
+    }
+
+    private fun newsBriefing() {
+        if (!aiReady()) return
+        if (newsItems.isEmpty()) { toast("Prima carica le notizie"); return }
+        val since = System.currentTimeMillis() - 24 * 3600_000L
+        val pool = newsItems.filter { it.time >= since }.ifEmpty { newsItems }
+        val top = pool.sortedWith(compareByDescending<NewsItem> { (it.also ?: emptyList()).size }.thenByDescending { it.time }).take(45)
+        val lines = top.joinToString("\n") { n ->
+            val also = n.also ?: emptyList()
+            "- [${n.cat}] ${n.title} (${n.source}${if (also.isNotEmpty()) ", anche su " + also.joinToString(", ") else ""})"
+        }
+        showAiSheet(
+            title = "Il punto della giornata",
+            context = "Ecco i titoli delle notizie più recenti da varie testate italiane (tra parentesi le fonti; " +
+                "più fonti = notizia più importante):\n$lines\n\n",
+            firstQuestion = "Fammi il punto della giornata in italiano: 6 punti sulle notizie più importanti, dalla più rilevante, " +
+                "una o due frasi ciascuno. Poi una riga con le notizie locali di Piemonte, Lombardia e Umbria se presenti. " +
+                "Usa solo queste informazioni.",
+            showFirstQuestion = false
+        )
+    }
+
+    private fun showNewsSources() {
+        openPage("Fonti notizie", "Aggiungi", { _ -> addNewsSourceDialog() }) { _, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            fun render() {
+                body.removeAllViews()
+                val enabled = news.enabledIds()
+                body.addView(com.google.android.material.button.MaterialButton(
+                    this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
+                ).apply {
+                    text = "Cerca le notizie dei siti nella tua home"
+                    isAllCaps = false
+                    layoutParams = android.widget.LinearLayout.LayoutParams(
+                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) }
+                    setOnClickListener { discoverHomeFeeds { render() } }
+                })
+                val all = news.allSources()
+                NewsRepository.CATEGORY_ORDER.forEach { cat ->
+                    val group = all.filter { it.cat == cat }
+                    if (group.isEmpty()) return@forEach
+                    val on = group.count { it.id in enabled }
+                    sectionLabel(body, "$cat  ·  $on/${group.size}")
+                    group.forEach { s ->
+                        val row = android.widget.LinearLayout(this).apply {
+                            orientation = android.widget.LinearLayout.HORIZONTAL
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                            minimumHeight = dp(54)
+                            setPadding(dp(10), 0, dp(4), 0)
+                        }
+                        val box = android.widget.CheckBox(this).apply {
+                            isChecked = s.id in enabled
+                            text = s.name
+                            textSize = 16f
+                            setTextColor(palette.text)
+                            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                            setOnCheckedChangeListener { _, checked ->
+                                news.setEnabled(s.id, checked)
+                                newsUpdatedAt = 0L
+                            }
+                        }
+                        row.addView(box)
+                        if (s.custom) row.addView(ImageView(this).apply {
+                            setImageResource(R.drawable.ic_web_close)
+                            setColorFilter(palette.textMuted)
+                            setPadding(dp(14), dp(14), dp(14), dp(14))
+                            layoutParams = android.widget.LinearLayout.LayoutParams(dp(52), dp(52))
+                            contentDescription = "Elimina fonte"
+                            setOnClickListener { news.removeCustom(s.id); render() }
+                        })
+                        body.addView(row)
+                    }
+                }
+            }
+            render()
+            dialog.setOnDismissListener {
+                newsItems = newsItems.filter { it.sourceId in news.enabledIds() }
+                renderNews()
+                if (currentTab == TAB_NEWS && newsUpdatedAt == 0L) refreshNews()
+            }
+        }
+    }
+
+    private fun addNewsSourceDialog(onAdded: () -> Unit = {}) {
+        val d = resources.displayMetrics.density
+        val et = TextInputEditText(this).apply {
+            hint = "es. ilpost.it o indirizzo del feed"
+            setSingleLine()
+            inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
+        }
+        val box = android.widget.FrameLayout(this).apply {
+            setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0)
+            addView(et)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Aggiungi fonte")
+            .setMessage("Scrivi l'indirizzo di un sito: trovo da solo il suo feed di notizie.")
+            .setView(box)
+            .setPositiveButton("Cerca") { _, _ ->
+                val input = et.text?.toString()?.trim().orEmpty()
+                if (input.isEmpty()) return@setPositiveButton
+                toast("Cerco il feed…")
+                Thread {
+                    val found = runCatching { news.discover(input) }.getOrNull()
+                    runOnUiThread {
+                        if (found == null) toast("Nessun feed trovato per questo sito")
+                        else {
+                            news.addCustom(found.first, found.second)
+                            newsUpdatedAt = 0L
+                            toast("Aggiunta: ${found.first}")
+                            onAdded()
+                        }
+                    }
+                }.start()
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
+    /** Looks for RSS feeds of the sites saved in the home and lets the user pick which to add. */
+    private fun discoverHomeFeeds(onDone: () -> Unit) {
+        val known = news.allSources().mapNotNull { hostOf(it.url) }.toSet()
+        val candidates = apps.filter { !MiaAi.isMiaUrl(it.url) }
+            .filter { a -> hostOf(normalizeUrl(a.url))?.let { h -> known.none { k -> k.endsWith(h) || h.endsWith(k) } } == true }
+            .take(25)
+        if (candidates.isEmpty()) { toast("Nessun sito nuovo nella home da controllare"); return }
+        toast("Controllo ${candidates.size} siti…")
+        Thread {
+            val found = candidates.mapNotNull { a ->
+                runCatching { news.discover(normalizeUrl(a.url)) }.getOrNull()?.let { a.name to it.second }
+            }
+            runOnUiThread {
+                if (found.isEmpty()) { toast("Nessun feed trovato nei siti della home"); return@runOnUiThread }
+                val checked = BooleanArray(found.size) { true }
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("Feed trovati (${found.size})")
+                    .setMultiChoiceItems(found.map { it.first }.toTypedArray(), checked) { _, i, c -> checked[i] = c }
+                    .setPositiveButton("Aggiungi") { _, _ ->
+                        found.forEachIndexed { i, (name, url) -> if (checked[i]) news.addCustom(name, url) }
+                        newsUpdatedAt = 0L
+                        onDone()
+                    }
+                    .setNegativeButton("Annulla", null)
+                    .show()
+            }
+        }.start()
     }
 
     private fun openExternally() {
@@ -2804,6 +3114,10 @@ class MainActivity : AppCompatActivity() {
                 .setPositiveButton("OK", null).show()
         }
 
+        section("NOTIZIE")
+        row("Fonti notizie", "${news.enabledIds().size} attive su ${news.allSources().size}") { showNewsSources() }
+        row("Aggiungi una fonte", "Da qualsiasi sito con notizie") { addNewsSourceDialog() }
+
         section("APP INTEGRATE")
         val miaOnHome = apps.any { MiaAi.isMiaUrl(it.url) }
         row("Mia AI", "Chat AI personale: Gemini, OpenRouter, Groq, Ollama…",
@@ -3262,6 +3576,8 @@ class MainActivity : AppCompatActivity() {
         private const val TAB_BROWSER = 1
         private const val TAB_SETTINGS = 2
         private const val STATE_TAB = "current_tab"
+        private const val TAB_NEWS = 3
+        private const val NEWS_ALL = "Tutte"
         private val SUGGEST_TAG = Any()
         private const val MENU_AI = 0x5A1
         private const val AI_SYSTEM =

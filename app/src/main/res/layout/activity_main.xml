@@ -289,6 +289,110 @@
             android:layout_weight="1" />
     </LinearLayout>
 
+    <LinearLayout
+        android:id="@+id/newsPanel"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/bottomBar"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="12dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/newsHeading"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Notizie"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text" />
+                <TextView
+                    android:id="@+id/newsUpdated"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_muted" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNewsBrief"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Il punto"
+                android:textAllCaps="false"
+                app:icon="@drawable/ic_ai"
+                app:iconSize="18dp"
+                app:cornerRadius="20dp" />
+
+            <ImageButton
+                android:id="@+id/btnNewsSources"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_nav_settings"
+                app:tint="@color/text"
+                android:contentDescription="Fonti" />
+        </LinearLayout>
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+            <LinearLayout
+                android:id="@+id/newsChips"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp" />
+        </HorizontalScrollView>
+
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/newsRefresh"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/newsList"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:paddingBottom="12dp" />
+                <TextView
+                    android:id="@+id/newsEmpty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center"
+                    android:paddingHorizontal="36dp"
+                    android:textSize="15sp"
+                    android:textColor="@color/text_muted"
+                    android:visibility="gone" />
+            </FrameLayout>
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+    </LinearLayout>
+
     <ScrollView
         android:id="@+id/settingsPanel"
         android:layout_width="0dp"
@@ -333,6 +437,11 @@
             <LinearLayout android:id="@+id/navHome" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">
                 <ImageView android:id="@+id/iconHome" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_home" app:tint="?attr/colorPrimary" android:contentDescription="@string/home" />
                 <TextView android:id="@+id/labelHome" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/home" android:textColor="?attr/colorPrimary" android:textSize="11sp" android:textStyle="bold" android:layout_marginTop="3dp" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/navNews" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">
+                <ImageView android:id="@+id/iconNews" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_news" app:tint="@color/text_muted" android:contentDescription="Notizie" />
+                <TextView android:id="@+id/labelNews" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Notizie" android:textColor="@color/text_muted" android:textSize="11sp" android:layout_marginTop="3dp" />
             </LinearLayout>
 
             <LinearLayout android:id="@+id/navBrowser" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">

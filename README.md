@@ -32,3 +32,8 @@ Usa provider, chiave e modello configurati in Mia AI (pagina ponte `assets/wl-ai
 sulla stessa origine, con il codice dei provider di Mia AI):
 riassumi pagina, chiedi alla pagina, risposta rapida dalla ricerca, spiegazione del testo selezionato,
 comandi vocali interpretati dall'AI.
+
+## Notizie
+Aggregatore RSS: 64 fonti in `app/src/main/assets/news/sources.json` (nazionali, economia, sport, tecnologia,
+scienza, esteri, cultura, motori, viaggi, Piemonte, Lombardia, Umbria, internazionali) più fonti aggiunte
+dall'utente. Il workflow **Check news feeds** controlla i feed a ogni modifica (`scripts/check_feeds.py`).
