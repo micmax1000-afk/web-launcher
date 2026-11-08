@@ -90,15 +90,69 @@
             android:textStyle="bold"
             android:visibility="gone" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recycler"
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false"
-            android:paddingHorizontal="10dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="16dp" />
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recycler"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingHorizontal="10dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="16dp" />
+
+            <LinearLayout
+                android:id="@+id/emptyState"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:paddingHorizontal="36dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/emptyIcon"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:src="@drawable/ic_web_star"
+                    app:tint="?attr/colorPrimary"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/emptyTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="La tua home è vuota"
+                    android:textColor="@color/text"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/emptyText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center"
+                    android:lineSpacingExtra="3dp"
+                    android:text="Cerca un sito qui sopra, aprilo e tocca la stella per salvarlo. Oppure aggiungilo a mano."
+                    android:textColor="@color/text_muted"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEmptyAdd"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:text="Aggiungi web app"
+                    android:textAllCaps="false"
+                    app:cornerRadius="22dp" />
+            </LinearLayout>
+        </FrameLayout>
     </LinearLayout>
 
     <LinearLayout
@@ -113,48 +167,45 @@
         app:layout_constraintEnd_toEndOf="parent">
 
         <LinearLayout
+            android:id="@+id/browserToolbar"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="56dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@color/bg_elevated"
             android:paddingHorizontal="4dp">
 
-            <ImageButton android:id="@+id/btnWebBack" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_previous" app:tint="@color/text" android:contentDescription="Indietro" />
-            <ImageButton android:id="@+id/btnWebForward" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_next" app:tint="@color/text" android:contentDescription="Avanti" />
+            <ImageButton android:id="@+id/btnWebBack" android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp" android:scaleType="fitCenter" android:background="?attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_web_back" app:tint="@color/text" android:contentDescription="Indietro" />
+            <ImageButton android:id="@+id/btnWebForward" android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp" android:scaleType="fitCenter" android:background="?attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_web_forward" app:tint="@color/text" android:contentDescription="Avanti" />
 
             <EditText
                 android:id="@+id/webAddress"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="40dp"
                 android:layout_weight="1"
+                android:layout_marginHorizontal="4dp"
                 android:background="@drawable/bg_search"
                 android:hint="Cerca o scrivi un indirizzo"
                 android:textColor="@color/text"
                 android:textColorHint="@color/text_muted"
-                android:textSize="13sp"
-                android:paddingHorizontal="12dp"
+                android:textSize="14sp"
+                android:paddingHorizontal="14dp"
                 android:singleLine="true"
+                android:selectAllOnFocus="true"
                 android:imeOptions="actionGo"
                 android:inputType="textUri"
                 android:importantForAutofill="no" />
 
-            <ImageButton android:id="@+id/btnWebRefresh" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_popup_sync" app:tint="@color/text" android:contentDescription="Aggiorna" />
-            <ImageButton
-                android:id="@+id/btnWebAdd"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/btn_star_big_off"
-                app:tint="@color/star"
-                android:contentDescription="Aggiungi a home" />
-            <ImageButton android:id="@+id/btnWebMenu" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_menu_more" app:tint="@color/text" android:contentDescription="Menu browser" />
+            <ImageButton android:id="@+id/btnWebRefresh" android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp" android:scaleType="fitCenter" android:background="?attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_web_refresh" app:tint="@color/text" android:contentDescription="Aggiorna" />
+            <ImageButton android:id="@+id/btnWebAdd" android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp" android:scaleType="fitCenter" android:background="?attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_web_star" app:tint="@color/text" android:contentDescription="Salva pagina" />
+            <ImageButton android:id="@+id/btnWebMenu" android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp" android:scaleType="fitCenter" android:background="?attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_web_more" app:tint="@color/text" android:contentDescription="Menu browser" />
             <TextView android:id="@+id/webTitle" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
         </LinearLayout>
 
         <HorizontalScrollView
+            android:id="@+id/tabScroller"
             android:layout_width="match_parent"
-            android:layout_height="40dp"
+            android:layout_height="44dp"
             android:background="@color/bg_elevated"
             android:scrollbars="none">
             <LinearLayout
@@ -172,8 +223,10 @@
                     android:id="@+id/btnNewTab"
                     android:layout_width="36dp"
                     android:layout_height="36dp"
+                    android:padding="7dp"
+                    android:scaleType="fitCenter"
                     android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@android:drawable/ic_input_add"
+                    android:src="@drawable/ic_web_add"
                     app:tint="?attr/colorPrimary"
                     android:contentDescription="Nuova scheda" />
             </LinearLayout>

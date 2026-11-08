@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import java.util.UUID
 
 data class RecentSite(val title: String, val url: String)
 
@@ -98,6 +97,12 @@ class AppRepository(context: Context) {
     }
 
 
+    fun blockThirdPartyCookies(): Boolean = prefs.getBoolean(KEY_BLOCK_3P, true)
+
+    fun setBlockThirdPartyCookies(block: Boolean) {
+        prefs.edit().putBoolean(KEY_BLOCK_3P, block).apply()
+    }
+
     fun getAccent(): String = prefs.getString(KEY_ACCENT, "blue") ?: "blue"
 
     fun setAccent(name: String) {
@@ -144,6 +149,7 @@ class AppRepository(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_ACCENT = "accent"
         private const val KEY_RECENTS = "recents"
+        private const val KEY_BLOCK_3P = "block_third_party_cookies"
 
         fun accentStyle(context: Context): Int {
             val accent = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
@@ -229,21 +235,9 @@ class AppRepository(context: Context) {
             )
         }
 
-        fun defaultCategories() = listOf(
-            "AI Tools", "Viaggi", "Shopping", "Produttivita", "Intrattenimento", "Utility"
-        )
+        fun defaultCategories() = listOf("Utility")
 
-        fun defaultApps() = mutableListOf(
-            AppItem(UUID.randomUUID().toString(), "ChatGPT", "https://chatgpt.com", "AI Tools", true, 0),
-            AppItem(UUID.randomUUID().toString(), "Claude", "https://claude.ai", "AI Tools", false, 1),
-            AppItem(UUID.randomUUID().toString(), "Gemini", "https://gemini.google.com", "AI Tools", false, 2),
-            AppItem(UUID.randomUUID().toString(), "DeepSeek", "https://chat.deepseek.com", "AI Tools", false, 3),
-            AppItem(UUID.randomUUID().toString(), "Grok", "https://x.com/i/grok", "AI Tools", false, 4),
-            AppItem(UUID.randomUUID().toString(), "Booking", "https://booking.com", "Viaggi", false, 5),
-            AppItem(UUID.randomUUID().toString(), "YouTube", "https://youtube.com", "Intrattenimento", true, 6),
-            AppItem(UUID.randomUUID().toString(), "Wikipedia", "https://it.wikipedia.org", "Utility", false, 7),
-            AppItem(UUID.randomUUID().toString(), "GitHub", "https://github.com", "Produttivita", false, 8),
-            AppItem(UUID.randomUUID().toString(), "Gmail", "https://mail.google.com", "Produttivita", false, 9)
-        )
+        /** Home starts empty: the user decides what to save. */
+        fun defaultApps() = mutableListOf<AppItem>()
     }
 }
