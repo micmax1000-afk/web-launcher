@@ -15,7 +15,7 @@ Usa il riconoscimento vocale di sistema (Google).
 Richiede permesso **Microfono** e Google app / speech services.
 
 ## Build
-Push su `main` \u2192 GitHub Actions genera l\u2019APK (`web-launcher-native-apk`).
+Push su qualsiasi branch o pull request → GitHub Actions genera l’APK di anteprima (`web-launcher-native-apk`).
 
 ```bash
 ./gradlew assembleDebug

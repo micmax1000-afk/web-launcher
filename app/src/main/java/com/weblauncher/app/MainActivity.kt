@@ -57,6 +57,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webAddress: EditText
     private lateinit var tabStrip: android.widget.LinearLayout
     private var mobileUserAgent: String = ""
+    private val appVersion: String by lazy {
+        try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (_: Exception) { "" }
+    }
     private val webTabs = mutableListOf(WebTab())
     private var webTabIndex = 0
     private var iconTargetId: String? = null
@@ -261,7 +264,7 @@ class MainActivity : AppCompatActivity() {
         s.cacheMode = WebSettings.LOAD_DEFAULT
         @Suppress("DEPRECATION")
         s.saveFormData = true
-        s.userAgentString = s.userAgentString + " WebLauncher/4.3"
+        s.userAgentString = mobileUserAgent + " WebLauncher/$appVersion"
         webView.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
@@ -372,7 +375,7 @@ class MainActivity : AppCompatActivity() {
     private fun goAddress() {
         val raw = webAddress.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
-        val url = if (raw.contains('.') && !raw.contains(' ')) normalizeUrl(raw) else searchUrl(raw)
+        val url = if (looksLikeUrl(raw)) normalizeUrl(raw) else searchUrl(raw)
         openInBrowser(url)
     }
 
@@ -417,6 +420,14 @@ class MainActivity : AppCompatActivity() {
         renderTabStrip()
     }
 
+    private fun closeTabAt(index: Int) {
+        if (index !in webTabs.indices) return
+        if (index == webTabIndex) { closeCurrentTab(); return }
+        webTabs.removeAt(index)
+        if (index < webTabIndex) webTabIndex -= 1
+        renderTabStrip()
+    }
+
     private fun switchToTab(index: Int) {
         if (index == webTabIndex || index !in webTabs.indices) return
         saveCurrentTab()
@@ -440,7 +451,7 @@ class MainActivity : AppCompatActivity() {
     private fun applyTabChrome() {
         val tab = webTabs.getOrNull(webTabIndex) ?: return
         val s = webView.settings
-        s.userAgentString = if (tab.desktop) DESKTOP_UA else mobileUserAgent + " WebLauncher/4.9"
+        s.userAgentString = if (tab.desktop) DESKTOP_UA else mobileUserAgent + " WebLauncher/$appVersion"
         s.cacheMode = if (tab.privateMode) WebSettings.LOAD_NO_CACHE else WebSettings.LOAD_DEFAULT
     }
 
@@ -449,7 +460,7 @@ class MainActivity : AppCompatActivity() {
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
         val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
-        val muted = ContextCompat.getColor(this, R.color.text_muted)
+        val muted = AppRepository.palette(this).textMuted
         webTabs.forEachIndexed { index, tab ->
             val active = index == webTabIndex
             val chip = android.widget.LinearLayout(this).apply {
@@ -458,8 +469,7 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(10), dp(4), dp(2), dp(4))
                 setOnClickListener { switchToTab(index) }
                 setOnLongClickListener {
-                    webTabIndex = index
-                    closeCurrentTab()
+                    closeTabAt(index)
                     true
                 }
             }
@@ -475,10 +485,7 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(if (active) accent else muted)
                 setPadding(dp(8), dp(2), dp(8), dp(2))
                 contentDescription = "Chiudi scheda"
-                setOnClickListener {
-                    webTabIndex = index
-                    closeCurrentTab()
-                }
+                setOnClickListener { closeTabAt(index) }
             })
             tabStrip.addView(chip)
         }
@@ -636,7 +643,7 @@ class MainActivity : AppCompatActivity() {
         }
         header.addView(TextView(this).apply {
             text = "Recenti"
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+            setTextColor(AppRepository.palette(this@MainActivity).text)
             textSize = 20f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -662,7 +669,7 @@ class MainActivity : AppCompatActivity() {
         if (items.isEmpty()) {
             recentsList.addView(TextView(this).apply {
                 text = "Nessuna pagina ancora. Apri un'app dalla Home."
-                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+                setTextColor(AppRepository.palette(this@MainActivity).textMuted)
                 textSize = 14f
                 setPadding(dp(4), 0, dp(4), 0)
             })
@@ -671,9 +678,9 @@ class MainActivity : AppCompatActivity() {
         items.forEach { site ->
             val card = com.google.android.material.card.MaterialCardView(this).apply {
                 radius = dp(14).toFloat()
-                setCardBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.card))
+                setCardBackgroundColor(AppRepository.palette(this@MainActivity).card)
                 strokeWidth = dp(1)
-                strokeColor = ContextCompat.getColor(this@MainActivity, R.color.stroke)
+                strokeColor = AppRepository.palette(this@MainActivity).stroke
                 cardElevation = 0f
                 val lp = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
@@ -708,14 +715,14 @@ class MainActivity : AppCompatActivity() {
             }
             box.addView(TextView(this).apply {
                 text = recentLabel(site)
-                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+                setTextColor(AppRepository.palette(this@MainActivity).text)
                 textSize = 15f
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
             })
             box.addView(TextView(this).apply {
                 text = site.url
-                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+                setTextColor(AppRepository.palette(this@MainActivity).textMuted)
                 textSize = 12f
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
@@ -724,7 +731,7 @@ class MainActivity : AppCompatActivity() {
             row.addView(TextView(this).apply {
                 text = "×"
                 textSize = 20f
-                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+                setTextColor(AppRepository.palette(this@MainActivity).textMuted)
                 setPadding(dp(12), dp(8), dp(12), dp(8))
                 contentDescription = "Elimina dai recenti"
                 setOnClickListener {
@@ -762,22 +769,39 @@ class MainActivity : AppCompatActivity() {
     private fun runSearchFromBox() {
         val q = searchInput.text?.toString()?.trim().orEmpty()
         if (q.isEmpty()) return
-        if (q.contains('.') && !q.contains(' ')) openInBrowser(normalizeUrl(q))
-        else openInBrowser(searchUrl(q))
+        val match = findAppByName(q)
+        when {
+            match != null -> { noteUse(match); openInBrowser(normalizeUrl(match.url)) }
+            looksLikeUrl(q) -> openInBrowser(normalizeUrl(q))
+            else -> openInBrowser(searchUrl(q))
+        }
         searchInput.setText("")
         refreshList()
     }
 
     private fun handleVoiceText(text: String) {
         toast("Hai detto: $text")
-        val match = apps.firstOrNull {
-            it.name.contains(text, ignoreCase = true) || text.contains(it.name, ignoreCase = true)
-        }
+        val match = findAppByName(text, voice = true)
         when {
-            match != null -> openInBrowser(normalizeUrl(match.url))
-            text.contains('.') && !text.contains(' ') -> openInBrowser(normalizeUrl(text))
+            match != null -> { noteUse(match); openInBrowser(normalizeUrl(match.url)) }
+            looksLikeUrl(text) -> openInBrowser(normalizeUrl(text))
             else -> openInBrowser(searchUrl(text))
         }
+    }
+
+    /** Exact name first; then a single partial match; for voice also "apri X" and names inside the phrase. */
+    private fun findAppByName(raw: String, voice: Boolean = false): AppItem? {
+        val q = raw.trim().lowercase(Locale.ROOT)
+            .removePrefix("apri ").removePrefix("vai su ").removePrefix("open ").trim()
+        if (q.isEmpty()) return null
+        apps.firstOrNull { it.name.lowercase(Locale.ROOT) == q }?.let { return it }
+        val partial = apps.filter { it.name.lowercase(Locale.ROOT).startsWith(q) }
+        if (partial.size == 1) return partial.first()
+        if (voice) {
+            return apps.filter { it.name.length >= 3 && q.contains(it.name.lowercase(Locale.ROOT)) }
+                .maxByOrNull { it.name.length }
+        }
+        return null
     }
 
     private fun requestMicAndListen() {
@@ -799,6 +823,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun isSpeechAvailable(): Boolean =
         packageManager.queryIntentActivities(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH), 0).isNotEmpty()
+
+    private fun looksLikeUrl(raw: String): Boolean {
+        val t = raw.trim()
+        if (t.isEmpty() || t.contains(' ')) return false
+        if (t.startsWith("http://", true) || t.startsWith("https://", true)) return true
+        if (t.startsWith("localhost", true)) return true
+        val host = t.substringBefore('/').substringBefore(':')
+        return host.contains('.') && !host.startsWith('.') && !host.endsWith('.')
+    }
 
     private fun normalizeUrl(raw: String): String {
         val u = raw.trim()
@@ -829,6 +862,7 @@ class MainActivity : AppCompatActivity() {
                 4 -> pinToPhoneHome(item)
                 5 -> MaterialAlertDialogBuilder(this).setMessage("Eliminare \"${item.name}\"?")
                     .setPositiveButton("Elimina") { _, _ ->
+                        item.iconPath?.let { runCatching { java.io.File(it).delete() } }
                         apps.removeAll { it.id == item.id }; persistApps(); refreshList(); toast("Eliminata")
                     }.setNegativeButton("Annulla", null).show()
             }
@@ -893,9 +927,9 @@ class MainActivity : AppCompatActivity() {
         fun row(label: String, sub: String? = null, onClick: () -> Unit) {
             val card = com.google.android.material.card.MaterialCardView(this).apply {
                 radius = dp(16).toFloat()
-                setCardBackgroundColor(ContextCompat.getColor(this@MainActivity, R.color.card))
+                setCardBackgroundColor(AppRepository.palette(this@MainActivity).card)
                 strokeWidth = dp(1)
-                strokeColor = ContextCompat.getColor(this@MainActivity, R.color.stroke)
+                strokeColor = AppRepository.palette(this@MainActivity).stroke
                 cardElevation = 0f
                 val lp = android.widget.LinearLayout.LayoutParams(
                     android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
@@ -911,13 +945,13 @@ class MainActivity : AppCompatActivity() {
             }
             box.addView(TextView(this).apply {
                 text = label
-                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+                setTextColor(AppRepository.palette(this@MainActivity).text)
                 textSize = 15f
             })
             if (!sub.isNullOrBlank()) {
                 box.addView(TextView(this).apply {
                     text = sub
-                    setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+                    setTextColor(AppRepository.palette(this@MainActivity).textMuted)
                     textSize = 12f
                     setPadding(0, dp(2), 0, 0)
                 })
@@ -1097,7 +1131,7 @@ class MainActivity : AppCompatActivity() {
             setText(title)
             setSingleLine()
             setSelection(text?.length ?: 0)
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text))
+            setTextColor(AppRepository.palette(this@MainActivity).text)
         }
         val til = TextInputLayout(this).apply {
             hint = "Nome sulla home"
@@ -1107,7 +1141,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(til)
         root.addView(TextView(this).apply {
             text = url
-            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+            setTextColor(AppRepository.palette(this@MainActivity).textMuted)
             textSize = 12f
             setPadding(dp(2), dp(10), dp(2), dp(14))
             maxLines = 2
@@ -1121,7 +1155,7 @@ class MainActivity : AppCompatActivity() {
             val lp = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             lp.marginEnd = if (filled) dp(8) else 0
             b.layoutParams = lp
-            if (!filled) b.backgroundTintList = android.content.res.ColorStateList.valueOf(ContextCompat.getColor(this, R.color.card))
+            if (!filled) b.backgroundTintList = android.content.res.ColorStateList.valueOf(AppRepository.palette(this).card)
             return b
         }
         val homeBtn = actionBtn("Home", true)
@@ -1197,7 +1231,7 @@ class MainActivity : AppCompatActivity() {
     private fun writeBackupToUri(uri: Uri, quiet: Boolean = false) {
         try {
             val json = backupJson()
-            contentResolver.openOutputStream(uri)?.use { os ->
+            (contentResolver.openOutputStream(uri, "wt") ?: contentResolver.openOutputStream(uri))?.use { os ->
                 os.write(json.toByteArray(Charsets.UTF_8))
             } ?: run {
                 if (!quiet) toast("Impossibile scrivere il file")
@@ -1222,7 +1256,17 @@ class MainActivity : AppCompatActivity() {
             val catsJson = com.google.gson.Gson().toJson(map["categories"])
             val appType = object : com.google.gson.reflect.TypeToken<MutableList<AppItem>>() {}.type
             val catType = object : com.google.gson.reflect.TypeToken<MutableList<String>>() {}.type
-            val loadedApps = com.google.gson.Gson().fromJson<MutableList<AppItem>>(appsJson, appType)
+            @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")
+            val loadedApps = com.google.gson.Gson().fromJson<MutableList<AppItem>?>(appsJson, appType)
+                ?.filter { it != null && !it.name.isNullOrBlank() && !it.url.isNullOrBlank() }
+                ?.map {
+                    it.copy(
+                        id = it.id?.takeIf { id -> id.isNotBlank() } ?: UUID.randomUUID().toString(),
+                        url = normalizeUrl(it.url),
+                        category = it.category?.takeIf { c -> c.isNotBlank() } ?: "Utility",
+                        iconPath = it.iconPath?.takeIf { p -> java.io.File(p).exists() }
+                    )
+                }?.toMutableList()
             val loadedCats = com.google.gson.Gson().fromJson<MutableList<String>>(catsJson, catType)
             if (loadedApps.isNullOrEmpty()) { toast("Nessuna app nel backup"); return }
             MaterialAlertDialogBuilder(this)
@@ -1230,7 +1274,9 @@ class MainActivity : AppCompatActivity() {
                 .setMessage("Sostituire le ${apps.size} app attuali con le ${loadedApps.size} del backup?")
                 .setPositiveButton("Ripristina") { _, _ ->
                     apps = loadedApps
-                    categories = loadedCats ?: repo.loadCategories()
+                    categories = (loadedCats?.filterNotNull()?.filter { it.isNotBlank() }?.toMutableList()
+                        ?: repo.loadCategories())
+                    loadedApps.map { it.category }.distinct().filter { it !in categories }.forEach { categories.add(it) }
                     persistApps()
                     repo.saveCategories(categories)
                     (map["searchEngine"] as? String)?.let { repo.setSearchEngine(SearchEngine.fromName(it)) }
