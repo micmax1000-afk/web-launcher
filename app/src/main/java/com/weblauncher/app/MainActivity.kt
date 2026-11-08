@@ -78,6 +78,7 @@ class MainActivity : AppCompatActivity() {
             .addPathHandler("/files/pdf/", androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler(this, pdfDir))
             .addPathHandler("/files/wallet/", androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler(this, walletDir))
             .addPathHandler("/files/scan/", androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler(this, scanDir))
+            .addPathHandler("/files/rec/", androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler(this, RecordingService.dir(this)))
             .build()
     }
     private var tts: android.speech.tts.TextToSpeech? = null
@@ -896,6 +897,7 @@ class MainActivity : AppCompatActivity() {
             "voice" -> { intent.removeExtra(EXTRA_WIDGET); requestMicAndListen(); return }
             "news" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_NEWS); return }
             "reminders" -> { intent.removeExtra(EXTRA_WIDGET); showRemindersPage(); return }
+            "recorder" -> { intent.removeExtra(EXTRA_WIDGET); showRecorderPage(); return }
         }
         val data = intent?.data
         if (intent?.action == Intent.ACTION_VIEW && data != null && (data.scheme == "content" || data.scheme == "file") &&
@@ -2230,6 +2232,10 @@ class MainActivity : AppCompatActivity() {
                 }, "Condividi risposta"))
             }
             chip("Leggi") { speak(answer, 1f) }
+            chip("📝 Nota") {
+                notes.save(notes.load() + Note(UUID.randomUUID().toString(), title + "\n" + answer, System.currentTimeMillis()))
+                toast("Salvato nelle Note")
+            }
             chat.addView(row)
         }
 
@@ -3165,6 +3171,8 @@ class MainActivity : AppCompatActivity() {
         chip("📚 Catalogo") { showCatalogPage() }
         chip("📄 Scanner") { scanDocument() }
         chip("🔦 Utilità") { showUtilitiesPage() }
+        chip("📖 Libri") { showBooksPage() }
+        chip("🎙 Registra") { showRecorderPage() }
         chip("💳 Carte") { showCardsPage() }
         chip("🎫 Biglietti") { showWalletPage() }
         chip("⏰ Promemoria") { showRemindersPage() }
@@ -5794,6 +5802,218 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ======================= E-books =======================
+
+    private val epubPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        toast("Importo il libro…")
+        io.execute {
+            val res = runCatching { Ebooks.import(this, uri) }
+            runOnUiThread {
+                res.onSuccess { b -> toast("📖 ${b.title}"); booksRefresh?.invoke(); openBook(b) }
+                    .onFailure { e -> toast(e.message?.takeIf { it.length < 80 } ?: "Non è un EPUB valido") }
+            }
+        }
+    }
+
+    private var booksRefresh: (() -> Unit)? = null
+
+    private fun openBook(b: Book) = startActivity(Intent(this, EbookActivity::class.java).putExtra("book", b.id))
+
+    private fun showBooksPage() {
+        openPage("Libri", "Aggiungi", { _ -> epubPicker.launch(arrayOf("application/epub+zip", "application/octet-stream", "*/*")) }) { _, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            fun render() {
+                body.removeAllViews()
+                val books = Ebooks.load(this).sortedByDescending {
+                    getSharedPreferences("wl_books", MODE_PRIVATE).getLong("last_${it.id}", it.added)
+                }
+                if (books.isEmpty()) {
+                    emptyLabel(body, "Nessun libro.\nTocca «Aggiungi» e scegli un file EPUB\n(dal telefono, da Drive o dai Download).\n\nI libri Kindle e quelli protetti (DRM) non si possono aprire.")
+                    return
+                }
+                books.forEach { b ->
+                    val (ch, _) = Ebooks.progress(this, b.id)
+                    val pct = (ch + 1) * 100 / b.spine.size.coerceAtLeast(1)
+                    val row = android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                        setPadding(dp(8), dp(8), dp(4), dp(8))
+                        val tv = android.util.TypedValue()
+                        theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                        setBackgroundResource(tv.resourceId)
+                        setOnClickListener { openBook(b) }
+                        setOnLongClickListener {
+                            confirmClear("Eliminare «${b.title}»?") { Ebooks.delete(this@MainActivity, b.id); render() }
+                            true
+                        }
+                    }
+                    row.addView(ImageView(this).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        layoutParams = android.widget.LinearLayout.LayoutParams(dp(56), dp(80)).apply { marginEnd = dp(14) }
+                        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 8 * d; setColor(palette.iconTile) }
+                        b.cover?.let { c -> load(java.io.File(Ebooks.dir(this@MainActivity), "${b.id}/${b.root}${java.net.URLDecoder.decode(c, "UTF-8")}")) {
+                            transformations(coil.transform.RoundedCornersTransformation(12f))
+                        } }
+                    })
+                    val box = android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.VERTICAL; layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                    }
+                    box.addView(TextView(this).apply {
+                        text = b.title; textSize = 16f; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+                        setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text)
+                    })
+                    box.addView(TextView(this).apply { text = b.author; textSize = 13f; setTextColor(palette.textMuted) })
+                    box.addView(android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                        max = 100; progress = pct
+                        layoutParams = android.widget.LinearLayout.LayoutParams(-1, dp(6)).apply { topMargin = dp(8); marginEnd = dp(12) }
+                    })
+                    box.addView(TextView(this).apply { text = "$pct% · capitolo ${ch + 1} di ${b.spine.size}"; textSize = 12f; setTextColor(palette.textMuted) })
+                    row.addView(box)
+                    body.addView(row)
+                }
+                body.addView(TextView(this).apply {
+                    text = "Tieni premuto un libro per eliminarlo."; textSize = 12f; setTextColor(palette.textMuted); setPadding(dp(10), dp(12), 0, 0)
+                })
+            }
+            render()
+            booksRefresh = { render() }
+            dialog.setOnDismissListener { booksRefresh = null }
+        }
+    }
+
+    // ======================= Voice recorder with AI transcription =======================
+
+    private val recPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) startRecording() else toast("Serve il permesso microfono per registrare")
+    }
+
+    private var recorderRefresh: (() -> Unit)? = null
+
+    private fun recTitles() = getSharedPreferences("wl_rec", MODE_PRIVATE)
+
+    private fun startRecording() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            recPermission.launch(Manifest.permission.RECORD_AUDIO); return
+        }
+        ensureNotificationPermission()
+        ContextCompat.startForegroundService(this, Intent(this, RecordingService::class.java))
+        uiHandler.postDelayed({ recorderRefresh?.invoke() }, 400)
+    }
+
+    private fun stopRecording() {
+        startService(Intent(this, RecordingService::class.java).setAction(RecordingService.ACTION_STOP))
+    }
+
+    private fun recDuration(f: java.io.File): Long = runCatching {
+        val r = android.media.MediaMetadataRetriever()
+        r.setDataSource(f.absolutePath)
+        val ms = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+        r.release()
+        ms ?: (f.length() * 8 / 40)  // ~40 kbps
+    }.getOrDefault(f.length() * 8 / 40)
+
+    private fun showRecorderPage() {
+        openPage("Registrazioni") { root, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            val big = TextView(this).apply {
+                textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); gravity = android.view.Gravity.CENTER
+                setTextColor(android.graphics.Color.WHITE)
+                layoutParams = android.widget.LinearLayout.LayoutParams(-1, dp(64)).apply { setMargins(dp(16), dp(4), dp(16), dp(10)) }
+            }
+            root.addView(big, 1)
+            val ticker = object : Runnable {
+                override fun run() {
+                    val rec = RecordingService.isRecording()
+                    big.text = if (rec) "■  Ferma  ·  " + fmtTime(System.currentTimeMillis() - RecordingService.startedAt) else "●  Registra"
+                    big.background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = 32 * d; setColor(if (rec) 0xFF424242.toInt() else 0xFFE53935.toInt())
+                    }
+                    if (rec) uiHandler.postDelayed(this, 500)
+                }
+            }
+            big.setOnClickListener { if (RecordingService.isRecording()) stopRecording() else startRecording() }
+            fun render() {
+                uiHandler.removeCallbacks(ticker); uiHandler.post(ticker)
+                body.removeAllViews()
+                val files = RecordingService.dir(this).listFiles { f -> f.name.endsWith(".aac") && f != RecordingService.current }
+                    ?.sortedByDescending { it.lastModified() }.orEmpty()
+                if (files.isEmpty()) {
+                    emptyLabel(body, "Nessuna registrazione.\nContinua anche a schermo spento.\nPoi l'AI può trascriverla e riassumerla (con Gemini).")
+                    return
+                }
+                val fmt = java.text.SimpleDateFormat("EEE d MMM, HH:mm", Locale.ITALIAN)
+                files.forEach { f ->
+                    val title = recTitles().getString(f.name, null) ?: ("Registrazione " + fmt.format(java.util.Date(f.lastModified())))
+                    val dur = recDuration(f)
+                    listRow(body, title, "${fmtTime(dur)} · ${android.text.format.Formatter.formatShortFileSize(this, f.length())}",
+                        onClick = { playMedia("rec:" + f.name, Uri.fromFile(f).toString(), title, "Registrazione", null, 0L) },
+                        onLong = {
+                            MaterialAlertDialogBuilder(this).setTitle(title)
+                                .setItems(arrayOf("▶ Ascolta", "✨ Trascrivi e riassumi", "✏️ Rinomina", "Condividi")) { _, w ->
+                                    when (w) {
+                                        0 -> playMedia("rec:" + f.name, Uri.fromFile(f).toString(), title, "Registrazione", null, 0L)
+                                        1 -> transcribe(f, title, dur)
+                                        2 -> {
+                                            val et = TextInputEditText(this).apply { setText(title); setSingleLine(); selectAll() }
+                                            val box = android.widget.FrameLayout(this).apply { setPadding(dp(22), dp(8), dp(22), 0); addView(et) }
+                                            MaterialAlertDialogBuilder(this).setTitle("Nome").setView(box)
+                                                .setPositiveButton("Salva") { _, _ ->
+                                                    recTitles().edit().putString(f.name, et.text?.toString()?.trim().orEmpty().ifBlank { title }).apply(); render()
+                                                }.setNegativeButton("Annulla", null).show()
+                                        }
+                                        3 -> io.execute {
+                                            val u = runCatching {
+                                                val values = android.content.ContentValues().apply {
+                                                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, title.replace(Regex("[\\\\/:*?\"<>|]"), " ") + ".aac")
+                                                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "audio/aac")
+                                                }
+                                                val col = if (android.os.Build.VERSION.SDK_INT >= 29) android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                                                    else android.provider.MediaStore.Files.getContentUri("external")
+                                                contentResolver.insert(col, values)!!.also { uri -> contentResolver.openOutputStream(uri)!!.use { o -> f.inputStream().use { it.copyTo(o) } } }
+                                            }.getOrNull()
+                                            runOnUiThread {
+                                                if (u == null) toast("Condivisione non riuscita")
+                                                else startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                                                    type = "audio/aac"; putExtra(Intent.EXTRA_STREAM, u); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                }, "Condividi registrazione"))
+                                            }
+                                        }
+                                    }
+                                }.show()
+                        },
+                        onRemove = { confirmClear("Eliminare «$title»?") { f.delete(); recTitles().edit().remove(f.name).apply(); render() } })
+                }
+                body.addView(TextView(this).apply {
+                    text = "Tocca per ascoltare, tieni premuto per trascrivere con l'AI, rinominare o condividere."
+                    textSize = 12f; setTextColor(palette.textMuted); setPadding(dp(10), dp(12), 0, 0)
+                })
+            }
+            render()
+            recorderRefresh = { runOnUiThread { render() } }
+            RecordingService.listener = { runOnUiThread { recorderRefresh?.invoke() } }
+            dialog.setOnDismissListener { recorderRefresh = null; RecordingService.listener = null; uiHandler.removeCallbacks(ticker) }
+        }
+    }
+
+    private fun transcribe(f: java.io.File, title: String, durMs: Long) {
+        if (!aiReady()) return
+        if (f.length() > 14L * 1024 * 1024) { toast("Registrazione troppo lunga per la trascrizione (max circa 45 minuti)"); return }
+        showAiSheet(
+            title = "Trascrizione · $title",
+            context = null,
+            firstQuestion = "Nell'audio allegato c'è una registrazione di ${fmtTime(durMs)}. Prima scrivi la TRASCRIZIONE fedele in italiano " +
+                "(nella lingua parlata), con il minuto [mm:ss] all'inizio di ogni paragrafo e i cambi di persona se si capiscono. " +
+                "Poi un RIASSUNTO con i punti principali e le cose da fare.",
+            showFirstQuestion = false,
+            firstAttachments = listOf(Triple("pdf", "audio/aac", "/files/rec/" + f.name))
+        )
+        toast("✨ Invio l'audio… la trascrizione funziona con Gemini")
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -6417,6 +6637,8 @@ class MainActivity : AppCompatActivity() {
         row("📚 Catalogo app web", "${catalog.size} siti pronti da aggiungere alla home") { showCatalogPage() }
         row("📄 Scanner documenti", "Fogli e ricevute in PDF, con lettura AI") { scanDocument() }
         row("🔦 Torcia, bussola, livella") { showUtilitiesPage() }
+        row("📖 Libri (EPUB)", "Lettore con temi, segnalibro automatico e lettura ad alta voce") { showBooksPage() }
+        row("🎙 Registratore", "Anche a schermo spento, con trascrizione AI") { showRecorderPage() }
 
         section("COMODITÀ")
         row("📋 Appunti intelligenti", "Propone l'azione per link, pacchi e numeri copiati", switch = toolsPrefs.getBoolean("smartClipboard", true)) {

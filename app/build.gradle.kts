@@ -11,8 +11,8 @@ android {
         applicationId = "com.weblauncher.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 34
-        versionName = "6.4.0"
+        versionCode = 35
+        versionName = "6.5.0"
     }
 
     buildTypes {
