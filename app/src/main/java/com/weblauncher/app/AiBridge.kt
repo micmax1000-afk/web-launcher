@@ -81,7 +81,12 @@ class AiBridge(
     }
 
     /** messages: list of (role, content), role = "user" | "assistant". */
-    fun ask(messages: List<Pair<String, String>>, system: String?, listener: Listener): Int {
+    /**
+     * attachments: (kind, mime, url) added to the last message; url is an app path such as
+     * /files/scan/x.jpg. kind "image" or "pdf" (Gemini also accepts audio sent as "pdf" with an audio mime).
+     */
+    fun ask(messages: List<Pair<String, String>>, system: String?, listener: Listener,
+            attachments: List<Triple<String, String, String>> = emptyList()): Int {
         if (!supported()) {
             listener.onError("Il browser di sistema è troppo vecchio per l'AI: aggiorna \"Android System WebView\".", false)
             return 0
@@ -89,7 +94,17 @@ class AiBridge(
         val id = nextId++
         listeners[id] = listener
         val arr = JSONArray()
-        messages.forEach { (role, content) -> arr.put(JSONObject().put("role", role).put("content", content)) }
+        messages.forEachIndexed { i, (role, content) ->
+            val o = JSONObject().put("role", role).put("content", content)
+            if (i == messages.lastIndex && attachments.isNotEmpty()) {
+                val atts = JSONArray()
+                attachments.forEachIndexed { n, (kind, mime, url) ->
+                    atts.put(JSONObject().put("kind", kind).put("mime", mime).put("url", url).put("name", "allegato$n"))
+                }
+                o.put("attachments", atts)
+            }
+            arr.put(o)
+        }
         val js = "wlAsk($id, ${JSONObject.quote(arr.toString())}, ${JSONObject.quote(system.orEmpty())})"
         run { web?.evaluateJavascript(js, null) }
         return id

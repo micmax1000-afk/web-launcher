@@ -77,6 +77,7 @@ class MainActivity : AppCompatActivity() {
             .addPathHandler("/assets/", androidx.webkit.WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/files/pdf/", androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler(this, pdfDir))
             .addPathHandler("/files/wallet/", androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler(this, walletDir))
+            .addPathHandler("/files/scan/", androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler(this, scanDir))
             .build()
     }
     private var tts: android.speech.tts.TextToSpeech? = null
@@ -297,7 +298,11 @@ class MainActivity : AppCompatActivity() {
         labelSettings = findViewById(R.id.labelSettings)
 
         styleChrome(palette)
-        findViewById<View>(R.id.btnEmptyAdd).setOnClickListener { showAddEditDialog(null) }
+        findViewById<View>(R.id.btnEmptyAdd).setOnClickListener {
+            MaterialAlertDialogBuilder(this).setItems(arrayOf("📚 Scegli dal catalogo", "✏️ Aggiungi a mano")) { _, w ->
+                if (w == 0) showCatalogPage() else showAddEditDialog(null)
+            }.show()
+        }
         setupWebView()
         setupLauncher()
         setupNews()
@@ -2115,7 +2120,8 @@ class MainActivity : AppCompatActivity() {
         firstQuestion: String?,
         showFirstQuestion: Boolean = true,
         hint: String = "Fai un'altra domanda…",
-        quote: String? = null
+        quote: String? = null,
+        firstAttachments: List<Triple<String, String, String>> = emptyList()
     ) {
         val palette = AppRepository.palette(this)
         val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
@@ -2236,6 +2242,7 @@ class MainActivity : AppCompatActivity() {
             input.setText("")
             sendBtn.alpha = 0.4f
             scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+            val atts = if (history.size == 1) firstAttachments else emptyList()
             running = ai.ask(history, AI_SYSTEM, object : AiBridge.Listener {
                 override fun onPartial(text: String) {
                     answerView.text = formatAi(text)
@@ -2259,7 +2266,7 @@ class MainActivity : AppCompatActivity() {
                         setOnClickListener { sheet.dismiss(); openMiaAi() }
                     })
                 }
-            })
+            }, atts)
         }
         sendBtn.setOnClickListener { send(input.text?.toString()?.trim().orEmpty(), true) }
         input.setOnEditorActionListener { _, id, _ ->
@@ -3155,6 +3162,9 @@ class MainActivity : AppCompatActivity() {
         chip("🎧 Podcast") { audioTab = "podcast"; showTab(TAB_AUDIO) }
         chip("📻 Radio") { audioTab = "radio"; showTab(TAB_AUDIO) }
         chip("📷 QR") { scanQr() }
+        chip("📚 Catalogo") { showCatalogPage() }
+        chip("📄 Scanner") { scanDocument() }
+        chip("🔦 Utilità") { showUtilitiesPage() }
         chip("💳 Carte") { showCardsPage() }
         chip("🎫 Biglietti") { showWalletPage() }
         chip("⏰ Promemoria") { showRemindersPage() }
@@ -5489,6 +5499,301 @@ class MainActivity : AppCompatActivity() {
         toast("☑ Aggiunto a $name: ${add.joinToString(", ")}")
     }
 
+    // ======================= Web app catalog =======================
+
+    data class CatalogApp(val name: String, val url: String, val cat: String, val desktop: Boolean = false, val note: String? = null)
+
+    private val catalog: List<CatalogApp> by lazy {
+        runCatching {
+            val json = assets.open("catalog.json").use { it.readBytes().toString(Charsets.UTF_8) }
+            com.google.gson.Gson().fromJson<List<CatalogApp>>(json, object : com.google.gson.reflect.TypeToken<List<CatalogApp>>() {}.type)
+        }.getOrNull().orEmpty()
+    }
+
+    private fun isInstalled(c: CatalogApp): Boolean {
+        val h = hostOf(c.url)
+        return apps.any { a -> hostOf(normalizeUrl(a.url)) == h && (h != "google.com" && h != "docs.google.com" || a.url.trimEnd('/') == c.url.trimEnd('/')) }
+    }
+
+    private fun installCatalogApp(c: CatalogApp) {
+        if (isInstalled(c)) return
+        if (c.cat !in categories) { categories.add(c.cat); repo.saveCategories(categories) }
+        apps.add(AppItem(UUID.randomUUID().toString(), c.name, c.url, c.cat, false, apps.size, null, 0, false, c.desktop))
+        persistApps(); refreshList()
+    }
+
+    private fun showCatalogPage() {
+        openPage("Catalogo app web") { root, body, _ ->
+            val palette = AppRepository.palette(this)
+            val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            var query = ""
+            fun render() {
+                body.removeAllViews()
+                val q = query.lowercase(Locale.ROOT)
+                val list = catalog.filter { q.isEmpty() || it.name.lowercase(Locale.ROOT).contains(q) || it.cat.lowercase(Locale.ROOT).contains(q) }
+                if (list.isEmpty()) { emptyLabel(body, "Nessuna app trovata.\nPuoi aggiungere qualsiasi sito da Impostazioni → Aggiungi web app."); return }
+                list.groupBy { it.cat }.forEach { (cat, group) ->
+                    sectionLabel(body, cat.uppercase())
+                    group.forEach { c ->
+                        val installed = isInstalled(c)
+                        val row = android.widget.LinearLayout(this).apply {
+                            orientation = android.widget.LinearLayout.HORIZONTAL
+                            gravity = android.view.Gravity.CENTER_VERTICAL
+                            setPadding(dp(8), dp(6), dp(4), dp(6))
+                        }
+                        row.addView(ImageView(this).apply {
+                            layoutParams = android.widget.LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) }
+                            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 10 * d; setColor(palette.iconTile) }
+                            setPadding(dp(6), dp(6), dp(6), dp(6))
+                            load("https://www.google.com/s2/favicons?domain=${hostOf(c.url)}&sz=64")
+                        })
+                        val box = android.widget.LinearLayout(this).apply {
+                            orientation = android.widget.LinearLayout.VERTICAL
+                            layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                        }
+                        box.addView(TextView(this).apply { text = c.name; textSize = 16f; setTextColor(palette.text) })
+                        box.addView(TextView(this).apply {
+                            text = listOfNotNull(hostOf(c.url), c.note).joinToString(" · "); textSize = 12f; setTextColor(palette.textMuted)
+                        })
+                        row.addView(box)
+                        row.addView(TextView(this).apply {
+                            text = if (installed) "✓ In home" else "Aggiungi"
+                            textSize = 14f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+                            setTextColor(if (installed) palette.textMuted else android.graphics.Color.WHITE)
+                            setPadding(dp(14), dp(7), dp(14), dp(7))
+                            background = android.graphics.drawable.GradientDrawable().apply {
+                                cornerRadius = 16 * d
+                                if (installed) setStroke(d.toInt().coerceAtLeast(1), palette.stroke) else setColor(accent)
+                            }
+                            setOnClickListener {
+                                if (!installed) { installCatalogApp(c); toast("${c.name} aggiunta alla home"); render() }
+                                else openInBrowser(c.url)
+                            }
+                        })
+                        body.addView(row)
+                    }
+                }
+                body.addView(TextView(this).apply {
+                    text = "Dopo averla provata, puoi disinstallare l'app ufficiale dal telefono."
+                    textSize = 13f; setTextColor(palette.textMuted); setPadding(dp(10), dp(16), dp(10), 0)
+                })
+            }
+            val et = EditText(this).apply {
+                hint = "Cerca nel catalogo"; setSingleLine(); textSize = 16f
+                setTextColor(palette.text); setHintTextColor(palette.textMuted)
+                setPadding(dp(18), 0, dp(18), 0)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 24 * d; setColor(palette.iconTile); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+                }
+                layoutParams = android.widget.LinearLayout.LayoutParams(-1, dp(48)).apply { setMargins(dp(16), 0, dp(16), dp(8)) }
+                addTextChangedListener(object : TextWatcher {
+                    override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                    override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                    override fun afterTextChanged(e: Editable?) { query = e?.toString()?.trim().orEmpty(); render() }
+                })
+            }
+            root.addView(et, 1)
+            render()
+        }
+    }
+
+    // ======================= Document scanner (Google, no camera permission) =======================
+
+    private val scanDir by lazy { java.io.File(cacheDir, "scan").apply { mkdirs() } }
+
+    private val docScanLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { r ->
+        if (r.resultCode != RESULT_OK) return@registerForActivityResult
+        val res = com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult.fromActivityResultIntent(r.data) ?: return@registerForActivityResult
+        val pdfUri = res.pdf?.uri ?: return@registerForActivityResult
+        val pages = res.pages?.map { it.imageUri } ?: emptyList()
+        io.execute {
+            val stamp = System.currentTimeMillis()
+            val pdf = java.io.File(scanDir, "scan_$stamp.pdf")
+            runCatching { contentResolver.openInputStream(pdfUri)!!.use { i -> pdf.outputStream().use { i.copyTo(it) } } }
+            val images = pages.take(10).mapIndexedNotNull { i, u ->
+                runCatching {
+                    val f = java.io.File(scanDir, "scan_${stamp}_$i.jpg")
+                    val bmp = contentResolver.openInputStream(u)!!.use { android.graphics.BitmapFactory.decodeStream(it) }
+                    val scale = minOf(1f, 1600f / maxOf(bmp.width, bmp.height))
+                    val small = Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
+                    f.outputStream().use { small.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+                    f
+                }.getOrNull()
+            }
+            runOnUiThread { scanDone(pdf, images, res.pages?.size ?: images.size) }
+        }
+    }
+
+    private fun scanDocument() {
+        try {
+            val options = com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.Builder()
+                .setGalleryImportAllowed(true)
+                .setPageLimit(20)
+                .setResultFormats(
+                    com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_PDF,
+                    com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.RESULT_FORMAT_JPEG
+                )
+                .setScannerMode(com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+                .build()
+            com.google.mlkit.vision.documentscanner.GmsDocumentScanning.getClient(options).getStartScanIntent(this)
+                .addOnSuccessListener { sender -> docScanLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(sender).build()) }
+                .addOnFailureListener { toast("Scanner non disponibile: servono i Google Play Services aggiornati") }
+        } catch (_: Throwable) { toast("Scanner non disponibile su questo telefono") }
+    }
+
+    private fun scanDone(pdf: java.io.File, images: List<java.io.File>, pageCount: Int) {
+        if (!pdf.exists()) { toast("Scansione non salvata"); return }
+        val title = "Documento " + java.text.SimpleDateFormat("d MMM HH:mm", Locale.ITALIAN).format(java.util.Date())
+        val opts = arrayOf("📄 Apri", "🎫 Salva nei biglietti e documenti", "⬇ Salva nei Download", "Condividi", "✨ Leggi e riassumi con AI")
+        MaterialAlertDialogBuilder(this).setTitle("Scansione pronta · $pageCount ${if (pageCount == 1) "pagina" else "pagine"}")
+            .setItems(opts) { _, w ->
+                when (w) {
+                    0 -> {
+                        val dest = java.io.File(pdfDir, pdf.name); runCatching { pdf.copyTo(dest, true) }
+                        showPdf(dest, title, null)
+                    }
+                    1 -> askWalletTitle(title) { t -> addToWallet(t, "pdf", pdf) }
+                    2, 3 -> io.execute {
+                        val u = runCatching {
+                            val values = android.content.ContentValues().apply {
+                                put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "$title.pdf".replace(":", "."))
+                                put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                            }
+                            val col = if (android.os.Build.VERSION.SDK_INT >= 29) android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                                else android.provider.MediaStore.Files.getContentUri("external")
+                            contentResolver.insert(col, values)!!.also { uri -> contentResolver.openOutputStream(uri)!!.use { o -> pdf.inputStream().use { it.copyTo(o) } } }
+                        }.getOrNull()
+                        runOnUiThread {
+                            if (u == null) toast("Non salvato")
+                            else if (w == 2) toast("Salvato nei Download")
+                            else startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                                type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, u); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }, "Condividi documento"))
+                        }
+                    }
+                    4 -> readScanWithAi(images)
+                }
+            }.show()
+    }
+
+    private fun readScanWithAi(images: List<java.io.File>) {
+        if (!aiReady()) return
+        if (images.isEmpty()) { toast("Immagini della scansione non disponibili"); return }
+        showAiSheet(
+            title = "Documento scansionato",
+            context = null,
+            firstQuestion = "Leggi il documento nelle immagini allegate e riassumilo in italiano: di cosa si tratta, " +
+                "importi, date e scadenze, cosa bisogna fare. Se richiesto, potrò chiederti il testo completo.",
+            showFirstQuestion = false,
+            firstAttachments = images.map { Triple("image", "image/jpeg", "/files/scan/" + it.name) }
+        )
+    }
+
+    // ======================= Utilities: torch, compass, level =======================
+
+    private fun showUtilitiesPage() {
+        val sm = getSystemService(SENSOR_SERVICE) as android.hardware.SensorManager
+        val cm = getSystemService(CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+        val torchId = runCatching {
+            cm.cameraIdList.firstOrNull { id -> cm.getCameraCharacteristics(id).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true }
+        }.getOrNull()
+        var torchOn = false
+        var listener: android.hardware.SensorEventListener? = null
+        openPage("Utilità") { _, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            fun card(): android.widget.LinearLayout = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER_HORIZONTAL
+                setPadding(dp(16), dp(16), dp(16), dp(16))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 20 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+                }
+                layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(4), dp(6), dp(4), dp(6)) }
+                body.addView(this)
+            }
+            // torch
+            val torch = card()
+            val torchBtn = TextView(this).apply {
+                text = "🔦"; textSize = 46f; gravity = android.view.Gravity.CENTER
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(120), dp(120))
+                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(palette.iconTile) }
+            }
+            val torchLabel = TextView(this).apply { text = if (torchId == null) "Torcia non disponibile" else "Torcia spenta"; textSize = 15f; setTextColor(palette.text); setPadding(0, dp(8), 0, 0) }
+            torchBtn.setOnClickListener {
+                val id = torchId ?: return@setOnClickListener
+                torchOn = !torchOn
+                runCatching { cm.setTorchMode(id, torchOn) }.onFailure { torchOn = false; toast("Torcia occupata da un'altra app") }
+                (torchBtn.background as android.graphics.drawable.GradientDrawable).setColor(if (torchOn) 0xFFFFD54F.toInt() else palette.iconTile)
+                torchLabel.text = if (torchOn) "Torcia accesa" else "Torcia spenta"
+            }
+            torch.addView(torchBtn); torch.addView(torchLabel)
+            // compass
+            val compass = card()
+            val needle = TextView(this).apply { text = "⬆"; textSize = 54f; setTextColor(0xFFE53935.toInt()); gravity = android.view.Gravity.CENTER }
+            val heading = TextView(this).apply { textSize = 26f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); gravity = android.view.Gravity.CENTER }
+            compass.addView(TextView(this).apply { text = "Bussola"; textSize = 13f; setTextColor(palette.textMuted) })
+            compass.addView(needle); compass.addView(heading)
+            // level
+            val level = card()
+            val bubbleBox = android.widget.FrameLayout(this).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(200), dp(200))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(palette.iconTile); setStroke(dp(2), palette.stroke)
+                }
+            }
+            val bubble = View(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(accent) }
+                layoutParams = android.widget.FrameLayout.LayoutParams(dp(40), dp(40), android.view.Gravity.CENTER)
+            }
+            bubbleBox.addView(View(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setStroke(dp(2), palette.textMuted) }
+                layoutParams = android.widget.FrameLayout.LayoutParams(dp(48), dp(48), android.view.Gravity.CENTER)
+            })
+            bubbleBox.addView(bubble)
+            val angles = TextView(this).apply { textSize = 15f; setTextColor(palette.text); setPadding(0, dp(8), 0, 0); gravity = android.view.Gravity.CENTER }
+            level.addView(TextView(this).apply { text = "Livella (appoggia il telefono)"; textSize = 13f; setTextColor(palette.textMuted); setPadding(0, 0, 0, dp(8)) })
+            level.addView(bubbleBox); level.addView(angles)
+
+            val rot = FloatArray(9); val orient = FloatArray(3)
+            val dirs = arrayOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")
+            listener = object : android.hardware.SensorEventListener {
+                override fun onSensorChanged(e: android.hardware.SensorEvent) {
+                    when (e.sensor.type) {
+                        android.hardware.Sensor.TYPE_ROTATION_VECTOR -> {
+                            android.hardware.SensorManager.getRotationMatrixFromVector(rot, e.values)
+                            android.hardware.SensorManager.getOrientation(rot, orient)
+                            val az = ((Math.toDegrees(orient[0].toDouble()) + 360) % 360).toFloat()
+                            needle.rotation = -az
+                            heading.text = "${az.toInt()}° ${dirs[((az + 22.5f) / 45f).toInt() % 8]}"
+                        }
+                        android.hardware.Sensor.TYPE_ACCELEROMETER -> {
+                            val x = e.values[0]; val y = e.values[1]
+                            val max = dp(80).toFloat()
+                            bubble.translationX = (-x / 9.81f * max * 2).coerceIn(-max, max)
+                            bubble.translationY = (y / 9.81f * max * 2).coerceIn(-max, max)
+                            val ax = Math.toDegrees(Math.asin((x / 9.81).coerceIn(-1.0, 1.0))).toInt()
+                            val ay = Math.toDegrees(Math.asin((y / 9.81).coerceIn(-1.0, 1.0))).toInt()
+                            angles.text = if (kotlin.math.abs(ax) <= 1 && kotlin.math.abs(ay) <= 1) "✓ In bolla" else "${kotlin.math.abs(ax)}° · ${kotlin.math.abs(ay)}°"
+                        }
+                    }
+                }
+                override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
+            }
+            val rv = sm.getDefaultSensor(android.hardware.Sensor.TYPE_ROTATION_VECTOR)
+            val acc = sm.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+            if (rv != null) sm.registerListener(listener, rv, android.hardware.SensorManager.SENSOR_DELAY_UI) else heading.text = "Bussola non disponibile"
+            if (acc != null) sm.registerListener(listener, acc, android.hardware.SensorManager.SENSOR_DELAY_UI)
+            dialog.setOnDismissListener {
+                listener?.let { sm.unregisterListener(it) }
+                if (torchOn) torchId?.let { runCatching { cm.setTorchMode(it, false) } }
+            }
+        }
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -6107,6 +6412,11 @@ class MainActivity : AppCompatActivity() {
                 )
                 .setPositiveButton("OK", null).show()
         }
+
+        section("SOSTITUISCI LE APP")
+        row("📚 Catalogo app web", "${catalog.size} siti pronti da aggiungere alla home") { showCatalogPage() }
+        row("📄 Scanner documenti", "Fogli e ricevute in PDF, con lettura AI") { scanDocument() }
+        row("🔦 Torcia, bussola, livella") { showUtilitiesPage() }
 
         section("COMODITÀ")
         row("📋 Appunti intelligenti", "Propone l'azione per link, pacchi e numeri copiati", switch = toolsPrefs.getBoolean("smartClipboard", true)) {

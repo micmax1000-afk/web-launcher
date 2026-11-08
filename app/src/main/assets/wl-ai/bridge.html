@@ -60,6 +60,28 @@
       });
     }
     var msgs = JSON.parse(messagesJson);
+    // attachments saved by the app (scans, recordings): read them and inline as base64
+    try {
+      for (var mi = 0; mi < msgs.length; mi++) {
+        var atts = msgs[mi].attachments || [];
+        for (var ai = 0; ai < atts.length; ai++) {
+          var at = atts[ai];
+          if (at.url && !at.data) {
+            var blob = await (await fetch(at.url)).blob();
+            at.data = await new Promise(function (res, rej) {
+              var fr = new FileReader();
+              fr.onload = function () { res(String(fr.result).split(',')[1]); };
+              fr.onerror = rej;
+              fr.readAsDataURL(blob);
+            });
+            delete at.url;
+          }
+        }
+      }
+    } catch (e) {
+      post({ id: id, t: 'error', message: 'Allegato non leggibile: ' + e.message });
+      return;
+    }
     var lastErr = null;
     for (var i = 0; i < attempts.length && i < 4; i++) {
       var c = attempts[i];
