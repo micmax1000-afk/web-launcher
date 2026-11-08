@@ -75,6 +75,10 @@ class NewsRepository(private val context: Context) {
         return src
     }
 
+    fun setEnabledIds(ids: Set<String>) { prefs.edit().putStringSet(KEY_ENABLED, ids).apply() }
+
+    fun setCustomSources(list: List<NewsSource>) { prefs.edit().putString(KEY_CUSTOM, gson.toJson(list)).apply() }
+
     fun removeCustom(id: String) {
         prefs.edit().putString(KEY_CUSTOM, gson.toJson(customSources().filter { it.id != id })).apply()
         setEnabled(id, false)

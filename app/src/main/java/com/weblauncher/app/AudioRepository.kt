@@ -70,6 +70,9 @@ class AudioRepository(private val context: Context) {
         prefs.edit().putString("subs", gson.toJson(list)).apply()
     }
 
+    fun setSubscriptions(list: List<Podcast>) { prefs.edit().putString("subs", gson.toJson(list)).apply() }
+    fun setFavoriteStations(list: List<RadioStation>) { prefs.edit().putString("radio_favs", gson.toJson(list)).apply() }
+
     fun unsubscribe(feed: String) {
         prefs.edit().putString("subs", gson.toJson(subscriptions().filter { it.feedUrl != feed })).apply()
         saveEpisodes(cachedEpisodes().filter { it.feedUrl != feed })

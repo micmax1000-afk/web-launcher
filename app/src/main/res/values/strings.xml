@@ -10,4 +10,6 @@
     <string name="no_speech">Riconoscimento vocale non disponibile su questo dispositivo</string>
     <string name="mic_denied">Permesso microfono negato</string>
     <string name="favorites">Preferiti</string>
+    <string name="widget_search_desc">Barra di ricerca con voce e notizie</string>
+    <string name="widget_news_desc">Le ultime notizie delle tue fonti</string>
 </resources>

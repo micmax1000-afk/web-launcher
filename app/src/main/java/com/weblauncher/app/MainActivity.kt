@@ -163,7 +163,8 @@ class MainActivity : AppCompatActivity() {
             )
         } catch (_: Exception) { }
         repo.setAutoBackupUri(uri.toString())
-        writeBackupToUri(uri, quiet = true)
+        syncPrefs.edit().remove("hash").apply()
+        autoBackupNow()
         toast("Backup automatico attivo")
     }
 
@@ -300,6 +301,7 @@ class MainActivity : AppCompatActivity() {
         setupNews()
         setupAudio()
         renderHomeTools()
+        renderWeather()
         setupNav()
         setupBack()
 
@@ -502,6 +504,7 @@ class MainActivity : AppCompatActivity() {
                     updateBrowserBody()
                     renderTabStrip()
                     updateStar()
+                    trackUsage()
                 }
             }
         }
@@ -744,6 +747,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.newsPanel).isVisible = tab == TAB_NEWS
         findViewById<View>(R.id.audioPanel).isVisible = tab == TAB_AUDIO
         if (tab == TAB_AUDIO) onAudioShown()
+        if (tab == TAB_HOME) refreshWeather()
+        if (::webView.isInitialized) trackUsage()
         if (tab == TAB_SETTINGS) renderSettings()
         if (tab == TAB_NEWS) onNewsShown()
         if (tab == TAB_BROWSER) { ensureTabLoaded(); updateBrowserBody() }
@@ -829,8 +834,20 @@ class MainActivity : AppCompatActivity() {
         }) { webView.visibility = View.VISIBLE }
     }
 
+    override fun onResume() {
+        super.onResume()
+        hasWindowFocusOrResumed = true
+        if (::webView.isInitialized) trackUsage()
+        checkSyncFromOtherDevice()
+        if (currentTab == TAB_HOME) refreshWeather()
+    }
+
     override fun onPause() {
         super.onPause()
+        hasWindowFocusOrResumed = false
+        flushUsage()
+        usageHost = null
+        autoBackupNow()
         persistTabs()
         CookieManager.getInstance().flush()
     }
@@ -843,6 +860,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openShortcut(intent: Intent?) {
+        when (intent?.getStringExtra(EXTRA_WIDGET)) {
+            "search" -> {
+                intent.removeExtra(EXTRA_WIDGET)
+                showTab(TAB_HOME)
+                searchInput.requestFocus()
+                searchInput.post {
+                    (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager)
+                        .showSoftInput(searchInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                }
+                return
+            }
+            "voice" -> { intent.removeExtra(EXTRA_WIDGET); requestMicAndListen(); return }
+            "news" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_NEWS); return }
+        }
         val data = intent?.data
         if (intent?.action == Intent.ACTION_VIEW && data != null && (data.scheme == "content" || data.scheme == "file") &&
             (intent.type?.contains("pdf") == true || data.path?.endsWith(".pdf", true) == true)
@@ -1245,6 +1276,21 @@ class MainActivity : AppCompatActivity() {
     // ======================= Apps with fingerprint lock =======================
 
     private fun openApp(item: AppItem) {
+        val host = hostOf(normalizeUrl(item.url))
+        if (host != null && limitFor(host) > 0) {
+            val used = usageMap(today)[host] ?: 0L
+            val allowed = (limitFor(host) + usagePrefs.getInt("extra_${today}_$host", 0)) * 60_000L
+            if (used >= allowed) {
+                MaterialAlertDialogBuilder(this).setTitle("⏱ Limite raggiunto")
+                    .setMessage("Oggi hai già usato ${item.name} per ${used / 60_000} minuti (limite ${limitFor(host)} min).")
+                    .setPositiveButton("Ok") { _, _ -> }
+                    .setNegativeButton("Apri per 15 min") { _, _ ->
+                        usagePrefs.edit().putInt("extra_${today}_$host", usagePrefs.getInt("extra_${today}_$host", 0) + 15).apply()
+                        noteUse(item); openInBrowser(normalizeUrl(item.url))
+                    }.show()
+                return
+            }
+        }
         val launch = {
             noteUse(item)
             openInBrowser(normalizeUrl(item.url))
@@ -2310,6 +2356,7 @@ class MainActivity : AppCompatActivity() {
                 if (items.isNotEmpty()) {
                     newsItems = items
                     newsUpdatedAt = System.currentTimeMillis()
+                    runCatching { NewsWidget.save(this, items) }
                 } else if (newsItems.isEmpty() && news.enabledIds().isNotEmpty()) {
                     toast("Nessuna notizia: controlla la connessione")
                 }
@@ -3026,6 +3073,7 @@ class MainActivity : AppCompatActivity() {
         chip("🎧 Podcast") { audioTab = "podcast"; showTab(TAB_AUDIO) }
         chip("📻 Radio") { audioTab = "radio"; showTab(TAB_AUDIO) }
         chip("📷 QR") { scanQr() }
+        chip("⏱ Tempo") { showUsagePage() }
         chip("📄 PDF") { pdfPicker.launch(arrayOf("application/pdf")) }
     }
 
@@ -3659,6 +3707,443 @@ class MainActivity : AppCompatActivity() {
         sheet.show()
     }
 
+    // ======================= Weather (Open-Meteo: free, no key) =======================
+
+    private val weatherPrefs by lazy { getSharedPreferences("wl_weather", MODE_PRIVATE) }
+
+    private fun weatherInfo(code: Int): Pair<String, String> = when (code) {
+        0 -> "☀️" to "Sereno"
+        1 -> "🌤" to "Poco nuvoloso"
+        2 -> "⛅" to "Parz. nuvoloso"
+        3 -> "☁️" to "Coperto"
+        45, 48 -> "🌫" to "Nebbia"
+        in 51..57 -> "🌦" to "Pioviggine"
+        in 61..67 -> "🌧" to "Pioggia"
+        in 71..77 -> "❄️" to "Neve"
+        in 80..82 -> "🌦" to "Rovesci"
+        85, 86 -> "🌨" to "Neve"
+        in 95..99 -> "⛈" to "Temporale"
+        else -> "🌡" to ""
+    }
+
+    private fun renderWeather() {
+        val card = findViewById<android.widget.LinearLayout>(R.id.weatherCard)
+        card.removeAllViews()
+        if (weatherPrefs.getBoolean("hidden", false)) { card.isVisible = false; return }
+        card.isVisible = true
+        val palette = AppRepository.palette(this)
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        card.background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 20 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+        }
+        val city = weatherPrefs.getString("city", null)
+        val data = weatherPrefs.getString("data", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
+        card.setOnClickListener { if (city == null) setupWeather() else showWeatherDetail() }
+        if (city == null || data == null) {
+            card.addView(TextView(this).apply {
+                text = if (city == null) "☀️  Aggiungi il meteo della tua città" else "⏳  Meteo di $city…"
+                textSize = 15f; setTextColor(palette.text)
+            })
+            return
+        }
+        val cur = data.optJSONObject("current")
+        val daily = data.optJSONObject("daily")
+        val (emoji, label) = weatherInfo(cur?.optInt("weather_code") ?: -1)
+        card.addView(TextView(this).apply { text = emoji; textSize = 30f; setPadding(0, 0, dp(12), 0) })
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+        }
+        val temp = cur?.optDouble("temperature_2m")?.let { Math.round(it) }
+        box.addView(TextView(this).apply {
+            text = "${temp ?: "–"}° · $label"; textSize = 16f
+            setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text)
+        })
+        val max = daily?.optJSONArray("temperature_2m_max")?.optDouble(0)?.let { Math.round(it) }
+        val min = daily?.optJSONArray("temperature_2m_min")?.optDouble(0)?.let { Math.round(it) }
+        val rain = daily?.optJSONArray("precipitation_probability_max")?.optInt(0)
+        box.addView(TextView(this).apply {
+            text = listOfNotNull(city, if (max != null && min != null) "$max° / $min°" else null, rain?.takeIf { it >= 20 }?.let { "💧 $it%" })
+                .joinToString(" · ")
+            textSize = 12.5f; setTextColor(palette.textMuted)
+        })
+        card.addView(box)
+        val days = daily?.optJSONArray("time")
+        val dayFmt = java.text.SimpleDateFormat("EEE", Locale.ITALIAN)
+        val parse = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
+        for (i in 1..3) {
+            val t = days?.optString(i) ?: continue
+            val dayName = runCatching { dayFmt.format(parse.parse(t)!!).replaceFirstChar { it.uppercase() }.take(3) }.getOrDefault("")
+            val e = weatherInfo(daily.optJSONArray("weather_code")?.optInt(i) ?: -1).first
+            val hi = daily.optJSONArray("temperature_2m_max")?.optDouble(i)?.let { Math.round(it) }
+            card.addView(TextView(this).apply {
+                text = "$dayName\n$e\n${hi ?: "–"}°"
+                textSize = 11.5f; gravity = android.view.Gravity.CENTER; setTextColor(palette.textMuted)
+                setPadding(dp(6), 0, dp(6), 0)
+            })
+        }
+    }
+
+    private fun refreshWeather(force: Boolean = false) {
+        val lat = weatherPrefs.getFloat("lat", Float.NaN)
+        val lon = weatherPrefs.getFloat("lon", Float.NaN)
+        if (lat.isNaN() || weatherPrefs.getBoolean("hidden", false)) return
+        if (!force && System.currentTimeMillis() - weatherPrefs.getLong("time", 0L) < 30 * 60_000L) return
+        Thread {
+            val json = runCatching {
+                val url = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon" +
+                    "&current=temperature_2m,apparent_temperature,weather_code,wind_speed_10m,relative_humidity_2m" +
+                    "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset" +
+                    "&timezone=auto&forecast_days=7"
+                java.net.URL(url).openStream().use { it.readBytes().toString(Charsets.UTF_8) }
+            }.getOrNull()
+            runOnUiThread {
+                if (json != null) weatherPrefs.edit().putString("data", json).putLong("time", System.currentTimeMillis()).apply()
+                renderWeather()
+            }
+        }.start()
+    }
+
+    private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
+        if (r.values.any { it }) useMyLocationForWeather() else toast("Posizione negata: scrivi il nome della città")
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun useMyLocationForWeather() {
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            locationPermission.launch(arrayOf(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION))
+            return
+        }
+        val lm = getSystemService(LOCATION_SERVICE) as android.location.LocationManager
+        val loc = listOf(android.location.LocationManager.NETWORK_PROVIDER, android.location.LocationManager.GPS_PROVIDER,
+            android.location.LocationManager.PASSIVE_PROVIDER)
+            .mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }
+            .maxByOrNull { it.time }
+        if (loc == null) { toast("Posizione non disponibile: scrivi il nome della città"); return }
+        Thread {
+            @Suppress("DEPRECATION")
+            val name = runCatching {
+                android.location.Geocoder(this, Locale.ITALIAN).getFromLocation(loc.latitude, loc.longitude, 1)
+                    ?.firstOrNull()?.let { it.locality ?: it.subAdminArea }
+            }.getOrNull() ?: "La tua zona"
+            runOnUiThread { setWeatherPlace(name, loc.latitude, loc.longitude) }
+        }.start()
+    }
+
+    private fun setWeatherPlace(name: String, lat: Double, lon: Double) {
+        weatherPrefs.edit().putString("city", name).putFloat("lat", lat.toFloat()).putFloat("lon", lon.toFloat())
+            .putBoolean("hidden", false).remove("data").putLong("time", 0L).apply()
+        renderWeather()
+        refreshWeather(force = true)
+        if (currentTab == TAB_SETTINGS) renderSettings()
+    }
+
+    private fun setupWeather() {
+        val d = resources.displayMetrics.density
+        val et = TextInputEditText(this).apply { hint = "Es. Torino, Bergamo, Perugia"; setSingleLine() }
+        val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Meteo: la tua città")
+            .setView(box)
+            .setPositiveButton("Cerca") { _, _ ->
+                val q = et.text?.toString()?.trim().orEmpty()
+                if (q.isEmpty()) return@setPositiveButton
+                Thread {
+                    val results = runCatching {
+                        val json = java.net.URL("https://geocoding-api.open-meteo.com/v1/search?count=6&language=it&name=" + Uri.encode(q))
+                            .openStream().use { it.readBytes().toString(Charsets.UTF_8) }
+                        val arr = org.json.JSONObject(json).optJSONArray("results") ?: org.json.JSONArray()
+                        (0 until arr.length()).map { i ->
+                            val o = arr.getJSONObject(i)
+                            Triple(listOf(o.optString("name"), o.optString("admin1"), o.optString("country")).filter { it.isNotBlank() }.joinToString(", "),
+                                o.optDouble("latitude"), o.optDouble("longitude")) to o.optString("name")
+                        }
+                    }.getOrDefault(emptyList())
+                    runOnUiThread {
+                        if (results.isEmpty()) { toast("Città non trovata"); return@runOnUiThread }
+                        MaterialAlertDialogBuilder(this).setTitle("Quale?")
+                            .setItems(results.map { it.first.first }.toTypedArray()) { _, w ->
+                                val (t, name) = results[w]
+                                setWeatherPlace(name, t.second, t.third)
+                            }.show()
+                    }
+                }.start()
+            }
+            .setNeutralButton("Usa la mia posizione") { _, _ -> useMyLocationForWeather() }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
+    private fun showWeatherDetail() {
+        val data = weatherPrefs.getString("data", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() } ?: return
+        val cur = data.optJSONObject("current")
+        val daily = data.optJSONObject("daily") ?: return
+        val sb = StringBuilder()
+        cur?.let {
+            sb.append("Percepita ${Math.round(it.optDouble("apparent_temperature"))}° · vento ${Math.round(it.optDouble("wind_speed_10m"))} km/h · umidità ${it.optInt("relative_humidity_2m")}%\n\n")
+        }
+        val fmt = java.text.SimpleDateFormat("EEEE d", Locale.ITALIAN)
+        val parse = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
+        val days = daily.optJSONArray("time") ?: return
+        for (i in 0 until days.length()) {
+            val name = if (i == 0) "Oggi" else runCatching { fmt.format(parse.parse(days.getString(i))!!).replaceFirstChar { it.uppercase() } }.getOrDefault("")
+            val (e, l) = weatherInfo(daily.optJSONArray("weather_code")?.optInt(i) ?: -1)
+            val hi = Math.round(daily.optJSONArray("temperature_2m_max")?.optDouble(i) ?: 0.0)
+            val lo = Math.round(daily.optJSONArray("temperature_2m_min")?.optDouble(i) ?: 0.0)
+            val rain = daily.optJSONArray("precipitation_probability_max")?.optInt(i) ?: 0
+            sb.append("$e  $name: $l, $hi° / $lo°${if (rain >= 20) " · 💧$rain%" else ""}\n")
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Meteo · ${weatherPrefs.getString("city", "")}")
+            .setMessage(sb.toString().trim())
+            .setPositiveButton("OK", null)
+            .setNeutralButton("Cambia città") { _, _ -> setupWeather() }
+            .setNegativeButton("Nascondi") { _, _ -> weatherPrefs.edit().putBoolean("hidden", true).apply(); renderWeather(); toast("Meteo nascosto: lo riattivi dalle Impostazioni") }
+            .show()
+    }
+
+    // ======================= Usage time & daily limits =======================
+
+    private val usagePrefs by lazy { getSharedPreferences("wl_usage", MODE_PRIVATE) }
+    private var usageHost: String? = null
+    private var usageStart = 0L
+    private val today get() = java.text.SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(java.util.Date())
+
+    private fun usageMap(day: String): MutableMap<String, Long> = runCatching {
+        val o = org.json.JSONObject(usagePrefs.getString("d_$day", "{}") ?: "{}")
+        o.keys().asSequence().associateWith { o.getLong(it) }.toMutableMap()
+    }.getOrDefault(mutableMapOf())
+
+    private fun flushUsage() {
+        val host = usageHost ?: return
+        val now = System.currentTimeMillis()
+        val ms = now - usageStart
+        usageStart = now
+        if (ms in 1000..(6 * 3600_000L)) {
+            val day = today
+            val map = usageMap(day)
+            map[host] = (map[host] ?: 0L) + ms
+            usagePrefs.edit().putString("d_$day", org.json.JSONObject(map as Map<*, *>).toString()).apply()
+            checkUsageLimit(host, map[host] ?: 0L)
+        }
+    }
+
+    /** Called whenever the visible site may change. */
+    private fun trackUsage() {
+        flushUsage()
+        val url = webView.url
+        val visible = currentTab == TAB_BROWSER && browserHasPage && !isFinishing && hasWindowFocusOrResumed
+        usageHost = if (visible && url != null && url.startsWith("http") && !MiaAi.isMiaUrl(url) && !isPdfViewer(url)) hostOf(url) else null
+        usageStart = System.currentTimeMillis()
+    }
+
+    private var hasWindowFocusOrResumed = false
+
+    private fun limitFor(host: String): Int = usagePrefs.getInt("limit_$host", 0)
+
+    private fun checkUsageLimit(host: String, usedMs: Long) {
+        val limit = limitFor(host)
+        if (limit <= 0 || !hasWindowFocusOrResumed || isFinishing) return
+        val extra = usagePrefs.getInt("extra_${today}_$host", 0)
+        if (usedMs < (limit + extra) * 60_000L) return
+        if (usagePrefs.getBoolean("warned_${today}_${host}_$extra", false)) return
+        usagePrefs.edit().putBoolean("warned_${today}_${host}_$extra", true).apply()
+        MaterialAlertDialogBuilder(this)
+            .setTitle("⏱ Tempo scaduto")
+            .setMessage("Oggi hai usato $host per ${usedMs / 60_000} minuti (limite: $limit min).")
+            .setPositiveButton("Chiudi") { _, _ -> closeCurrentTab(); showTab(TAB_HOME) }
+            .setNegativeButton("Ancora 15 min") { _, _ -> usagePrefs.edit().putInt("extra_${today}_$host", extra + 15).apply() }
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun showUsagePage() {
+        flushUsage()
+        openPage("Tempo di utilizzo") { _, body, _ ->
+            val palette = AppRepository.palette(this)
+            val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+            val d = resources.displayMetrics.density
+            fun render() {
+                body.removeAllViews()
+                val map = usageMap(today)
+                val total = map.values.sum()
+                body.addView(TextView(this).apply {
+                    text = "Oggi: ${fmtDur(total / 1000).ifBlank { "meno di 1 min" }}"
+                    textSize = 24f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text)
+                    setPadding((10 * d).toInt(), (8 * d).toInt(), 0, (4 * d).toInt())
+                })
+                // last 7 days
+                val cal = java.util.Calendar.getInstance()
+                val fmt = java.text.SimpleDateFormat("yyyyMMdd", Locale.ROOT)
+                val week = (6 downTo 0).map { back ->
+                    val c = cal.clone() as java.util.Calendar
+                    c.add(java.util.Calendar.DAY_OF_YEAR, -back)
+                    java.text.SimpleDateFormat("EEE", Locale.ITALIAN).format(c.time).take(3) to usageMap(fmt.format(c.time)).values.sum()
+                }
+                val maxDay = week.maxOf { it.second }.coerceAtLeast(1)
+                val chart = android.widget.LinearLayout(this).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.BOTTOM
+                    setPadding((10 * d).toInt(), (10 * d).toInt(), (10 * d).toInt(), (6 * d).toInt())
+                }
+                week.forEachIndexed { i, (name, ms) ->
+                    val col = android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.VERTICAL
+                        gravity = android.view.Gravity.CENTER_HORIZONTAL or android.view.Gravity.BOTTOM
+                        layoutParams = android.widget.LinearLayout.LayoutParams(0, (110 * d).toInt(), 1f)
+                    }
+                    col.addView(View(this).apply {
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            cornerRadius = 6 * d; setColor(if (i == 6) accent else androidx.core.graphics.ColorUtils.setAlphaComponent(accent, 0x66))
+                        }
+                        layoutParams = android.widget.LinearLayout.LayoutParams((18 * d).toInt(), ((80 * d) * ms / maxDay).toInt().coerceAtLeast((2 * d).toInt()))
+                    })
+                    col.addView(TextView(this).apply { text = name; textSize = 11f; setTextColor(palette.textMuted); setPadding(0, (4 * d).toInt(), 0, 0) })
+                    chart.addView(col)
+                }
+                body.addView(chart)
+                sectionLabel(body, "OGGI PER SITO · tocca per un limite")
+                if (map.isEmpty()) { emptyLabel(body, "Nessun sito usato oggi"); return }
+                map.entries.sortedByDescending { it.value }.forEach { (host, ms) ->
+                    val limit = limitFor(host)
+                    listRow(body, host, fmtDur(ms / 1000).ifBlank { "<1 min" } + if (limit > 0) " · limite $limit min" else "",
+                        onClick = {
+                            val opts = arrayOf("Nessun limite", "15 min", "30 min", "45 min", "1 ora", "2 ore")
+                            val values = intArrayOf(0, 15, 30, 45, 60, 120)
+                            MaterialAlertDialogBuilder(this).setTitle("Limite giornaliero · $host")
+                                .setItems(opts) { _, w ->
+                                    usagePrefs.edit().putInt("limit_$host", values[w]).apply()
+                                    render()
+                                }.show()
+                        })
+                }
+            }
+            render()
+        }
+    }
+
+    // ======================= Sync between devices (backup file on Drive) =======================
+
+    private val syncPrefs by lazy { getSharedPreferences("wl_sync", MODE_PRIVATE) }
+
+    private fun fullBackupJson(): String {
+        val gson = com.google.gson.Gson()
+        val now = System.currentTimeMillis()
+        return gson.toJson(mapOf(
+            "apps" to apps,
+            "categories" to categories,
+            "searchEngine" to repo.getSearchEngine().name,
+            "savedAt" to now,
+            "device" to (android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL),
+            "notes" to notes.load(),
+            "readLater" to readLater.load(),
+            "newsEnabled" to news.enabledIds().toList(),
+            "newsCustom" to news.customSources(),
+            "podcasts" to audio.subscriptions(),
+            "radioFavs" to audio.favoriteStations(),
+            "weather" to mapOf(
+                "city" to weatherPrefs.getString("city", null),
+                "lat" to weatherPrefs.getFloat("lat", Float.NaN).takeIf { !it.isNaN() },
+                "lon" to weatherPrefs.getFloat("lon", Float.NaN).takeIf { !it.isNaN() }
+            )
+        ))
+    }
+
+    /** Applies the extra sections of a backup (notes, read later, news, podcasts...). */
+    private fun applyBackupExtras(o: org.json.JSONObject) {
+        val gson = com.google.gson.Gson()
+        fun <T> list(key: String, type: java.lang.reflect.Type): List<T>? =
+            o.optJSONArray(key)?.let { runCatching { gson.fromJson<List<T>>(it.toString(), type) }.getOrNull() }
+        list<Note>("notes", object : com.google.gson.reflect.TypeToken<List<Note>>() {}.type)?.let { notes.save(it) }
+        list<ReadLaterItem>("readLater", object : com.google.gson.reflect.TypeToken<List<ReadLaterItem>>() {}.type)?.let { readLater.save(it) }
+        list<String>("newsEnabled", object : com.google.gson.reflect.TypeToken<List<String>>() {}.type)?.let { news.setEnabledIds(it.toSet()) }
+        list<NewsSource>("newsCustom", object : com.google.gson.reflect.TypeToken<List<NewsSource>>() {}.type)?.let { news.setCustomSources(it) }
+        list<Podcast>("podcasts", object : com.google.gson.reflect.TypeToken<List<Podcast>>() {}.type)?.let { audio.setSubscriptions(it) }
+        list<RadioStation>("radioFavs", object : com.google.gson.reflect.TypeToken<List<RadioStation>>() {}.type)?.let { audio.setFavoriteStations(it) }
+        o.optJSONObject("weather")?.let { w ->
+            val city = w.optString("city").takeIf { it.isNotBlank() && it != "null" }
+            if (city != null && w.has("lat")) setWeatherPlace(city, w.optDouble("lat"), w.optDouble("lon"))
+        }
+        newsItems = emptyList(); newsUpdatedAt = 0L; episodes = emptyList()
+    }
+
+    private fun applyFullBackup(o: org.json.JSONObject) {
+        val gson = com.google.gson.Gson()
+        val appType = object : com.google.gson.reflect.TypeToken<MutableList<AppItem>>() {}.type
+        val loaded = runCatching { gson.fromJson<MutableList<AppItem>>(o.optJSONArray("apps")?.toString() ?: "[]", appType) }.getOrNull()
+            ?.filter { it != null && !it.name.isNullOrBlank() && !it.url.isNullOrBlank() }
+        if (!loaded.isNullOrEmpty() || o.has("apps")) {
+            apps = (loaded ?: emptyList()).map { it.copy(iconPath = it.iconPath?.takeIf { p -> java.io.File(p).exists() }) }.toMutableList()
+            val cats = runCatching { gson.fromJson<MutableList<String>>(o.optJSONArray("categories")?.toString() ?: "[]",
+                object : com.google.gson.reflect.TypeToken<MutableList<String>>() {}.type) }.getOrNull()
+            categories = (cats ?: mutableListOf("Utility")).filterNotNull().toMutableList()
+            apps.map { it.category }.distinct().filter { it !in categories }.forEach { categories.add(it) }
+            repo.saveApps(apps); repo.saveCategories(categories)
+        }
+        o.optString("searchEngine").takeIf { it.isNotBlank() }?.let { repo.setSearchEngine(SearchEngine.fromName(it)) }
+        applyBackupExtras(o)
+        refreshList()
+    }
+
+    /** On return to the app: if the Drive backup was written by another device, offer to update. */
+    private fun checkSyncFromOtherDevice() {
+        val raw = repo.getAutoBackupUri() ?: return
+        if (System.currentTimeMillis() - syncPrefs.getLong("checked", 0L) < 60_000L) return
+        syncPrefs.edit().putLong("checked", System.currentTimeMillis()).apply()
+        io.execute {
+            val text = runCatching {
+                contentResolver.openInputStream(Uri.parse(raw))?.use { it.readBytes().toString(Charsets.UTF_8) }
+            }.getOrNull() ?: return@execute
+            val o = runCatching { org.json.JSONObject(text) }.getOrNull() ?: return@execute
+            val savedAt = o.optLong("savedAt", 0L)
+            val mine = syncPrefs.getLong("written", 0L)
+            val applied = syncPrefs.getLong("applied", 0L)
+            if (savedAt <= mine + 2000 || savedAt <= applied) return@execute
+            runOnUiThread {
+                MaterialAlertDialogBuilder(this)
+                    .setTitle("🔄 Dati più recenti")
+                    .setMessage("Il backup su Drive è stato aggiornato da «${o.optString("device", "un altro dispositivo")}» " +
+                        "(${NewsAdapter.ago(savedAt)}). Vuoi caricare app, note, notizie e podcast da lì?")
+                    .setPositiveButton("Aggiorna") { _, _ ->
+                        applyFullBackup(o)
+                        syncPrefs.edit().putLong("applied", savedAt).putLong("written", savedAt).apply()
+                        toast("Dati aggiornati")
+                    }
+                    .setNegativeButton("Non ora") { _, _ -> syncPrefs.edit().putLong("applied", savedAt).apply() }
+                    .show()
+            }
+        }
+    }
+
+    private val syncOpenLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        } catch (_: Exception) { toast("Questo file non può essere aggiornato: scegline uno su Drive"); return@registerForActivityResult }
+        repo.setAutoBackupUri(uri.toString())
+        syncPrefs.edit().putLong("written", 0L).putLong("applied", 0L).putLong("checked", 0L).apply()
+        toast("Collegato: controllo i dati…")
+        checkSyncFromOtherDevice()
+    }
+
+    private fun showSyncHelp() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("🔄 Sincronizza tra dispositivi")
+            .setMessage(
+                "Usa lo stesso file di backup su Google Drive su tutti i dispositivi.\n\n" +
+                "1. Sul primo: «Crea il file» e salvalo su Drive.\n" +
+                "2. Sugli altri: «Collega un file esistente» e scegli lo stesso file.\n\n" +
+                "Le modifiche (app, note, leggi dopo, notizie, podcast, meteo) vengono salvate quando esci dall'app; " +
+                "quando apri l'app su un altro dispositivo ti propone di aggiornarla."
+            )
+            .setPositiveButton("Crea il file") { _, _ -> startAutoBackupSetup() }
+            .setNeutralButton("Collega un file esistente") { _, _ -> syncOpenLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }
+            .setNegativeButton("Chiudi", null)
+            .show()
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -4265,6 +4750,17 @@ class MainActivity : AppCompatActivity() {
         }
 
         section("STRUMENTI")
+        row("🌦 Meteo", if (weatherPrefs.getBoolean("hidden", false)) "Nascosto" else weatherPrefs.getString("city", null) ?: "Scegli la città") {
+            weatherPrefs.edit().putBoolean("hidden", false).apply(); renderWeather(); setupWeather()
+        }
+        row("⏱ Tempo di utilizzo", "Quanto usi ogni sito, con limiti giornalieri") { showUsagePage() }
+        row("🔄 Sincronizza tra dispositivi", if (repo.getAutoBackupUri() != null) "Collegato a un file di backup" else "Tramite un file su Google Drive") { showSyncHelp() }
+        row("🧩 Widget", "Ricerca e Notizie sulla schermata del telefono") {
+            MaterialAlertDialogBuilder(this).setTitle("Widget")
+                .setMessage("Tieni premuto su uno spazio vuoto della schermata del telefono → Widget → Web Launcher.\n\n" +
+                    "• Cerca: barra di ricerca con microfono e notizie\n• Notizie: gli ultimi titoli delle tue fonti")
+                .setPositiveButton("OK", null).show()
+        }
         row("📝 Note", "Scrivi o detta, riordina con l'AI") { showNotesPage() }
         row("🔖 Leggi dopo", "Articoli salvati, leggibili offline") { showReadLaterPage() }
         row("📷 Scansiona QR code") { scanQr() }
@@ -4368,13 +4864,7 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun backupJson(): String = com.google.gson.Gson().toJson(
-        mapOf(
-            "apps" to apps,
-            "categories" to categories,
-            "searchEngine" to repo.getSearchEngine().name
-        )
-    )
+    private fun backupJson(): String = fullBackupJson()
 
     private fun shareBackup() {
         startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
@@ -4574,6 +5064,10 @@ class MainActivity : AppCompatActivity() {
     private fun autoBackupNow() {
         val raw = repo.getAutoBackupUri() ?: return
         val json = backupJson()
+        val body = json.replace(Regex("\"savedAt\":\\d+,?"), "")
+        if (body.hashCode() == syncPrefs.getInt("hash", 0)) return
+        val savedAt = Regex("\"savedAt\":(\\d+)").find(json)?.groupValues?.get(1)?.toLongOrNull() ?: System.currentTimeMillis()
+        syncPrefs.edit().putInt("hash", body.hashCode()).putLong("written", savedAt).apply()
         io.execute {
             try {
                 val uri = Uri.parse(raw)
@@ -4661,6 +5155,7 @@ class MainActivity : AppCompatActivity() {
                     persistApps()
                     repo.saveCategories(categories)
                     (map["searchEngine"] as? String)?.let { repo.setSearchEngine(SearchEngine.fromName(it)) }
+                    runCatching { applyBackupExtras(org.json.JSONObject(text)) }
                     refreshList()
                     toast("Backup ripristinato")
                 }
@@ -4736,6 +5231,7 @@ class MainActivity : AppCompatActivity() {
         private const val TAB_NEWS = 3
         private const val TAB_AUDIO = 4
         const val EXTRA_OPEN_PLAYER = "open_player"
+        const val EXTRA_WIDGET = "widget_action"
         private const val NEWS_ALL = "Tutte"
         private val SUGGEST_TAG = Any()
         private const val MENU_AI = 0x5A1
