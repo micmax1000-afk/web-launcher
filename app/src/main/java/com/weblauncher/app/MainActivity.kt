@@ -239,6 +239,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
+        CrashReporter.install(this)
         AppRepository.applySavedTheme(this)
         setTheme(AppRepository.accentStyle(this))
         super.onCreate(savedInstanceState)
@@ -303,6 +304,7 @@ class MainActivity : AppCompatActivity() {
         renderHomeTools()
         renderWeather()
         uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
+        CrashReporter.pending(this)?.let { report -> uiHandler.postDelayed({ showCrashReport(report) }, 600) }
         setupNav()
         setupBack()
 
@@ -557,6 +559,11 @@ class MainActivity : AppCompatActivity() {
 
             override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
                 val req = request ?: return
+                if (req.resources.contains(android.webkit.PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID)) {
+                    // protected video/music (Netflix, Prime Video, Disney+, Spotify, RaiPlay): allowed like in Chrome
+                    req.grant(arrayOf(android.webkit.PermissionRequest.RESOURCE_PROTECTED_MEDIA_ID))
+                    return
+                }
                 val wanted = req.resources.filter {
                     it == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
                         it == android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE
@@ -2397,7 +2404,30 @@ class MainActivity : AppCompatActivity() {
         }.start()
     }
 
+    private fun showCrashReport(report: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Si è verificato un errore")
+            .setMessage("L'ultima volta qualcosa non ha funzionato. Copia il rapporto e mandalo per farlo correggere.\n\n" +
+                report.lines().take(6).joinToString("\n"))
+            .setPositiveButton("Copia rapporto") { _, _ -> copyText("Rapporto errore", report); toast("Rapporto copiato"); CrashReporter.clear(this) }
+            .setNeutralButton("Condividi") { _, _ ->
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"; putExtra(Intent.EXTRA_TEXT, report)
+                }, "Invia rapporto"))
+                CrashReporter.clear(this)
+            }
+            .setNegativeButton("Chiudi") { _, _ -> CrashReporter.clear(this) }
+            .show()
+    }
+
     private fun renderNews() {
+        try { renderNewsUnsafe() } catch (e: Exception) {
+            CrashReporter.log(this, "notizie", e)
+            toast("Errore nelle notizie: rapporto salvato")
+        }
+    }
+
+    private fun renderNewsUnsafe() {
         val palette = AppRepository.palette(this)
         val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
         val d = resources.displayMetrics.density
@@ -2425,7 +2455,7 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener {
                     newsCat = c
                     renderNews()
-                    findViewById<RecyclerView>(R.id.newsList).scrollToPosition(0)
+                    this@MainActivity.findViewById<RecyclerView>(R.id.newsList).scrollToPosition(0)
                 }
             })
         }
@@ -2578,7 +2608,7 @@ class MainActivity : AppCompatActivity() {
     private fun addNewsSourceDialog(onAdded: () -> Unit = {}) {
         val d = resources.displayMetrics.density
         val et = TextInputEditText(this).apply {
-            hint = "es. ilpost.it o indirizzo del feed"
+            hint = "Città, argomento o sito (es. Alba, Juventus, ilpost.it)"
             setSingleLine()
             inputType = android.text.InputType.TYPE_TEXT_VARIATION_URI
         }
@@ -2588,11 +2618,21 @@ class MainActivity : AppCompatActivity() {
         }
         MaterialAlertDialogBuilder(this)
             .setTitle("Aggiungi fonte")
-            .setMessage("Scrivi l'indirizzo di un sito: trovo da solo il suo feed di notizie.")
+            .setMessage("• Una città o un argomento: notizie da Google News\n• L'indirizzo di un sito: trovo da solo il suo feed")
             .setView(box)
             .setPositiveButton("Cerca") { _, _ ->
                 val input = et.text?.toString()?.trim().orEmpty()
                 if (input.isEmpty()) return@setPositiveButton
+                if (!input.contains('.') && !input.startsWith("http")) {
+                    val name = input.replaceFirstChar { it.uppercase() }
+                    val url = "https://news.google.com/rss/search?q=" + Uri.encode("$input when:2d") + "&hl=it&gl=IT&ceid=IT:it"
+                    news.addCustom("$name (Google News)", url)
+                    newsUpdatedAt = 0L
+                    toast("Aggiunte le notizie su $name")
+                    onAdded()
+                    if (currentTab == TAB_NEWS) refreshNews()
+                    return@setPositiveButton
+                }
                 toast("Cerco il feed…")
                 Thread {
                     val found = runCatching { news.discover(input) }.getOrNull()

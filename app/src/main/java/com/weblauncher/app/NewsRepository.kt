@@ -34,7 +34,7 @@ data class NewsItem(
     val time: Long,
     val image: String?,
     val summary: String,
-    var also: List<String> = emptyList()
+    var also: List<String>? = emptyList()
 )
 
 /** RSS / Atom news: catalogue in assets, user choices in prefs, last results cached on disk. */
@@ -87,7 +87,18 @@ class NewsRepository(private val context: Context) {
     fun cached(): Pair<List<NewsItem>, Long> = try {
         val type = object : TypeToken<List<NewsItem>>() {}.type
         val list = gson.fromJson<List<NewsItem>>(cacheFile.readText(), type) ?: emptyList()
-        list.filter { it != null && !it.title.isNullOrBlank() } to prefs.getLong(KEY_UPDATED, 0L)
+        // old or partial cache entries may miss fields (Gson ignores Kotlin defaults): fill them in
+        list.filter { it != null && !(it.title as String?).isNullOrBlank() && !(it.link as String?).isNullOrBlank() }
+            .map {
+                it.copy(
+                    id = (it.id as String?) ?: it.link.hashCode().toString(),
+                    sourceId = (it.sourceId as String?) ?: "",
+                    source = (it.source as String?) ?: "",
+                    cat = (it.cat as String?) ?: "In primo piano",
+                    summary = (it.summary as String?) ?: "",
+                    also = it.also ?: emptyList()
+                )
+            } to prefs.getLong(KEY_UPDATED, 0L)
     } catch (_: Exception) { emptyList<NewsItem>() to 0L }
 
     /** Blocking: call from a background thread. Returns (items, failed source names). */

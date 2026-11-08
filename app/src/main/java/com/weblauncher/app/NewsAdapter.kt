@@ -27,7 +27,10 @@ class NewsAdapter(
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
         VH(LayoutInflater.from(parent.context).inflate(R.layout.item_news, parent, false))
 
-    override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position], position)
+    override fun onBindViewHolder(holder: VH, position: Int) {
+        try { holder.bind(items[position], position) }
+        catch (e: Exception) { CrashReporter.log(holder.itemView.context, "notizia", e) }
+    }
 
     class VH(view: View) : RecyclerView.ViewHolder(view)
 
