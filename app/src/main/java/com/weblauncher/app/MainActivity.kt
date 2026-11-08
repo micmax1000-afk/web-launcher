@@ -120,6 +120,42 @@ class MainActivity : AppCompatActivity() {
         if (uri != null) readBackupFromUri(uri)
     }
 
+    // --- Web features: file upload, permissions, fullscreen video ---
+    private var fileCallback: android.webkit.ValueCallback<Array<Uri>>? = null
+    private var pendingPermissionResult: ((Map<String, Boolean>) -> Unit)? = null
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+
+    private val fileChooserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val cb = fileCallback ?: return@registerForActivityResult
+        fileCallback = null
+        cb.onReceiveValue(WebChromeClient.FileChooserParams.parseResult(result.resultCode, result.data))
+    }
+
+    private val sitePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { granted ->
+        val cb = pendingPermissionResult
+        pendingPermissionResult = null
+        cb?.invoke(granted)
+    }
+
+    private fun withAndroidPermissions(perms: List<String>, onResult: (Boolean) -> Unit) {
+        val missing = perms.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missing.isEmpty()) { onResult(true); return }
+        if (pendingPermissionResult != null) { onResult(false); return }
+        pendingPermissionResult = { res -> onResult(missing.all { res[it] == true }) }
+        sitePermissionLauncher.launch(missing.toTypedArray())
+    }
+
+    private fun siteName(origin: String?): String = try {
+        Uri.parse(origin.orEmpty()).host?.removePrefix("www.") ?: "Il sito"
+    } catch (_: Exception) { "Il sito" }
+
     private val iconPicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val id = iconTargetId ?: return@registerForActivityResult
         val item = apps.firstOrNull { it.id == id } ?: return@registerForActivityResult
@@ -261,6 +297,9 @@ class MainActivity : AppCompatActivity() {
         s.builtInZoomControls = true
         s.displayZoomControls = false
         s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        s.setGeolocationEnabled(true)
+        s.allowFileAccess = false
+        s.mediaPlaybackRequiresUserGesture = true
         s.cacheMode = WebSettings.LOAD_DEFAULT
         @Suppress("DEPRECATION")
         s.saveFormData = true
@@ -268,6 +307,10 @@ class MainActivity : AppCompatActivity() {
         webView.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+
+        webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
+            startDownload(url, userAgent, contentDisposition, mimeType)
+        }
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
@@ -311,7 +354,187 @@ class MainActivity : AppCompatActivity() {
                 if (!tab.privateMode && pageUrl.startsWith("http")) repo.addRecent(safeTitle, pageUrl)
                 renderTabStrip()
             }
+
+            override fun onShowFileChooser(
+                view: WebView?,
+                callback: android.webkit.ValueCallback<Array<Uri>>?,
+                params: FileChooserParams?
+            ): Boolean {
+                fileCallback?.onReceiveValue(null)
+                fileCallback = callback
+                return try {
+                    val pick = params?.createIntent() ?: Intent(Intent.ACTION_GET_CONTENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+                    }
+                    if (params?.mode == FileChooserParams.MODE_OPEN_MULTIPLE) {
+                        pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+                    fileChooserLauncher.launch(Intent.createChooser(pick, "Scegli file"))
+                    true
+                } catch (_: Exception) {
+                    fileCallback = null
+                    toast("Nessuna app per scegliere i file")
+                    false
+                }
+            }
+
+            override fun onPermissionRequest(request: android.webkit.PermissionRequest?) {
+                val req = request ?: return
+                val wanted = req.resources.filter {
+                    it == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE ||
+                        it == android.webkit.PermissionRequest.RESOURCE_AUDIO_CAPTURE
+                }
+                if (wanted.isEmpty()) { req.deny(); return }
+                val label = wanted.joinToString(" e ") {
+                    if (it == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE) "fotocamera" else "microfono"
+                }
+                val androidPerms = wanted.map {
+                    if (it == android.webkit.PermissionRequest.RESOURCE_VIDEO_CAPTURE) Manifest.permission.CAMERA
+                    else Manifest.permission.RECORD_AUDIO
+                }
+                runOnUiThread {
+                    MaterialAlertDialogBuilder(this@MainActivity)
+                        .setTitle(siteName(req.origin?.toString()))
+                        .setMessage("Vuole usare $label.")
+                        .setPositiveButton("Consenti") { _, _ ->
+                            withAndroidPermissions(androidPerms) { ok ->
+                                if (ok) req.grant(wanted.toTypedArray()) else {
+                                    req.deny(); toast("Permesso negato da Android")
+                                }
+                            }
+                        }
+                        .setNegativeButton("Blocca") { _, _ -> req.deny() }
+                        .setOnCancelListener { req.deny() }
+                        .show()
+                }
+            }
+
+            override fun onGeolocationPermissionsShowPrompt(
+                origin: String?,
+                callback: android.webkit.GeolocationPermissions.Callback?
+            ) {
+                val cb = callback ?: return
+                MaterialAlertDialogBuilder(this@MainActivity)
+                    .setTitle(siteName(origin))
+                    .setMessage("Vuole conoscere la tua posizione.")
+                    .setPositiveButton("Consenti") { _, _ ->
+                        withAndroidPermissions(listOf(
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                        )) { ok ->
+                            // coarse-only is still fine: the site gets an approximate position
+                            val any = ok || ContextCompat.checkSelfPermission(
+                                this@MainActivity, Manifest.permission.ACCESS_COARSE_LOCATION
+                            ) == PackageManager.PERMISSION_GRANTED
+                            cb.invoke(origin, any, false)
+                            if (!any) toast("Posizione negata da Android")
+                        }
+                    }
+                    .setNegativeButton("Blocca") { _, _ -> cb.invoke(origin, false, false) }
+                    .setOnCancelListener { cb.invoke(origin, false, false) }
+                    .show()
+            }
+
+            override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                if (view == null) return
+                if (customView != null) { callback?.onCustomViewHidden(); return }
+                customView = view
+                customViewCallback = callback
+                (window.decorView as android.widget.FrameLayout).addView(
+                    view,
+                    android.widget.FrameLayout.LayoutParams(
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                        android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                )
+                view.setBackgroundColor(android.graphics.Color.BLACK)
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                    systemBarsBehavior =
+                        androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                }
+                requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
+            }
+
+            override fun onHideCustomView() {
+                exitFullscreen()
+            }
         }
+    }
+
+    private fun exitFullscreen() {
+        val v = customView ?: return
+        (window.decorView as android.widget.FrameLayout).removeView(v)
+        customView = null
+        customViewCallback?.onCustomViewHidden()
+        customViewCallback = null
+        WindowCompat.getInsetsController(window, window.decorView)
+            .show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+
+    private fun startDownload(url: String, userAgent: String?, contentDisposition: String?, mimeType: String?) {
+        if (url.startsWith("blob:")) {
+            toast("Questo sito crea il file dentro la pagina: non scaricabile qui")
+            return
+        }
+        val name = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType)
+        if (url.startsWith("data:")) {
+            saveDataUrl(url, name)
+            return
+        }
+        val enqueue = {
+            try {
+                val req = android.app.DownloadManager.Request(Uri.parse(url)).apply {
+                    setMimeType(mimeType)
+                    CookieManager.getInstance().getCookie(url)?.let { addRequestHeader("Cookie", it) }
+                    addRequestHeader("User-Agent", userAgent ?: webView.settings.userAgentString)
+                    setTitle(name)
+                    setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, name)
+                }
+                (getSystemService(DOWNLOAD_SERVICE) as android.app.DownloadManager).enqueue(req)
+                toast("Download avviato: $name")
+            } catch (e: Exception) {
+                toast("Download non riuscito")
+            }
+        }
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) {
+            withAndroidPermissions(listOf(Manifest.permission.WRITE_EXTERNAL_STORAGE)) { ok ->
+                if (ok) enqueue() else toast("Serve il permesso archiviazione per scaricare")
+            }
+        } else enqueue()
+    }
+
+    private fun saveDataUrl(dataUrl: String, fallbackName: String) {
+        try {
+            val comma = dataUrl.indexOf(',')
+            if (comma < 0) { toast("File non valido"); return }
+            val meta = dataUrl.substring(5, comma)
+            val payload = dataUrl.substring(comma + 1)
+            val bytes = if (meta.endsWith(";base64")) android.util.Base64.decode(payload, android.util.Base64.DEFAULT)
+                else Uri.decode(payload).toByteArray()
+            val mime = meta.substringBefore(';').ifBlank { "application/octet-stream" }
+            val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime)
+            val name = if (ext != null && !fallbackName.contains('.')) "$fallbackName.$ext" else fallbackName
+            pendingDataDownload = bytes
+            dataDownloadLauncher.launch(name)
+        } catch (_: Exception) {
+            toast("Download non riuscito")
+        }
+    }
+
+    private var pendingDataDownload: ByteArray? = null
+    private val dataDownloadLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        val bytes = pendingDataDownload
+        pendingDataDownload = null
+        if (uri == null || bytes == null) return@registerForActivityResult
+        try {
+            contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) }
+            toast("File salvato")
+        } catch (_: Exception) { toast("File non salvato") }
     }
 
     private fun setupNav() {
@@ -324,6 +547,7 @@ class MainActivity : AppCompatActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 when {
+                    customView != null -> exitFullscreen()
                     currentTab == TAB_BROWSER && webView.canGoBack() -> webView.goBack()
                     currentTab == TAB_BROWSER -> showTab(TAB_HOME)
                     else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
@@ -601,13 +825,47 @@ class MainActivity : AppCompatActivity() {
             putExtra("shortcut_url", item.url)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
         }
-        val info = androidx.core.content.pm.ShortcutInfoCompat.Builder(this, "wl_${item.id}")
-            .setShortLabel(item.name.take(24))
-            .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, R.mipmap.ic_launcher))
-            .setIntent(launch)
+        toast("Preparo l'icona…")
+        val local = item.iconPath?.let { java.io.File(it) }?.takeIf { it.exists() }
+        val host = try { Uri.parse(item.url).host } catch (_: Exception) { null }
+        val source: Any? = local ?: host?.let { "https://www.google.com/s2/favicons?domain=$it&sz=256" }
+        fun pin(icon: androidx.core.graphics.drawable.IconCompat) {
+            val info = androidx.core.content.pm.ShortcutInfoCompat.Builder(this, "wl_${item.id}")
+                .setShortLabel(item.name.take(24))
+                .setIcon(icon)
+                .setIntent(launch)
+                .build()
+            androidx.core.content.pm.ShortcutManagerCompat.requestPinShortcut(this, info, null)
+            toast("Conferma il collegamento se il telefono lo chiede")
+        }
+        val fallback = { androidx.core.graphics.drawable.IconCompat.createWithResource(this, R.mipmap.ic_launcher) }
+        if (source == null) { pin(fallback()); return }
+        val request = coil.request.ImageRequest.Builder(this)
+            .data(source)
+            .size(192)
+            .allowHardware(false)
+            .target(
+                onSuccess = { drawable ->
+                    val bmp = runCatching { shortcutBitmap(drawable) }.getOrNull()
+                    pin(bmp?.let { androidx.core.graphics.drawable.IconCompat.createWithAdaptiveBitmap(it) } ?: fallback())
+                },
+                onError = { pin(fallback()) }
+            )
             .build()
-        androidx.core.content.pm.ShortcutManagerCompat.requestPinShortcut(this, info, null)
-        toast("Conferma il collegamento se il telefono lo chiede")
+        coil.Coil.imageLoader(this).enqueue(request)
+    }
+
+    /** Site icon centred on a white adaptive-icon canvas (108dp grid, icon inside the 66dp safe zone). */
+    private fun shortcutBitmap(drawable: android.graphics.drawable.Drawable): Bitmap {
+        val size = 432
+        val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(out)
+        canvas.drawColor(android.graphics.Color.WHITE)
+        val inner = (size * 0.46f).toInt()
+        val left = (size - inner) / 2
+        drawable.setBounds(left, left, left + inner, left + inner)
+        drawable.draw(canvas)
+        return out
     }
 
     private fun updateBrowserBody() {
