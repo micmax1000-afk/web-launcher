@@ -212,10 +212,10 @@ class AudioRepository(private val context: Context) {
         return !had
     }
 
-    fun stations(query: String): List<RadioStation> {
+    fun stations(query: String, limit: Int = 50): List<RadioStation> {
         for (host in RADIO_HOSTS) {
             val res = runCatching {
-                val arr = JSONArray(String(download("https://$host/json/stations/search?$query&hidebroken=true&limit=40"), Charsets.UTF_8))
+                val arr = JSONArray(String(download("https://$host/json/stations/search?$query&hidebroken=true&limit=$limit"), Charsets.UTF_8))
                 (0 until arr.length()).mapNotNull { i ->
                     val o = arr.getJSONObject(i)
                     val url = o.optString("url_resolved").ifBlank { o.optString("url") }
@@ -229,7 +229,7 @@ class AudioRepository(private val context: Context) {
         return emptyList()
     }
 
-    fun nationalStations() = stations("countrycode=IT&order=clickcount&reverse=true")
+    fun nationalStations() = stations("countrycode=IT&order=clickcount&reverse=true", 120)
     fun regionStations(names: List<String>): List<RadioStation> {
         for (n in names) {
             val r = stations("countrycode=IT&state=" + Uri.encode(n) + "&order=clickcount&reverse=true")
@@ -286,10 +286,16 @@ class AudioRepository(private val context: Context) {
 
     companion object {
         private val RADIO_HOSTS = listOf("de1.api.radio-browser.info", "de2.api.radio-browser.info", "nl1.api.radio-browser.info", "at1.api.radio-browser.info")
+        /** Region name -> names used in the Radio Browser catalogue (Italian and English). */
         val REGIONS = listOf(
-            "Piemonte" to listOf("Piemonte", "Piedmont"),
-            "Lombardia" to listOf("Lombardia", "Lombardy"),
-            "Umbria" to listOf("Umbria")
+            "Abruzzo" to listOf("Abruzzo"), "Basilicata" to listOf("Basilicata"), "Calabria" to listOf("Calabria"),
+            "Campania" to listOf("Campania"), "Emilia-Romagna" to listOf("Emilia-Romagna", "Emilia Romagna"),
+            "Friuli Venezia Giulia" to listOf("Friuli-Venezia Giulia", "Friuli Venezia Giulia", "Friuli"),
+            "Lazio" to listOf("Lazio", "Latium"), "Liguria" to listOf("Liguria"), "Lombardia" to listOf("Lombardia", "Lombardy"),
+            "Marche" to listOf("Marche"), "Molise" to listOf("Molise"), "Piemonte" to listOf("Piemonte", "Piedmont"),
+            "Puglia" to listOf("Puglia", "Apulia"), "Sardegna" to listOf("Sardegna", "Sardinia"), "Sicilia" to listOf("Sicilia", "Sicily"),
+            "Toscana" to listOf("Toscana", "Tuscany"), "Trentino-Alto Adige" to listOf("Trentino-Alto Adige", "Trentino", "South Tyrol", "Südtirol"),
+            "Umbria" to listOf("Umbria"), "Valle d'Aosta" to listOf("Valle d'Aosta", "Aosta Valley"), "Veneto" to listOf("Veneto")
         )
     }
 }

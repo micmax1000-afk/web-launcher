@@ -126,6 +126,7 @@ class MainActivity : AppCompatActivity() {
     private var audioTab = "podcast"
     private var episodes: List<Episode> = emptyList()
     private val radioCache = HashMap<String, List<RadioStation>>()
+    private var radioRegion = "Tutte"
 
     private var apps: MutableList<AppItem> = mutableListOf()
     private var categories: MutableList<String> = mutableListOf()
@@ -2582,11 +2583,24 @@ class MainActivity : AppCompatActivity() {
                     setOnClickListener { discoverHomeFeeds { render() } }
                 })
                 val all = news.allSources()
+                var regionsHeader = false
                 NewsRepository.CATEGORY_ORDER.forEach { cat ->
                     val group = all.filter { it.cat == cat }
                     if (group.isEmpty()) return@forEach
                     val on = group.count { it.id in enabled }
-                    sectionLabel(body, "$cat  ·  $on/${group.size}")
+                    val isRegion = cat in NewsRepository.REGIONS
+                    if (isRegion) {
+                        if (!regionsHeader) { sectionLabel(body, "REGIONI · tocca per aprire"); regionsHeader = true }
+                        val open = cat in openRegions
+                        body.addView(TextView(this).apply {
+                            text = (if (open) "▾  " else "▸  ") + cat + if (on > 0) "   ·  $on attive" else ""
+                            textSize = 16f; setTextColor(palette.text)
+                            if (on > 0) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                            setPadding(dp(12), dp(12), dp(12), dp(12))
+                            setOnClickListener { if (open) openRegions.remove(cat) else openRegions.add(cat); render() }
+                        })
+                        if (!open) return@forEach
+                    } else sectionLabel(body, "$cat  ·  $on/${group.size}")
                     group.forEach { s ->
                         val row = android.widget.LinearLayout(this).apply {
                             orientation = android.widget.LinearLayout.HORIZONTAL
@@ -2626,6 +2640,8 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private val openRegions = mutableSetOf<String>()
 
     private fun addNewsSourceDialog(onAdded: () -> Unit = {}) {
         val d = resources.displayMetrics.density
@@ -3540,34 +3556,50 @@ class MainActivity : AppCompatActivity() {
                     })) { playRadio(s) }
             }
         }
-        if (favs.isNotEmpty()) { sectionLabel(list, "PREFERITE"); stationRows(list, favs) }
-        val sections = listOf("Nazionali" to listOf("__IT__")) + AudioRepository.REGIONS
-        sections.forEach { (label, names) ->
-            sectionLabel(list, label.uppercase())
-            val box = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
-            list.addView(box)
-            val cached = radioCache[label]
-            if (cached != null) {
-                if (cached.isEmpty()) box.addView(TextView(this).apply {
-                    text = "Nessuna stazione trovata"; textSize = 13f
-                    setTextColor(AppRepository.palette(this@MainActivity).textMuted); setPadding(20, 10, 10, 10)
-                })
-                stationRows(box, cached.take(if (label == "Nazionali") 25 else 15))
-            } else {
-                box.addView(TextView(this).apply {
-                    text = "Caricamento…"; textSize = 13f
-                    setTextColor(AppRepository.palette(this@MainActivity).textMuted); setPadding(20, 10, 10, 10)
-                })
-                Thread {
-                    val res = runCatching {
-                        if (names.first() == "__IT__") audio.nationalStations() else audio.regionStations(names)
-                    }.getOrDefault(emptyList())
-                    runOnUiThread {
-                        radioCache[label] = res
-                        if (currentTab == TAB_AUDIO && audioTab == "radio") renderAudio()
-                    }
-                }.start()
-            }
+        if (favs.isNotEmpty()) { sectionLabel(list, "⭐ PREFERITE"); stationRows(list, favs) }
+        // optional region filter
+        val palette = AppRepository.palette(this)
+        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+        val d = resources.displayMetrics.density
+        val chipRow = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding((6 * d).toInt(), (10 * d).toInt(), 0, (4 * d).toInt()) }
+        (listOf("Tutte") + AudioRepository.REGIONS.map { it.first }).forEach { r ->
+            val active = r == radioRegion
+            chipRow.addView(TextView(this).apply {
+                text = r; textSize = 13f
+                setTextColor(if (active) android.graphics.Color.WHITE else palette.text)
+                setPadding((12 * d).toInt(), (6 * d).toInt(), (12 * d).toInt(), (6 * d).toInt())
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 16 * d; setColor(if (active) accent else palette.card)
+                    setStroke(d.toInt().coerceAtLeast(1), if (active) accent else palette.stroke)
+                }
+                layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { marginEnd = (6 * d).toInt() }
+                setOnClickListener { radioRegion = r; renderAudio() }
+            })
+        }
+        list.addView(android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chipRow) })
+        val label = radioRegion
+        sectionLabel(list, if (label == "Tutte") "TUTTE LE RADIO · LE PIÙ ASCOLTATE" else label.uppercase())
+        val box = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        list.addView(box)
+        val cached = radioCache[label]
+        if (cached != null) {
+            if (cached.isEmpty()) box.addView(TextView(this).apply {
+                text = "Nessuna stazione trovata. Prova «Cerca» con il nome della radio."; textSize = 13f
+                setTextColor(palette.textMuted); setPadding(20, 10, 10, 10)
+            })
+            stationRows(box, cached)
+        } else {
+            box.addView(TextView(this).apply { text = "Caricamento…"; textSize = 13f; setTextColor(palette.textMuted); setPadding(20, 10, 10, 10) })
+            Thread {
+                val res = runCatching {
+                    if (label == "Tutte") audio.nationalStations()
+                    else audio.regionStations(AudioRepository.REGIONS.first { it.first == label }.second)
+                }.getOrDefault(emptyList())
+                runOnUiThread {
+                    radioCache[label] = res
+                    if (currentTab == TAB_AUDIO && audioTab == "radio") renderAudio()
+                }
+            }.start()
         }
     }
 

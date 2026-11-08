@@ -372,9 +372,13 @@ class NewsRepository(private val context: Context) {
         private const val MAX_ITEMS = 600
         private const val UA =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
-        val CATEGORY_ORDER = listOf(
-            "In primo piano", "Piemonte", "Lombardia", "Umbria", "Economia", "Sport", "Tecnologia",
-            "Scienza", "Esteri", "Cultura", "Motori", "Viaggi", "Internazionali", CUSTOM_CAT
+        val REGIONS = listOf(
+            "Abruzzo", "Basilicata", "Calabria", "Campania", "Emilia-Romagna", "Friuli Venezia Giulia", "Lazio",
+            "Liguria", "Lombardia", "Marche", "Molise", "Piemonte", "Puglia", "Sardegna", "Sicilia", "Toscana",
+            "Trentino-Alto Adige", "Umbria", "Valle d'Aosta", "Veneto"
+        )
+        val CATEGORY_ORDER = listOf("In primo piano") + REGIONS + listOf(
+            "Economia", "Sport", "Tecnologia", "Scienza", "Esteri", "Cultura", "Motori", "Viaggi", "Internazionali", CUSTOM_CAT
         )
         private val DATE_PATTERNS = arrayOf(
             "EEE, dd MMM yyyy HH:mm:ss Z", "EEE, d MMM yyyy HH:mm:ss Z", "EEE, dd MMM yyyy HH:mm:ss zzz",
