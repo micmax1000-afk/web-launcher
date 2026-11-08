@@ -78,6 +78,20 @@
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
 
+        <HorizontalScrollView
+            android:id="@+id/homeToolsScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+            <LinearLayout
+                android:id="@+id/homeTools"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingHorizontal="14dp"
+                android:paddingBottom="4dp" />
+        </HorizontalScrollView>
+
         <TextView
             android:id="@+id/webSearchHint"
             android:layout_width="match_parent"
