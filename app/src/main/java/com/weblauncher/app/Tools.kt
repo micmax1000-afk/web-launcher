@@ -293,7 +293,7 @@ object Reminders {
         val cal = now.clone() as Calendar
         cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
         var found = false
-        Regex("\\b(?:tra|fra)\\s+(\\d+|un|una|mezz'?ora)\\s*(minuti|minuto|min|ore|ora|giorni|giorno)?\\b").find(s)?.let { m ->
+        Regex("\\b(?:tra|fra)\\s+(\\d+|un|una|mezz'?ora)\\s*'?\\s*(minuti|minuto|min|ore|ora|giorni|giorno)?\\b").find(s)?.let { m ->
             val n = when (m.groupValues[1]) { "un", "una" -> 1; "mezz'ora", "mezzora" -> 30; else -> m.groupValues[1].toInt() }
             val u = m.groupValues[2]
             when {
