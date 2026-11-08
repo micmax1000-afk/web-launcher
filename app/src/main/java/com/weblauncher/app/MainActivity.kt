@@ -302,6 +302,7 @@ class MainActivity : AppCompatActivity() {
         setupAudio()
         renderHomeTools()
         renderWeather()
+        uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
         setupNav()
         setupBack()
 
@@ -309,6 +310,7 @@ class MainActivity : AppCompatActivity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 updateWebHint(s?.toString().orEmpty())
+                updateCalcHint(s?.toString().orEmpty())
                 refreshList()
             }
             override fun afterTextChanged(s: Editable?) {}
@@ -469,7 +471,10 @@ class MainActivity : AppCompatActivity() {
                     Uri.parse(url).getQueryParameter("u")?.let { startDownload(it, null, null, "application/pdf", save = true) }
                     return true
                 }
-                if (url.startsWith("http://") || url.startsWith("https://")) return false
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    if (request?.isForMainFrame == true && !guardUrl(url) { view?.loadUrl(url) }) return true
+                    return false
+                }
                 return try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); true } catch (_: Exception) { true }
             }
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): android.webkit.WebResourceResponse? {
@@ -769,6 +774,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openInBrowser(url: String) {
+        if (!guardUrl(url) { openInBrowser(url) }) return
         if (webTabs.isEmpty()) webTabs.add(WebTab())
         val tab = webTabs[webTabIndex]
         tab.url = url
@@ -875,6 +881,7 @@ class MainActivity : AppCompatActivity() {
             }
             "voice" -> { intent.removeExtra(EXTRA_WIDGET); requestMicAndListen(); return }
             "news" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_NEWS); return }
+            "reminders" -> { intent.removeExtra(EXTRA_WIDGET); showRemindersPage(); return }
         }
         val data = intent?.data
         if (intent?.action == Intent.ACTION_VIEW && data != null && (data.scheme == "content" || data.scheme == "file") &&
@@ -1197,17 +1204,25 @@ class MainActivity : AppCompatActivity() {
             item("▶ Segui il canale") { followCurrentChannel() }
             item("⚙ Opzioni YouTube") { ytOptionsDialog() }
         }
+        if (hostOf(webView.url) == "mail.google.com") item("📧 Riassumi email") { summarizeEmail() }
         item("✨ Riassumi pagina", hasPage) { summarizePage() }
         item("✨ Chiedi alla pagina", hasPage) { askThePage() }
         item("📖 Modalità lettura", hasPage) { openReaderMode() }
         item("🔊 Ascolta la pagina", hasPage) { openReaderMode(listen = true) }
         item("🔖 Leggi dopo", hasPage) { saveCurrentForLater() }
         item("✨ Traduci con AI", hasPage) { translatePageWithAi() }
+        item("✨ Scrivi con AI", hasPage) { writeWithAi() }
+        item("🛒 Confronta prezzi", hasPage) { comparePrices() }
         item("Cronologia") { showHistoryPage() }
         item("Download") { showDownloadsPage() }
         item("Trova nella pagina", hasPage) { showFindDialog() }
         item("Traduci con Google", hasPage) { translateCurrentPage() }
         item("📷 Scansiona QR code") { scanQr() }
+        item("📸 Screenshot", hasPage) { screenshotPage() }
+        item("📄 Salva come PDF", hasPage) { savePageAsPdf() }
+        item("🕵️ Apri nel profilo 2", hasPage) {
+            startActivity(Intent(this, IsolatedBrowserActivity::class.java).putExtra(IsolatedBrowserActivity.EXTRA_URL, webView.url))
+        }
         item("Dimensione testo (${repo.textZoom()}%)") { showTextZoomDialog() }
         item("Sito desktop", hasPage, tab.desktop) {
             tab.desktop = !tab.desktop
@@ -2254,6 +2269,9 @@ class MainActivity : AppCompatActivity() {
     override fun onActionModeStarted(mode: android.view.ActionMode) {
         super.onActionModeStarted(mode)
         if (currentTab != TAB_BROWSER || !::webView.isInitialized || !webView.hasFocus()) return
+        mode.menu.add(android.view.Menu.NONE, MENU_AI + 1, 1, "✨ Riscrivi").setOnMenuItemClickListener {
+            mode.finish(); writeWithAi(); true
+        }
         mode.menu.add(android.view.Menu.NONE, MENU_AI, 0, "Chiedi all'AI").setOnMenuItemClickListener {
             webView.evaluateJavascript("window.getSelection().toString()") { raw ->
                 val sel = jsString(raw).trim()
@@ -2281,7 +2299,7 @@ class MainActivity : AppCompatActivity() {
             "{\"action\":\"ask\",\"question\":\"...\"} per una domanda a cui rispondere a parole\n" +
             "{\"action\":\"summarize\"} per riassumere la pagina aperta\n" +
             "{\"action\":\"new_tab\"}, {\"action\":\"close_all_tabs\"}, {\"action\":\"history\"}, " +
-            "{\"action\":\"downloads\"}, {\"action\":\"settings\"}, {\"action\":\"news\"} per le notizie, {\"action\":\"radio\"}, {\"action\":\"podcast\"}, " +
+            "{\"action\":\"downloads\"}, {\"action\":\"settings\"}, {\"action\":\"reminder\",\"text\":\"...\"} per un promemoria (testo con quando), {\"action\":\"news\"} per le notizie, {\"action\":\"radio\"}, {\"action\":\"podcast\"}, " +
             "{\"action\":\"briefing\"} per il riassunto delle notizie del giorno"
         ai.ask(listOf("user" to prompt), "Sei l'interprete dei comandi vocali di un browser. Rispondi solo con JSON valido.",
             object : AiBridge.Listener {
@@ -2308,6 +2326,7 @@ class MainActivity : AppCompatActivity() {
                         "downloads" -> showDownloadsPage()
                         "settings" -> showTab(TAB_SETTINGS)
                         "news" -> showTab(TAB_NEWS)
+                        "reminder" -> createReminderFromText(o.optString("text").ifBlank { text })
                         "radio" -> { audioTab = "radio"; showTab(TAB_AUDIO) }
                         "podcast" -> { audioTab = "podcast"; showTab(TAB_AUDIO) }
                         "briefing" -> { showTab(TAB_NEWS); newsBriefing() }
@@ -3083,6 +3102,8 @@ class MainActivity : AppCompatActivity() {
         chip("🎧 Podcast") { audioTab = "podcast"; showTab(TAB_AUDIO) }
         chip("📻 Radio") { audioTab = "radio"; showTab(TAB_AUDIO) }
         chip("📷 QR") { scanQr() }
+        chip("⏰ Promemoria") { showRemindersPage() }
+        chip("📦 Pacchi") { showParcelsPage() }
         chip("⏱ Tempo") { showUsagePage() }
         chip("📄 PDF") { pdfPicker.launch(arrayOf("application/pdf")) }
     }
@@ -4543,6 +4564,437 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // ======================= Calculator in search =======================
+
+    private var calcToken = 0
+
+    private fun updateCalcHint(q: String) {
+        val hint = findViewById<TextView>(R.id.calcHint)
+        val text = q.trim()
+        val token = ++calcToken
+        val local = if (text.isEmpty()) null else Calc.evaluate(text)
+        val reminder = if (text.startsWith("ricordami", true) || text.startsWith("promemoria", true)) "⏰ Crea promemoria: $text" else null
+        val parcel = if (Parcels.looksLikeTracking(text)) "📦 Traccia pacco ${text.uppercase()}" else null
+        val shown = local?.let { "🧮 $it" } ?: reminder ?: parcel
+        hint.isVisible = shown != null
+        hint.text = shown
+        hint.setOnClickListener {
+            when {
+                local != null -> copyText("Risultato", local.substringAfter("= ").trim())
+                reminder != null -> { searchInput.setText(""); createReminderFromText(text) }
+                parcel != null -> { searchInput.setText(""); trackParcel(text) }
+            }
+        }
+        val cur = if (local == null && reminder == null) Calc.currencyQuery(text) else null
+        if (cur != null) {
+            hint.isVisible = true
+            hint.text = "💱 Calcolo il cambio…"
+            Thread {
+                val r = Calc.convert(cur.first, cur.second, cur.third)
+                runOnUiThread {
+                    if (token != calcToken) return@runOnUiThread
+                    hint.text = r?.let { "💱 $it" } ?: "💱 Cambio non disponibile (connessione?)"
+                    hint.setOnClickListener { r?.let { copyText("Cambio", it.substringAfter("= ")) } }
+                }
+            }.start()
+        }
+    }
+
+    // ======================= Smart clipboard =======================
+
+    private val toolsPrefs by lazy { getSharedPreferences("wl_tools", MODE_PRIVATE) }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && currentTab == TAB_HOME && toolsPrefs.getBoolean("smartClipboard", true)) checkClipboard()
+    }
+
+    private fun checkClipboard() {
+        val bar = findViewById<TextView>(R.id.clipBar)
+        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val text = runCatching { cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() }.getOrNull()?.trim().orEmpty()
+        if (text.isEmpty() || text.length > 5000) return
+        val hash = text.hashCode()
+        if (hash == toolsPrefs.getInt("lastClip", 0)) return
+        val urlMatch = Regex("https?://\\S+").find(text)?.value?.trimEnd('.', ',', ')', ';')
+        val phone = Regex("^(\\+39\\s?)?[03]\\d[\\d\\s]{6,11}$").matches(text) && !Parcels.looksLikeTracking(text.replace(" ", ""))
+        val action: Pair<String, () -> Unit>? = when {
+            urlMatch != null -> ("📋 Apri il link copiato: " + (hostOf(urlMatch) ?: urlMatch)) to { openInBrowser(urlMatch) }
+            Parcels.looksLikeTracking(text) -> "📦 Traccia il pacco copiato: ${text.uppercase()}" to { trackParcel(text) }
+            Regex("^(\\+39\\s?)?3\\d{2}[\\s]?\\d{6,7}$").matches(text) || (phone && text.length <= 16) ->
+                "📞 Chiama $text" to { startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + text.replace(" ", "")))) }
+            text.length > 400 -> "✨ Riassumi il testo copiato" to {
+                if (aiReady()) showAiSheet("Riassunto", "Testo:\n$text\n\n", "Riassumi questo testo in italiano in pochi punti.", false)
+            }
+            else -> null
+        }
+        if (action == null) return
+        bar.text = action.first + "   ✕"
+        bar.isVisible = true
+        bar.setOnClickListener { v ->
+            toolsPrefs.edit().putInt("lastClip", hash).apply()
+            v.isVisible = false
+            action.second()
+        }
+        bar.setOnLongClickListener { v -> toolsPrefs.edit().putInt("lastClip", hash).apply(); v.isVisible = false; true }
+    }
+
+    // ======================= Parcels =======================
+
+    private fun trackParcel(raw: String) {
+        val code = raw.trim().uppercase(Locale.ROOT).replace(" ", "")
+        val (carrier, url) = Parcels.carrier(code)
+        val list = Parcels.load(this)
+        if (list.none { it.code == code }) {
+            list.add(0, Parcels.Parcel(code, "", carrier, System.currentTimeMillis()))
+            Parcels.save(this, list)
+        }
+        toast("📦 $carrier")
+        openInBrowser(url)
+    }
+
+    private fun showParcelsPage() {
+        openPage("Pacchi", "Aggiungi", { _ ->
+            val d = resources.displayMetrics.density
+            val et = TextInputEditText(this).apply { hint = "Codice di spedizione"; setSingleLine() }
+            val name = TextInputEditText(this).apply { hint = "Cosa è (facoltativo)"; setSingleLine() }
+            val box = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et); addView(name)
+            }
+            MaterialAlertDialogBuilder(this).setTitle("Traccia un pacco").setView(box)
+                .setPositiveButton("Traccia") { _, _ ->
+                    val code = et.text?.toString()?.trim().orEmpty()
+                    if (code.length < 6) return@setPositiveButton
+                    val c = code.uppercase(Locale.ROOT).replace(" ", "")
+                    val list = Parcels.load(this).filter { it.code != c }.toMutableList()
+                    list.add(0, Parcels.Parcel(c, name.text?.toString()?.trim().orEmpty(), Parcels.carrier(c).first, System.currentTimeMillis()))
+                    Parcels.save(this, list)
+                    trackParcel(c)
+                }.setNegativeButton("Annulla", null).show()
+        }) { _, body, dialog ->
+            fun render() {
+                body.removeAllViews()
+                val list = Parcels.load(this)
+                if (list.isEmpty()) { emptyLabel(body, "Nessun pacco.\nCopia un codice di spedizione: la home te lo propone da sola."); return }
+                list.forEach { p ->
+                    listRow(body, p.label.ifBlank { p.code }, "${p.carrier}${if (p.label.isNotBlank()) " · ${p.code}" else ""} · aggiunto ${NewsAdapter.ago(p.time)}",
+                        onClick = { dialog.dismiss(); openInBrowser(Parcels.carrier(p.code).second) },
+                        onRemove = { Parcels.save(this, Parcels.load(this).filter { it.code != p.code }); render() })
+                }
+            }
+            render()
+        }
+    }
+
+    // ======================= Reminders =======================
+
+    private fun createReminderFromText(raw: String, fromVoice: Boolean = false) {
+        val parsed = Reminders.parse(raw)
+        if (parsed != null) { confirmReminder(parsed.first, parsed.second); return }
+        if (!ai.supported()) { toast("Non ho capito quando: es. «domani alle 9 chiamare Marco»"); return }
+        toast("✨ Capisco il promemoria…")
+        val now = java.text.SimpleDateFormat("EEEE d MMMM yyyy HH:mm", Locale.ITALIAN).format(java.util.Date())
+        ai.ask(listOf("user" to "Adesso è $now. Estrai il promemoria da: «$raw». Rispondi SOLO con JSON " +
+            "{\"text\":\"cosa ricordare\",\"datetime\":\"yyyy-MM-ddTHH:mm\"}."), "Rispondi solo con JSON valido.",
+            object : AiBridge.Listener {
+                override fun onDone(text: String, model: String) {
+                    val o = runCatching { org.json.JSONObject(Regex("\\{[\\s\\S]*\\}").find(text)!!.value) }.getOrNull()
+                    val at = runCatching {
+                        java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm", Locale.ROOT).parse(o!!.getString("datetime"))!!.time
+                    }.getOrNull()
+                    if (o == null || at == null) toast("Non ho capito quando: es. «domani alle 9 chiamare Marco»")
+                    else confirmReminder(o.optString("text").ifBlank { raw }, at)
+                }
+                override fun onError(message: String, noKey: Boolean) { toast("Non ho capito quando: es. «domani alle 9 chiamare Marco»") }
+            })
+    }
+
+    private fun confirmReminder(text: String, at: Long) {
+        ensureNotificationPermission()
+        Reminders.add(this, text, at)
+        val fmt = java.text.SimpleDateFormat("EEEE d MMMM 'alle' HH:mm", Locale.ITALIAN).format(java.util.Date(at))
+        toast("⏰ $fmt: $text")
+        val am = getSystemService(ALARM_SERVICE) as android.app.AlarmManager
+        if (android.os.Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms() && !toolsPrefs.getBoolean("askedExact", false)) {
+            toolsPrefs.edit().putBoolean("askedExact", true).apply()
+            MaterialAlertDialogBuilder(this).setTitle("Promemoria puntuali")
+                .setMessage("Per avvisarti all'ora esatta Android chiede il permesso «Sveglie e promemoria». Senza, l'avviso può arrivare con qualche minuto di ritardo.")
+                .setPositiveButton("Apri impostazioni") { _, _ ->
+                    runCatching { startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName"))) }
+                }.setNegativeButton("Va bene così", null).show()
+        }
+    }
+
+    private fun showRemindersPage() {
+        openPage("Promemoria", "Nuovo", { _ ->
+            val d = resources.displayMetrics.density
+            val et = TextInputEditText(this).apply { hint = "Es. domani alle 9 chiamare il dentista" }
+            val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
+            MaterialAlertDialogBuilder(this).setTitle("Nuovo promemoria").setView(box)
+                .setPositiveButton("Crea") { _, _ -> et.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { createReminderFromText(it) } }
+                .setNegativeButton("Annulla", null).show()
+        }) { _, body, _ ->
+            val fmt = java.text.SimpleDateFormat("EEE d MMM, HH:mm", Locale.ITALIAN)
+            fun render() {
+                body.removeAllViews()
+                val list = Reminders.load(this).sortedBy { it.at }
+                if (list.isEmpty()) { emptyLabel(body, "Nessun promemoria.\nDi' o scrivi «ricordami domani alle 9 di…»"); return }
+                val now = System.currentTimeMillis()
+                listOf("IN ARRIVO" to list.filter { it.at > now && !it.done }, "PASSATI" to list.filter { it.at <= now || it.done }.reversed())
+                    .forEach { (label, group) ->
+                        if (group.isEmpty()) return@forEach
+                        sectionLabel(body, label)
+                        group.forEach { r ->
+                            listRow(body, r.text, fmt.format(java.util.Date(r.at)).replaceFirstChar { it.uppercase() },
+                                onClick = {}, onRemove = { Reminders.remove(this, r.id); render() })
+                        }
+                    }
+            }
+            render()
+        }
+    }
+
+    // ======================= Screenshot / save as PDF =======================
+
+    private fun savePageAsPdf() {
+        val pm = getSystemService(PRINT_SERVICE) as android.print.PrintManager
+        val name = (webView.title ?: "Pagina").take(60)
+        pm.print(name, webView.createPrintDocumentAdapter(name), android.print.PrintAttributes.Builder().build())
+        toast("Scegli «Salva come PDF» come stampante")
+    }
+
+    private fun screenshotPage() {
+        val bmp = runCatching {
+            Bitmap.createBitmap(webView.width, webView.height, Bitmap.Config.ARGB_8888).also { webView.draw(android.graphics.Canvas(it)) }
+        }.getOrNull() ?: run { toast("Screenshot non riuscito"); return }
+        io.execute {
+            val uri = runCatching {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "web-launcher-${System.currentTimeMillis()}.png")
+                    put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/png")
+                    if (android.os.Build.VERSION.SDK_INT >= 29) put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Web Launcher")
+                }
+                val u = contentResolver.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)!!
+                contentResolver.openOutputStream(u)!!.use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                u
+            }.getOrNull()
+            runOnUiThread {
+                if (uri == null) { toast("Screenshot non salvato"); return@runOnUiThread }
+                MaterialAlertDialogBuilder(this).setTitle("📸 Screenshot salvato").setMessage("Nella galleria, cartella «Web Launcher».")
+                    .setPositiveButton("Condividi") { _, _ ->
+                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                            type = "image/png"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }, "Condividi screenshot"))
+                    }.setNegativeButton("OK", null).show()
+            }
+        }
+    }
+
+    // ======================= Phishing warning =======================
+
+    private val allowedHosts = mutableSetOf<String>()
+
+    /** True if the address can be opened; otherwise shows a warning and opens only on request. */
+    private fun guardUrl(url: String, open: () -> Unit): Boolean {
+        if (!toolsPrefs.getBoolean("phishing", true)) return true
+        val host = hostOf(url) ?: return true
+        if (host in allowedHosts) return true
+        if (apps.any { hostOf(normalizeUrl(it.url)) == host }) return true
+        val warning = PhishingGuard.check(url) ?: return true
+        runOnUiThread {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("⚠️ Possibile truffa")
+                .setMessage("$warning\n\nNon inserire password, codici o dati della carta.")
+                .setPositiveButton("Torna indietro", null)
+                .setNegativeButton("Apri comunque") { _, _ -> allowedHosts.add(host); open() }
+                .show()
+        }
+        return false
+    }
+
+    // ======================= Automatic cleanup =======================
+
+    private fun noteHostVisit(url: String) {
+        val host = hostOf(url) ?: return
+        val p = getSharedPreferences("wl_cleanup", MODE_PRIVATE)
+        p.edit().putLong("h_$host", System.currentTimeMillis()).apply()
+    }
+
+    private fun autoCleanup(force: Boolean = false): Int {
+        val p = getSharedPreferences("wl_cleanup", MODE_PRIVATE)
+        if (!force && (!toolsPrefs.getBoolean("autoClean", true) || System.currentTimeMillis() - p.getLong("last", 0L) < 7 * 86_400_000L)) return 0
+        p.edit().putLong("last", System.currentTimeMillis()).apply()
+        val limit = System.currentTimeMillis() - 30 * 86_400_000L
+        val keep = apps.mapNotNull { hostOf(normalizeUrl(it.url)) }.toSet()
+        val old = p.all.filterKeys { it.startsWith("h_") }.mapNotNull { (k, v) ->
+            val host = k.removePrefix("h_")
+            if ((v as? Long ?: 0L) < limit && keep.none { host == it || host.endsWith(".$it") || it.endsWith(".$host") }) host else null
+        }
+        val cm = CookieManager.getInstance()
+        val storage = WebStorage.getInstance()
+        old.forEach { host ->
+            listOf("https://$host", "http://$host").forEach { origin ->
+                runCatching { storage.deleteOrigin(origin) }
+                cm.getCookie(origin)?.split(';')?.map { it.substringBefore('=').trim() }?.filter { it.isNotEmpty() }?.forEach { name ->
+                    cm.setCookie(origin, "$name=; Max-Age=0; Path=/")
+                    cm.setCookie(origin, "$name=; Max-Age=0; Path=/; Domain=.$host")
+                    cm.setCookie(origin, "$name=; Max-Age=0; Path=/; Domain=.${PhishingGuard.registered(host)}")
+                }
+            }
+            p.edit().remove("h_$host").apply()
+        }
+        cm.flush()
+        val hist = repo.loadHistory()
+        io.execute { hist.filter { it.time < limit }.forEach { repo.removeHistory(it.url) } }
+        return old.size
+    }
+
+    // ======================= AI writing =======================
+
+    private val rewriteGetJs = """
+        (function(){
+          var a=document.activeElement;
+          if(a&&(a.tagName==='TEXTAREA'||(a.tagName==='INPUT'&&/^(text|search|email|url|)$/.test(a.type||'')))){
+            var s=a.selectionStart,e=a.selectionEnd,all=(s===e);
+            window.__wlSel={el:a,s:all?0:s,e:all?a.value.length:e};
+            return JSON.stringify({text:all?a.value:a.value.substring(s,e),editable:true});
+          }
+          var sel=window.getSelection();
+          if(sel&&sel.rangeCount&&sel.toString()){
+            var ce=!!(a&&a.isContentEditable);
+            window.__wlSel={range:sel.getRangeAt(0).cloneRange(),ce:ce};
+            return JSON.stringify({text:sel.toString(),editable:ce});
+          }
+          if(a&&a.isContentEditable){
+            window.__wlSel={el2:a};
+            return JSON.stringify({text:a.innerText||'',editable:true});
+          }
+          return JSON.stringify({text:'',editable:false});
+        })()
+    """.trimIndent()
+
+    private fun rewriteReplaceJs(text: String) = """
+        (function(t){
+          var x=window.__wlSel; if(!x) return false;
+          if(x.el){ var el=x.el; el.focus(); el.setSelectionRange(x.s,x.e);
+            if(!document.execCommand('insertText',false,t)){ el.setRangeText(t,x.s,x.e,'end'); el.dispatchEvent(new Event('input',{bubbles:true})); }
+            return true; }
+          if(x.range&&x.ce){ var s=window.getSelection(); s.removeAllRanges(); s.addRange(x.range); return document.execCommand('insertText',false,t); }
+          if(x.el2){ x.el2.focus(); document.execCommand('selectAll',false,null); return document.execCommand('insertText',false,t); }
+          return false;
+        })(${org.json.JSONObject.quote(text)})
+    """.trimIndent()
+
+    private fun writeWithAi() {
+        if (!aiReady()) return
+        webView.evaluateJavascript(rewriteGetJs) { raw ->
+            val o = runCatching { org.json.JSONObject(jsString(raw)) }.getOrNull() ?: org.json.JSONObject()
+            val text = o.optString("text").trim()
+            val editable = o.optBoolean("editable")
+            val actions = if (text.isEmpty()) arrayOf("✍️ Scrivi da zero") else
+                arrayOf("✨ Migliora", "✓ Correggi errori", "👔 Più formale", "😊 Più amichevole", "✂️ Più breve", "🇬🇧 Traduci in inglese", "↩️ Scrivi una risposta")
+            if (text.isEmpty() && !editable) { toast("Tocca prima una casella di testo o seleziona del testo"); return@evaluateJavascript }
+            MaterialAlertDialogBuilder(this).setTitle("✨ Scrivi con AI").setItems(actions) { _, w ->
+                if (text.isEmpty()) {
+                    val d = resources.displayMetrics.density
+                    val et = TextInputEditText(this).apply { hint = "Cosa vuoi scrivere? Es. email per spostare l'appuntamento" }
+                    val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
+                    MaterialAlertDialogBuilder(this).setTitle("✍️ Scrivi da zero").setView(box)
+                        .setPositiveButton("Scrivi") { _, _ ->
+                            val req = et.text?.toString()?.trim().orEmpty()
+                            if (req.isNotEmpty()) runRewrite("Scrivi in italiano questo testo: $req. Rispondi solo con il testo pronto da usare.", editable)
+                        }.setNegativeButton("Annulla", null).show()
+                    return@setItems
+                }
+                val instr = when (w) {
+                    0 -> "Migliora questo testo (chiarezza e scorrevolezza) mantenendo lingua, significato e tono"
+                    1 -> "Correggi solo gli errori di ortografia, grammatica e punteggiatura di questo testo, senza cambiarne lo stile"
+                    2 -> "Riscrivi questo testo in tono più formale e cortese"
+                    3 -> "Riscrivi questo testo in tono più amichevole e cordiale"
+                    4 -> "Riscrivi questo testo in modo più breve e diretto"
+                    5 -> "Traduci in inglese questo testo"
+                    else -> "Scrivi una risposta cortese in italiano a questo messaggio"
+                }
+                runRewrite("$instr. Rispondi solo con il testo finale, senza commenti.\n\n«$text»", editable && w != 6)
+            }.show()
+        }
+    }
+
+    private fun runRewrite(prompt: String, canReplace: Boolean) {
+        toast("✨ Scrivo…")
+        ai.ask(listOf("user" to prompt), "Sei un assistente di scrittura. Rispondi solo con il testo richiesto.", object : AiBridge.Listener {
+            override fun onDone(text: String, model: String) {
+                val result = text.trim().removePrefix("«").removeSuffix("»").trim()
+                val b = MaterialAlertDialogBuilder(this@MainActivity).setTitle("✨ Risultato").setMessage(result)
+                    .setNeutralButton("Copia") { _, _ -> copyText("Testo", result) }
+                    .setNegativeButton("Annulla", null)
+                if (canReplace) b.setPositiveButton("Inserisci") { _, _ ->
+                    webView.evaluateJavascript(rewriteReplaceJs(result)) { r -> if (r != "true") { copyText("Testo", result); toast("Copiato: incollalo nella casella") } }
+                }
+                b.show()
+            }
+            override fun onError(message: String, noKey: Boolean) { toast(message) }
+        })
+    }
+
+    // ======================= Price comparison & email =======================
+
+    private fun comparePrices() {
+        val js = """
+            (function(){
+              var name='';
+              document.querySelectorAll('script[type="application/ld+json"]').forEach(function(s){
+                try{ var j=JSON.parse(s.textContent); var arr=Array.isArray(j)?j:(j['@graph']||[j]);
+                  arr.forEach(function(x){ if(!name && x && (x['@type']==='Product' || (Array.isArray(x['@type'])&&x['@type'].indexOf('Product')>=0))) name=x.name||''; });
+                }catch(e){}
+              });
+              if(!name){ var m=document.querySelector('meta[property="og:title"]'); if(m) name=m.content; }
+              if(!name){ var h=document.querySelector('h1'); if(h) name=h.innerText; }
+              return (name||document.title||'').trim().substring(0,200);
+            })()
+        """.trimIndent()
+        webView.evaluateJavascript(js) { raw ->
+            val title = jsString(raw).trim()
+            if (title.isEmpty()) { toast("Non trovo il nome del prodotto"); return@evaluateJavascript }
+            fun offer(q: String) {
+                val e = Uri.encode(q)
+                val shops = listOf(
+                    "Trovaprezzi" to "https://www.trovaprezzi.it/categoria.aspx?libera=$e",
+                    "Idealo" to "https://www.idealo.it/MainSearchProductCategory.html?q=$e",
+                    "Google Shopping" to "https://www.google.com/search?tbm=shop&q=$e",
+                    "Amazon" to "https://www.amazon.it/s?k=$e",
+                    "eBay" to "https://www.ebay.it/sch/i.html?_nkw=$e"
+                )
+                MaterialAlertDialogBuilder(this).setTitle("🛒 $q").setItems(shops.map { it.first }.toTypedArray()) { _, w ->
+                    openInNewTab(shops[w].second)
+                }.show()
+            }
+            if (ai.supported() && title.length > 40) {
+                toast("✨ Riconosco il prodotto…")
+                ai.ask(listOf("user" to "Dal titolo di questa pagina estrai marca e modello del prodotto, in massimo 8 parole, " +
+                    "adatto a una ricerca di prezzi. Solo il testo.\n\n$title"), null, object : AiBridge.Listener {
+                    override fun onDone(text: String, model: String) { offer(text.trim().trim('"', '«', '»').take(80)) }
+                    override fun onError(message: String, noKey: Boolean) { offer(title.take(80)) }
+                })
+            } else offer(title.take(80))
+        }
+    }
+
+    private fun summarizeEmail() {
+        if (!aiReady()) return
+        readPage { title, url, text ->
+            showAiSheet(
+                title = "Email",
+                context = pageContext(title, url, text),
+                firstQuestion = "Questa è una pagina di Gmail. Riassumi l'email aperta in italiano: chi scrive, cosa chiede, " +
+                    "scadenze o azioni da fare. Se ci sono più email, riassumi l'ultima conversazione aperta.",
+                showFirstQuestion = false,
+                hint = "Es. scrivimi una risposta cortese"
+            )
+        }
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -4863,6 +5315,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleVoiceText(text: String) {
         toast("Hai detto: $text")
+        if (Regex("^(ricordami|ricorda|promemoria|avvisami)\\b", RegexOption.IGNORE_CASE).containsMatchIn(text.trim())) {
+            createReminderFromText(text, fromVoice = true); return
+        }
         val fallback = {
             val match = findAppByName(text, voice = true)
             when {
@@ -5142,10 +5597,22 @@ class MainActivity : AppCompatActivity() {
                     "• Menu ⋮ → Chiedi alla pagina\n" +
                     "• Scrivi una domanda nella ricerca → «Chiedi all'AI»\n" +
                     "• Seleziona del testo in una pagina → «Chiedi all'AI»\n" +
-                    "• Microfono: comandi lunghi, es. «apri Amazon e cerca cuffie bluetooth»\n\n" +
+                    "• Microfono: comandi lunghi, es. «apri Amazon e cerca cuffie bluetooth»\n" +
+                    "• Seleziona testo o tocca una casella → «✨ Riscrivi»: migliora, correggi, traduci\n" +
+                    "• Menu ⋮ → 🛒 Confronta prezzi, 📧 Riassumi email (in Gmail)\n\n" +
                     "Il testo viene inviato al provider scelto in Mia AI solo quando usi queste funzioni."
                 )
                 .setPositiveButton("OK", null).show()
+        }
+
+        section("COMODITÀ")
+        row("📋 Appunti intelligenti", "Propone l'azione per link, pacchi e numeri copiati", switch = toolsPrefs.getBoolean("smartClipboard", true)) {
+            toolsPrefs.edit().putBoolean("smartClipboard", !toolsPrefs.getBoolean("smartClipboard", true)).apply(); renderSettings()
+        }
+        row("⏰ Promemoria", "Anche a voce: «ricordami domani alle 9 di…»") { showRemindersPage() }
+        row("📦 Pacchi", "Traccia le spedizioni") { showParcelsPage() }
+        row("🧮 Calcoli e conversioni", "Scrivi nella ricerca: «15% di 230», «10 km in miglia», «50 dollari in euro»") {
+            showTab(TAB_HOME); searchInput.requestFocus()
         }
 
         section("STRUMENTI")
@@ -5187,7 +5654,22 @@ class MainActivity : AppCompatActivity() {
             if (miaOnHome) openInBrowser(MiaAi.URL) else { addMiaToHome(); renderSettings() }
         }
 
-        section("PRIVACY E SICUREZZA")
+        section("SICUREZZA E PRIVACY")
+        row("⚠️ Avviso siti truffa", "Avvisa prima di aprire siti che imitano Poste, banche, corrieri…", switch = toolsPrefs.getBoolean("phishing", true)) {
+            toolsPrefs.edit().putBoolean("phishing", !toolsPrefs.getBoolean("phishing", true)).apply(); renderSettings()
+        }
+        row("🕵️ Profilo 2", if (IsolatedBrowserActivity.supported()) "Navigazione separata: altri login, es. un secondo Gmail"
+            else "Richiede «Android System WebView» aggiornato") {
+            startActivity(Intent(this, IsolatedBrowserActivity::class.java))
+        }
+        row("Cancella dati del profilo 2", danger = true) {
+            confirmClear("Cancellare cookie e login del profilo 2?") { IsolatedBrowserActivity.clear(); toast("Profilo 2 pulito") }
+        }
+        row("🧹 Pulizia automatica", "Ogni settimana cancella cookie e dati dei siti non visitati da 30 giorni (non delle tue app)",
+            switch = toolsPrefs.getBoolean("autoClean", true)) {
+            toolsPrefs.edit().putBoolean("autoClean", !toolsPrefs.getBoolean("autoClean", true)).apply(); renderSettings()
+        }
+        row("🧹 Pulisci ora") { val n = autoCleanup(force = true); toast(if (n == 0) "Niente da pulire" else "Puliti i dati di $n siti") }
         row("Blocca pubblicità e tracker", "Pagine più veloci, meno dati consumati", switch = repo.blockAds()) {
             repo.setBlockAds(!repo.blockAds()); blockAdsOn = repo.blockAds()
             if (browserHasPage) webView.reload()
@@ -5490,6 +5972,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun recordVisit(title: String, url: String) {
         if (isPdfViewer(url)) return
+        noteHostVisit(url)
         val key = "$url|$title"
         if (key == lastRecorded) return
         lastRecorded = key
