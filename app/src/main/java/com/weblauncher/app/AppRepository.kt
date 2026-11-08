@@ -7,6 +7,8 @@ import com.google.gson.reflect.TypeToken
 
 data class RecentSite(val title: String, val url: String)
 
+data class SavedTab(val url: String, val title: String, val desktop: Boolean = false)
+
 class AppRepository(context: Context) {
     private val prefs = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
     private val gson = Gson()
@@ -103,6 +105,26 @@ class AppRepository(context: Context) {
         prefs.edit().putBoolean(KEY_BLOCK_3P, block).apply()
     }
 
+    fun darkSites(): Boolean = prefs.getBoolean(KEY_DARK_SITES, false)
+
+    fun setDarkSites(on: Boolean) {
+        prefs.edit().putBoolean(KEY_DARK_SITES, on).apply()
+    }
+
+    fun loadTabs(): Pair<List<SavedTab>, Int> {
+        val json = prefs.getString(KEY_TABS, null) ?: return emptyList<SavedTab>() to 0
+        return try {
+            val type = object : TypeToken<List<SavedTab>>() {}.type
+            val list = gson.fromJson<List<SavedTab>>(json, type)
+                ?.filter { it != null && !it.url.isNullOrBlank() } ?: emptyList()
+            list to prefs.getInt(KEY_TAB_INDEX, 0).coerceIn(0, (list.size - 1).coerceAtLeast(0))
+        } catch (_: Exception) { emptyList<SavedTab>() to 0 }
+    }
+
+    fun saveTabs(tabs: List<SavedTab>, active: Int) {
+        prefs.edit().putString(KEY_TABS, gson.toJson(tabs)).putInt(KEY_TAB_INDEX, active).apply()
+    }
+
     fun getAccent(): String = prefs.getString(KEY_ACCENT, "blue") ?: "blue"
 
     fun setAccent(name: String) {
@@ -149,6 +171,9 @@ class AppRepository(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_ACCENT = "accent"
         private const val KEY_RECENTS = "recents"
+        private const val KEY_DARK_SITES = "dark_sites"
+        private const val KEY_TABS = "open_tabs"
+        private const val KEY_TAB_INDEX = "open_tab_index"
         private const val KEY_BLOCK_3P = "block_third_party_cookies"
 
         fun accentStyle(context: Context): Int {

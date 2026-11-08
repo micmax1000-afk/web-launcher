@@ -55,7 +55,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recentsList: android.widget.LinearLayout
     private lateinit var webTitle: TextView
     private lateinit var webAddress: EditText
-    private lateinit var tabStrip: android.widget.LinearLayout
+    private lateinit var tabCount: TextView
+    private lateinit var addressIcon: ImageView
+    private lateinit var settingsPanel: View
+    private lateinit var settingsList: android.widget.LinearLayout
     private var mobileUserAgent: String = ""
     private val appVersion: String by lazy {
         try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (_: Exception) { "" }
@@ -216,7 +219,10 @@ class MainActivity : AppCompatActivity() {
         recentsList = findViewById(R.id.recentsList)
         webTitle = findViewById(R.id.webTitle)
         webAddress = findViewById(R.id.webAddress)
-        tabStrip = findViewById(R.id.tabStrip)
+        tabCount = findViewById(R.id.tabCount)
+        addressIcon = findViewById(R.id.addressIcon)
+        settingsPanel = findViewById(R.id.settingsPanel)
+        settingsList = findViewById(R.id.settingsList)
         webProgress = findViewById(R.id.webProgress)
         iconHome = findViewById(R.id.iconHome)
         labelHome = findViewById(R.id.labelHome)
@@ -249,20 +255,27 @@ class MainActivity : AppCompatActivity() {
         }
 
         findViewById<View>(R.id.btnMic).setOnClickListener { requestMicAndListen() }
-        findViewById<View>(R.id.btnWebBack).setOnClickListener { if (webView.canGoBack()) webView.goBack() }
-        findViewById<View>(R.id.btnWebForward).setOnClickListener { if (webView.canGoForward()) webView.goForward() }
-        findViewById<View>(R.id.btnWebRefresh).setOnClickListener { webView.reload() }
-        findViewById<View>(R.id.btnWebAdd).setOnClickListener { offerAddCurrentPage() }
-        findViewById<View>(R.id.btnWebMenu).setOnClickListener { showBrowserMenu() }
-        findViewById<View>(R.id.btnNewTab).setOnClickListener { openNewTab(privateMode = false) }
+        findViewById<View>(R.id.btnWebHome).setOnClickListener { showTab(TAB_HOME) }
+        findViewById<View>(R.id.btnWebMenu).setOnClickListener { showBrowserMenu(it) }
+        findViewById<View>(R.id.btnTabs).setOnClickListener { showTabSwitcher() }
+        webAddress.setOnFocusChangeListener { _, focused ->
+            val url = webView.url?.takeIf { it.startsWith("http") && browserHasPage }
+            if (focused) {
+                webAddress.setText(url.orEmpty())
+                webAddress.selectAll()
+            } else {
+                webAddress.setText(url?.let { displayUrl(it) }.orEmpty())
+            }
+        }
         webAddress.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_SEARCH) {
                 goAddress()
                 true
             } else false
         }
+        restoreSavedTabs()
         renderTabStrip()
-        showTab(TAB_HOME)
+        showTab(if (savedInstanceState?.getInt(STATE_TAB) == TAB_SETTINGS) TAB_SETTINGS else TAB_HOME)
         openShortcut(intent)
         val night = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
@@ -273,15 +286,21 @@ class MainActivity : AppCompatActivity() {
     private fun styleChrome(palette: AppRepository.Companion.UiPalette) {
         val d = resources.displayMetrics.density
         findViewById<View>(R.id.browserToolbar).setBackgroundColor(palette.elevated)
-        findViewById<View>(R.id.tabScroller).setBackgroundColor(palette.elevated)
-        listOf(R.id.btnWebBack, R.id.btnWebForward, R.id.btnWebRefresh, R.id.btnWebAdd, R.id.btnWebMenu).forEach {
+        listOf(R.id.btnWebHome, R.id.btnWebMenu).forEach {
             findViewById<android.widget.ImageButton>(it).setColorFilter(palette.text)
         }
-        webAddress.background = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = 20f * d
+        tabCount.setTextColor(palette.text)
+        tabCount.background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 5f * d
+            setStroke((2 * d).toInt(), palette.text)
+        }
+        addressIcon.setColorFilter(palette.textMuted)
+        findViewById<View>(R.id.addressPill).background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 22f * d
             setColor(palette.iconTile)
             setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
         }
+        webAddress.background = null
         webAddress.setTextColor(palette.text)
         webAddress.setHintTextColor(palette.textMuted)
         findViewById<TextView>(R.id.emptyTitle).setTextColor(palette.text)
@@ -329,6 +348,19 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, !repo.blockThirdPartyCookies())
 
+        applyDarkSites()
+        webView.setOnLongClickListener {
+            val hit = webView.hitTestResult
+            val extra = hit.extra
+            if (extra.isNullOrBlank() || !extra.startsWith("http")) return@setOnLongClickListener false
+            when (hit.type) {
+                WebView.HitTestResult.SRC_ANCHOR_TYPE -> { showLinkMenu(extra); true }
+                WebView.HitTestResult.IMAGE_TYPE,
+                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> { showImageMenu(extra); true }
+                else -> false
+            }
+        }
+
         webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
             startDownload(url, userAgent, contentDisposition, mimeType)
         }
@@ -352,7 +384,7 @@ class MainActivity : AppCompatActivity() {
                     if (safeTitle != null) tab.title = safeTitle
                     if (pageUrl.startsWith("http")) tab.url = pageUrl
                 }
-                if (!webAddress.isFocused && pageUrl.startsWith("http")) webAddress.setText(pageUrl)
+                if (!webAddress.isFocused && pageUrl.startsWith("http")) webAddress.setText(displayUrl(pageUrl))
                 if (pageUrl.startsWith("http")) {
                     if (tab?.privateMode != true && safeTitle != null) repo.addRecent(safeTitle, pageUrl)
                     browserHasPage = true
@@ -562,7 +594,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupNav() {
         findViewById<View>(R.id.navHome).setOnClickListener { showTab(TAB_HOME) }
         findViewById<View>(R.id.navBrowser).setOnClickListener { showTab(TAB_BROWSER) }
-        findViewById<View>(R.id.navSettings).setOnClickListener { showSettings() }
+        findViewById<View>(R.id.navSettings).setOnClickListener { showTab(TAB_SETTINGS) }
     }
 
     private fun setupBack() {
@@ -572,6 +604,7 @@ class MainActivity : AppCompatActivity() {
                     customView != null -> exitFullscreen()
                     currentTab == TAB_BROWSER && webView.canGoBack() -> webView.goBack()
                     currentTab == TAB_BROWSER -> showTab(TAB_HOME)
+                    currentTab == TAB_SETTINGS -> showTab(TAB_HOME)
                     else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
                 }
             }
@@ -582,15 +615,17 @@ class MainActivity : AppCompatActivity() {
         currentTab = tab
         homePanel.isVisible = tab == TAB_HOME
         browserPanel.isVisible = tab == TAB_BROWSER
-        if (tab == TAB_BROWSER) updateBrowserBody()
+        settingsPanel.isVisible = tab == TAB_SETTINGS
+        if (tab == TAB_SETTINGS) renderSettings()
+        if (tab == TAB_BROWSER) { ensureTabLoaded(); updateBrowserBody() }
         val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
         val muted = AppRepository.palette(this).textMuted
         iconHome.setColorFilter(if (tab == TAB_HOME) accent else muted)
         labelHome.setTextColor(if (tab == TAB_HOME) accent else muted)
         iconBrowser.setColorFilter(if (tab == TAB_BROWSER) accent else muted)
         labelBrowser.setTextColor(if (tab == TAB_BROWSER) accent else muted)
-        iconSettings.setColorFilter(muted)
-        labelSettings.setTextColor(muted)
+        iconSettings.setColorFilter(if (tab == TAB_SETTINGS) accent else muted)
+        labelSettings.setTextColor(if (tab == TAB_SETTINGS) accent else muted)
     }
 
     private fun openInBrowser(url: String) {
@@ -600,11 +635,51 @@ class MainActivity : AppCompatActivity() {
         tab.state = null
         browserHasPage = true
         showTab(TAB_BROWSER)
-        if (!webAddress.isFocused) webAddress.setText(url)
+        if (!webAddress.isFocused) webAddress.setText(displayUrl(url))
         applyTabChrome()
         webView.loadUrl(url)
         updateBrowserBody()
         renderTabStrip()
+    }
+
+    /** Tabs restored from the last session load only when the browser is opened. */
+    private fun ensureTabLoaded() {
+        val tab = webTabs.getOrNull(webTabIndex) ?: return
+        val loaded = webView.url
+        if (tab.url.startsWith("http") && (loaded.isNullOrBlank() || loaded == "about:blank") && tab.state == null) {
+            applyTabChrome()
+            browserHasPage = true
+            webView.loadUrl(tab.url)
+            if (!webAddress.isFocused) webAddress.setText(displayUrl(tab.url))
+        }
+    }
+
+    private fun restoreSavedTabs() {
+        val (saved, active) = repo.loadTabs()
+        if (saved.isEmpty()) return
+        webTabs.clear()
+        saved.forEach { webTabs.add(WebTab(title = it.title, url = it.url, desktop = it.desktop)) }
+        webTabIndex = active.coerceIn(0, webTabs.lastIndex)
+        browserHasPage = true
+    }
+
+    private fun persistTabs() {
+        if (!::repo.isInitialized) return
+        runCatching { saveCurrentTab() }
+        val keep = webTabs.withIndex().filter { !it.value.privateMode && it.value.url.startsWith("http") }
+        val active = keep.indexOfFirst { it.index == webTabIndex }.coerceAtLeast(0)
+        repo.saveTabs(keep.map { SavedTab(it.value.url, it.value.title, it.value.desktop) }, active)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt(STATE_TAB, currentTab)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        persistTabs()
+        CookieManager.getInstance().flush()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -615,7 +690,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun openShortcut(intent: Intent?) {
         val url = intent?.getStringExtra("shortcut_url") ?: return
-        if (url.isNotBlank()) openInBrowser(normalizeUrl(url))
+        if (url.isBlank()) return
+        if (webTabs.getOrNull(webTabIndex)?.url?.startsWith("http") == true) openNewTab(false)
+        openInBrowser(normalizeUrl(url))
     }
 
     private fun goAddress() {
@@ -689,7 +766,7 @@ class MainActivity : AppCompatActivity() {
             if (tab.url.isNotBlank()) webView.loadUrl(tab.url) else webView.loadUrl("about:blank")
         }
         browserHasPage = tab.url.startsWith("http")
-        if (!webAddress.isFocused) webAddress.setText(if (tab.url.startsWith("http")) tab.url else "")
+        if (!webAddress.isFocused) webAddress.setText(if (tab.url.startsWith("http")) displayUrl(tab.url) else "")
         showTab(TAB_BROWSER)
         updateBrowserBody()
     }
@@ -701,87 +778,275 @@ class MainActivity : AppCompatActivity() {
         s.cacheMode = if (tab.privateMode) WebSettings.LOAD_NO_CACHE else WebSettings.LOAD_DEFAULT
     }
 
+    private fun displayUrl(url: String): String = try {
+        val u = Uri.parse(url)
+        val host = u.host?.removePrefix("www.") ?: url
+        if (u.scheme == "http") "⚠ $host" else host
+    } catch (_: Exception) { url }
+
+    /** Tab counter (Chrome style) + lock/search icon in the address bar. */
     private fun renderTabStrip() {
-        tabStrip.removeAllViews()
+        tabCount.text = if (webTabs.size > 99) ":D" else webTabs.size.toString()
+        val url = webView.url.orEmpty()
+        addressIcon.setImageResource(
+            if (browserHasPage && url.startsWith("https://")) R.drawable.ic_web_lock else R.drawable.ic_search
+        )
+    }
+
+    private fun showTabSwitcher() {
+        saveCurrentTab()
+        val palette = AppRepository.palette(this)
+        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
-        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
-        val palette = AppRepository.palette(this)
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(16), dp(8), dp(16), dp(24))
+        }
+        val header = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(4), 0, dp(12))
+        }
+        header.addView(TextView(this).apply {
+            text = if (webTabs.size == 1) "1 scheda" else "${webTabs.size} schede"
+            textSize = 20f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(palette.text)
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        header.addView(com.google.android.material.button.MaterialButton(this).apply {
+            text = "Nuova"
+            isAllCaps = false
+            cornerRadius = dp(20)
+            setIconResource(R.drawable.ic_web_add)
+            setOnClickListener { sheet.dismiss(); openNewTab(false) }
+        })
+        root.addView(header)
         webTabs.forEachIndexed { index, tab ->
             val active = index == webTabIndex
-            val fg = if (active) accent else palette.textMuted
-            val chip = android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.HORIZONTAL
-                gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(dp(12), 0, dp(2), 0)
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    cornerRadius = dp(16).toFloat()
-                    setColor(if (active) androidx.core.graphics.ColorUtils.setAlphaComponent(accent, 0x2A) else palette.card)
-                    setStroke(dp(1), if (active) androidx.core.graphics.ColorUtils.setAlphaComponent(accent, 0x66) else palette.stroke)
-                }
+            val card = com.google.android.material.card.MaterialCardView(this).apply {
+                radius = dp(16).toFloat()
+                cardElevation = 0f
+                setCardBackgroundColor(palette.card)
+                strokeWidth = dp(if (active) 2 else 1)
+                strokeColor = if (active) accent else palette.stroke
                 layoutParams = android.widget.LinearLayout.LayoutParams(
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, dp(32)
-                ).apply { marginEnd = dp(6) }
-                setOnClickListener { switchToTab(index) }
-                setOnLongClickListener {
-                    closeTabAt(index)
-                    true
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(10) }
+                setOnClickListener {
+                    sheet.dismiss()
+                    if (index == webTabIndex) showTab(TAB_BROWSER) else switchToTab(index)
                 }
             }
-            chip.addView(TextView(this).apply {
-                val raw = if (tab.privateMode) "Senza cronologia" else tab.title.ifBlank { "Scheda" }
-                val label = if (raw == "about:blank") "Nuova scheda" else raw
-                text = if (label.length > 18) label.take(17).trimEnd() + "…" else label
-                textSize = 13f
-                setTextColor(fg)
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(16), dp(14), dp(6), dp(14))
+            }
+            val box = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            val title = when {
+                tab.title.isNotBlank() && tab.title != "about:blank" -> tab.title
+                else -> "Nuova scheda"
+            }
+            box.addView(TextView(this).apply {
+                text = (if (tab.privateMode) "🕶 " else "") + title
+                textSize = 16f
+                setTextColor(palette.text)
                 if (active) setTypeface(typeface, android.graphics.Typeface.BOLD)
                 maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
             })
-            chip.addView(android.widget.ImageView(this).apply {
+            if (tab.url.startsWith("http")) box.addView(TextView(this).apply {
+                text = displayUrl(tab.url)
+                textSize = 13f
+                setTextColor(palette.textMuted)
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(0, dp(2), 0, 0)
+            })
+            row.addView(box)
+            row.addView(ImageView(this).apply {
                 setImageResource(R.drawable.ic_web_close)
-                setColorFilter(fg)
-                setPadding(dp(6), dp(6), dp(8), dp(6))
-                layoutParams = android.widget.LinearLayout.LayoutParams(dp(30), dp(30))
+                setColorFilter(palette.textMuted)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
                 contentDescription = "Chiudi scheda"
-                setOnClickListener { closeTabAt(index) }
+                setOnClickListener { sheet.dismiss(); closeTabAt(index); showTabSwitcher() }
             })
-            tabStrip.addView(chip)
+            card.addView(row)
+            root.addView(card)
+        }
+        if (webTabs.size > 1) root.addView(com.google.android.material.button.MaterialButton(
+            this, null, androidx.appcompat.R.attr.borderlessButtonStyle
+        ).apply {
+            text = "Chiudi tutte le schede"
+            isAllCaps = false
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.danger))
+            setOnClickListener {
+                sheet.dismiss()
+                webTabs.clear()
+                webTabs.add(WebTab())
+                webTabIndex = 0
+                restoreTab(webTabs[0])
+                renderTabStrip()
+            }
+        })
+        val scroll = android.widget.ScrollView(this).apply { addView(root) }
+        sheet.setContentView(scroll)
+        sheet.show()
+    }
+
+    private fun showBrowserMenu(anchor: View) {
+        val tab = currentTab()
+        val palette = AppRepository.palette(this)
+        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val hasPage = browserHasPage && webView.url?.startsWith("http") == true
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(0, dp(6), 0, dp(8))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 18f * d
+                setColor(palette.elevated)
+                setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+            }
+            elevation = 12f * d
+        }
+        val popup = android.widget.PopupWindow(root, dp(272), android.view.ViewGroup.LayoutParams.WRAP_CONTENT, true)
+        popup.elevation = 12f * d
+        popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+
+        // Top icon row, like Chrome: back, forward, star, share, refresh
+        val icons = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            setPadding(dp(6), 0, dp(6), dp(4))
+        }
+        fun iconBtn(res: Int, desc: String, enabled: Boolean, tint: Int = palette.text, action: () -> Unit) {
+            icons.addView(android.widget.ImageButton(this).apply {
+                setImageResource(res)
+                setColorFilter(tint)
+                background = null
+                scaleType = android.widget.ImageView.ScaleType.CENTER
+                contentDescription = desc
+                isEnabled = enabled
+                alpha = if (enabled) 1f else 0.3f
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, dp(52), 1f)
+                setOnClickListener { popup.dismiss(); action() }
+            })
+        }
+        val saved = hasPage && isSaved(webView.url)
+        iconBtn(R.drawable.ic_web_back, "Indietro", webView.canGoBack()) { webView.goBack() }
+        iconBtn(R.drawable.ic_web_forward, "Avanti", webView.canGoForward()) { webView.goForward() }
+        iconBtn(
+            if (saved) R.drawable.ic_web_star_filled else R.drawable.ic_web_star, "Salva pagina", hasPage,
+            if (saved) ContextCompat.getColor(this, R.color.star) else palette.text
+        ) { offerAddCurrentPage() }
+        iconBtn(R.drawable.ic_web_share, "Condividi", hasPage) { shareCurrentLink() }
+        iconBtn(R.drawable.ic_web_refresh, "Ricarica", hasPage) { webView.reload() }
+        root.addView(icons)
+        root.addView(View(this).apply {
+            setBackgroundColor(palette.stroke)
+            layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, d.toInt().coerceAtLeast(1))
+        })
+
+        fun item(label: String, enabled: Boolean = true, checked: Boolean? = null, action: () -> Unit) {
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(20), 0, dp(14), 0)
+                minimumHeight = dp(50)
+                isEnabled = enabled
+                alpha = if (enabled) 1f else 0.4f
+                val tv = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                setBackgroundResource(tv.resourceId)
+                setOnClickListener { popup.dismiss(); action() }
+            }
+            row.addView(TextView(this).apply {
+                text = label
+                textSize = 16f
+                setTextColor(palette.text)
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            })
+            if (checked != null) row.addView(android.widget.CheckBox(this).apply {
+                isChecked = checked
+                isClickable = false
+                buttonTintList = android.content.res.ColorStateList.valueOf(accent)
+            })
+            root.addView(row)
+        }
+        item("Nuova scheda") { openNewTab(false) }
+        item("Nuova scheda senza cronologia") { openNewTab(true) }
+        item("Schede aperte (${webTabs.size})") { showTabSwitcher() }
+        item("Trova nella pagina", hasPage) { showFindDialog() }
+        item("Sito desktop", hasPage, tab.desktop) {
+            tab.desktop = !tab.desktop
+            applyTabChrome()
+            webView.reload()
+        }
+        item("Apri in Chrome / altro browser", hasPage) { openExternally() }
+        item("Chiudi scheda") { closeCurrentTab() }
+        item("Impostazioni") { showTab(TAB_SETTINGS) }
+        popup.showAsDropDown(anchor, -dp(228), -anchor.height + dp(4))
+    }
+
+    private fun applyDarkSites() {
+        if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.ALGORITHMIC_DARKENING)) {
+            androidx.webkit.WebSettingsCompat.setAlgorithmicDarkeningAllowed(
+                webView.settings,
+                repo.darkSites() && !AppRepository.isLightUi(this)
+            )
         }
     }
 
-    private fun showBrowserMenu() {
-        val tab = currentTab()
-        val options = arrayOf(
-            "Nuova scheda",
-            "Scheda senza cronologia",
-            "Trova nella pagina",
-            if (tab.desktop) "Versione mobile" else "Versione desktop",
-            "Svuota recenti",
-            "Chiudi scheda",
-            "Apri in Chrome / altro browser",
-            "Condividi link"
-        )
-        MaterialAlertDialogBuilder(this).setTitle("Browser").setItems(options) { _, which ->
-            when (which) {
-                0 -> openNewTab(false)
-                1 -> openNewTab(true)
-                2 -> showFindDialog()
-                3 -> {
-                    tab.desktop = !tab.desktop
-                    applyTabChrome()
-                    webView.reload()
-                    toast(if (tab.desktop) "Versione desktop" else "Versione mobile")
+    private fun openInNewTab(url: String) {
+        openNewTab(false)
+        openInBrowser(url)
+    }
+
+    private fun copyText(label: String, text: String) {
+        val cm = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        cm.setPrimaryClip(android.content.ClipData.newPlainText(label, text))
+        if (android.os.Build.VERSION.SDK_INT < 33) toast("Copiato")
+    }
+
+    private fun showLinkMenu(url: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(displayUrl(url))
+            .setItems(arrayOf("Apri in nuova scheda", "Apri senza cronologia", "Copia link", "Condividi link", "Apri in Chrome / altro browser")) { _, which ->
+                when (which) {
+                    0 -> openInNewTab(url)
+                    1 -> { openNewTab(true); openInBrowser(url) }
+                    2 -> copyText("Link", url)
+                    3 -> startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"; putExtra(Intent.EXTRA_TEXT, url)
+                    }, "Condividi link"))
+                    4 -> try {
+                        startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW, Uri.parse(url)), "Apri con"))
+                    } catch (_: Exception) { toast("Nessun browser trovato") }
                 }
-                4 -> confirmClear("Eliminare tutti i recenti?") {
-                    repo.clearRecents()
-                    if (!browserHasPage) renderRecents()
-                    toast("Recenti eliminati")
-                }
-                5 -> closeCurrentTab()
-                6 -> openExternally()
-                7 -> shareCurrentLink()
             }
-        }.show()
+            .show()
+    }
+
+    private fun showImageMenu(url: String) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Immagine")
+            .setItems(arrayOf("Apri immagine in nuova scheda", "Scarica immagine", "Copia indirizzo immagine")) { _, which ->
+                when (which) {
+                    0 -> openInNewTab(url)
+                    1 -> startDownload(url, webView.settings.userAgentString, null, null)
+                    2 -> copyText("Immagine", url)
+                }
+            }
+            .show()
     }
 
     private fun openExternally() {
@@ -1219,123 +1484,165 @@ class MainActivity : AppCompatActivity() {
             }.setNegativeButton("Annulla", null).show()
     }
 
-    private fun showSettings() {
+    /** Full-page settings (bottom-nav tab), grouped cards with large rows. */
+    private fun renderSettings() {
+        settingsList.removeAllViews()
         val engine = repo.getSearchEngine()
+        val palette = AppRepository.palette(this)
+        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+        settingsPanel.setBackgroundColor(palette.bg)
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
-        val scroll = android.widget.ScrollView(this)
-        val root = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(dp(18), dp(8), dp(18), dp(8))
-        }
+        settingsList.addView(TextView(this).apply {
+            text = "Impostazioni"
+            textSize = 28f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(palette.text)
+            setPadding(dp(4), dp(12), dp(4), dp(8))
+        })
+        var group: android.widget.LinearLayout? = null
         fun section(title: String) {
-            root.addView(TextView(this).apply {
+            settingsList.addView(TextView(this).apply {
                 text = title
-                setTextColor(com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt()))
-                textSize = 12f
+                setTextColor(accent)
+                textSize = 13f
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
-                letterSpacing = 0.08f
-                setPadding(dp(4), dp(14), dp(4), dp(6))
+                letterSpacing = 0.06f
+                setPadding(dp(8), dp(20), dp(8), dp(8))
             })
-        }
-        fun row(label: String, sub: String? = null, onClick: () -> Unit) {
             val card = com.google.android.material.card.MaterialCardView(this).apply {
-                radius = dp(16).toFloat()
-                setCardBackgroundColor(AppRepository.palette(this@MainActivity).card)
-                strokeWidth = dp(1)
-                strokeColor = AppRepository.palette(this@MainActivity).stroke
+                radius = dp(20).toFloat()
                 cardElevation = 0f
-                val lp = android.widget.LinearLayout.LayoutParams(
-                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-                )
-                lp.bottomMargin = dp(8)
-                layoutParams = lp
-                setOnClickListener { onClick() }
+                setCardBackgroundColor(palette.card)
+                strokeWidth = dp(1)
+                strokeColor = palette.stroke
+            }
+            val inner = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+            card.addView(inner)
+            settingsList.addView(card)
+            group = inner
+        }
+        fun row(label: String, sub: String? = null, value: String? = null, danger: Boolean = false,
+                switch: Boolean? = null, onClick: () -> Unit) {
+            val g = group ?: return
+            if (g.childCount > 0) g.addView(View(this).apply {
+                setBackgroundColor(palette.stroke)
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, d.toInt().coerceAtLeast(1)
+                ).apply { marginStart = dp(18) }
+            })
+            val r = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                minimumHeight = dp(64)
+                setPadding(dp(18), dp(12), dp(14), dp(12))
+                val tv = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                setBackgroundResource(tv.resourceId)
             }
             val box = android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.VERTICAL
-                setPadding(dp(16), dp(12), dp(16), dp(12))
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             }
             box.addView(TextView(this).apply {
                 text = label
-                setTextColor(AppRepository.palette(this@MainActivity).text)
-                textSize = 15f
+                textSize = 17f
+                setTextColor(if (danger) ContextCompat.getColor(this@MainActivity, R.color.danger) else palette.text)
             })
-            if (!sub.isNullOrBlank()) {
-                box.addView(TextView(this).apply {
-                    text = sub
-                    setTextColor(AppRepository.palette(this@MainActivity).textMuted)
-                    textSize = 12f
-                    setPadding(0, dp(2), 0, 0)
-                })
-            }
-            card.addView(box)
-            root.addView(card)
+            if (!sub.isNullOrBlank()) box.addView(TextView(this).apply {
+                text = sub
+                textSize = 14f
+                setTextColor(palette.textMuted)
+                setPadding(0, dp(3), 0, 0)
+            })
+            r.addView(box)
+            if (value != null) r.addView(TextView(this).apply {
+                text = value
+                textSize = 15f
+                setTextColor(accent)
+                setPadding(dp(10), 0, dp(4), 0)
+            })
+            if (switch != null) {
+                val sw = com.google.android.material.materialswitch.MaterialSwitch(this).apply {
+                    isChecked = switch
+                    isClickable = false
+                    isFocusable = false
+                }
+                r.addView(sw)
+            } else if (!danger) r.addView(ImageView(this).apply {
+                setImageResource(R.drawable.ic_web_forward)
+                setColorFilter(palette.textMuted)
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(20), dp(20))
+            })
+            r.setOnClickListener { onClick() }
+            g.addView(r)
         }
-        val dialog = MaterialAlertDialogBuilder(this)
-            .setTitle("Impostazioni")
-            .setView(scroll)
-            .setNegativeButton("Chiudi", null)
-            .create()
-        section("APP")
-        row("Aggiungi web app", "Nome, URL e categoria") { dialog.dismiss(); showAddEditDialog(null) }
-        row("Motore di ricerca", engine.label) { dialog.dismiss(); showSearchEnginePicker() }
+
+        section("GENERALE")
+        row("Aggiungi web app", "Nome, indirizzo e categoria") { showAddEditDialog(null) }
+        row("Motore di ricerca", value = engine.label) { showSearchEnginePicker() }
         val themeLabel = when (repo.getThemeMode()) {
             "light" -> "Chiaro"
             "system" -> "Sistema"
             else -> "Scuro"
         }
-        row("Tema", themeLabel) { dialog.dismiss(); showThemePicker() }
+        row("Tema", value = themeLabel) { showThemePicker() }
         val accentLabel = when (repo.getAccent()) {
             "amber" -> "Ambra"
             "green" -> "Verde"
             else -> "Blu"
         }
-        row("Colore", accentLabel) { dialog.dismiss(); showAccentPicker() }
-        row("Svuota home", "Elimina tutte le app salvate") {
-            dialog.dismiss()
+        row("Colore", value = accentLabel) { showAccentPicker() }
+        row("Siti in modalità scura", "Scurisce i siti chiari quando il tema è scuro", switch = repo.darkSites()) {
+            repo.setDarkSites(!repo.darkSites())
+            applyDarkSites()
+            if (browserHasPage) webView.reload()
+            renderSettings()
+        }
+
+        section("PRIVACY E SICUREZZA")
+        val block3p = repo.blockThirdPartyCookies()
+        row("Blocca cookie di terze parti", "Disattiva solo se un login non funziona", switch = block3p) {
+            val next = !block3p
+            repo.setBlockThirdPartyCookies(next)
+            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, !next)
+            renderSettings()
+        }
+        row("Password e compilazione", "Autofill di Android") { showPasswordInfo() }
+        row("Cancella cronologia", "Recenti e cronologia del browser") { confirmClear("Cancellare cronologia e recenti?") { clearHistoryAndRecents(); toast("Cronologia cancellata") } }
+        row("Cancella cookie", "Ti disconnette dai siti") { confirmClear("Cancellare tutti i cookie?") { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); toast("Cookie cancellati") } }
+        row("Cancella cache") { confirmClear("Cancellare la cache?") { webView.clearCache(true); toast("Cache cancellata") } }
+        row("Cancella tutti i dati", "Recenti, cronologia, cookie, cache", danger = true) { confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
+
+        section("BACKUP")
+        val autoOn = repo.getAutoBackupUri() != null
+        row("Backup", if (autoOn) "Automatico attivo" else "Su file, Drive o condivisione") { showBackupMenu() }
+        row("Ripristina", "Da un file di backup") {
+            importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+        }
+
+        section("HOME")
+        row("Sposta le icone", "Tieni premuta un'app → Sposta") { toast("Tieni premuta un'app e scegli Sposta") }
+        row("Microfono", "Come attivare il permesso voce") {
+            MaterialAlertDialogBuilder(this).setTitle("Microfono")
+                .setMessage("Voce nativa Android.\nImpostazioni → App → Web Launcher → Microfono → Consenti")
+                .setPositiveButton("OK", null).show()
+        }
+        row("Svuota home", "Elimina tutte le app salvate", danger = true) {
             MaterialAlertDialogBuilder(this).setMessage("Eliminare tutte le app dalla home? Puoi recuperarle solo da un backup.")
                 .setPositiveButton("Svuota") { _, _ ->
                     apps.forEach { a -> a.iconPath?.let { runCatching { java.io.File(it).delete() } } }
                     apps = repo.resetDefaults(); categories = repo.loadCategories(); autoBackupNow(); refreshList(); toast("Home svuotata")
                 }.setNegativeButton("Annulla", null).show()
         }
-        section("PRIVACY")
-        val block3p = repo.blockThirdPartyCookies()
-        row("Cookie di terze parti", if (block3p) "Bloccati (consigliato)" else "Consentiti") {
-            dialog.dismiss()
-            val next = !block3p
-            repo.setBlockThirdPartyCookies(next)
-            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, !next)
-            toast(if (next) "Cookie di terze parti bloccati" else "Cookie di terze parti consentiti: serve se un login non funziona")
-        }
-        row("Password e compilazione", "Autofill di Android") { dialog.dismiss(); showPasswordInfo() }
-        row("Cancella cronologia", "Recenti e cronologia del browser") { dialog.dismiss(); confirmClear("Cancellare cronologia e recenti?") { clearHistoryAndRecents(); toast("Cronologia cancellata") } }
-        row("Cancella cookie") { dialog.dismiss(); confirmClear("Cancellare tutti i cookie?") { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); toast("Cookie cancellati") } }
-        row("Cancella cache") { dialog.dismiss(); confirmClear("Cancellare la cache?") { webView.clearCache(true); toast("Cache cancellata") } }
-        row("Cancella tutti i dati", "Recenti, cronologia, cookie, cache") { dialog.dismiss(); confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
-        section("DATI")
-        val autoOn = repo.getAutoBackupUri() != null
-        row("Backup", if (autoOn) "Automatico attivo · file, Drive o condividi" else "File, Drive o condivisione") {
-            dialog.dismiss()
-            showBackupMenu()
-        }
-        row("Ripristina", "Da un file di backup") {
-            dialog.dismiss()
-            importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-        }
-        section("AIUTO")
-        row("Microfono", "Permesso voce") {
-            dialog.dismiss()
-            MaterialAlertDialogBuilder(this).setTitle("Microfono")
-                .setMessage("Voce nativa Android.\nImpostazioni → App → Web Launcher → Microfono → Consentire")
-                .setPositiveButton("OK", null).show()
-        }
-        row("Sposta le icone", "Tieni premuto e trascina") { dialog.dismiss(); toast("Tieni premuto un'icona e trascinala") }
-        scroll.addView(root)
-        dialog.show()
-        dialog.window?.setLayout((resources.displayMetrics.widthPixels * 0.92f).toInt(), (resources.displayMetrics.heightPixels * 0.78f).toInt())
+
+        settingsList.addView(TextView(this).apply {
+            text = "Web Launcher $appVersion"
+            textSize = 13f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(palette.textMuted)
+            setPadding(0, dp(24), 0, dp(8))
+        })
     }
 
     private fun showBackupMenu() {
@@ -1456,10 +1763,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateStar() {
-        val saved = currentTabIsBrowser() && isSaved(webView.url)
-        val star = findViewById<android.widget.ImageButton>(R.id.btnWebAdd)
-        star.setImageResource(if (saved) R.drawable.ic_web_star_filled else R.drawable.ic_web_star)
-        star.setColorFilter(if (saved) ContextCompat.getColor(this, R.color.star) else AppRepository.palette(this).text)
+        renderTabStrip()
     }
 
     private fun currentTabIsBrowser() = browserHasPage && webView.url?.startsWith("http") == true
@@ -1666,6 +1970,7 @@ class MainActivity : AppCompatActivity() {
             .setSingleChoiceItems(labels, current) { dialog, which ->
                 repo.setSearchEngine(engines[which])
                 toast("Motore: ${engines[which].label}")
+                if (currentTab == TAB_SETTINGS) renderSettings()
                 dialog.dismiss()
             }
             .setNegativeButton("Annulla", null)
@@ -1716,6 +2021,8 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAB_HOME = 0
         private const val TAB_BROWSER = 1
+        private const val TAB_SETTINGS = 2
+        private const val STATE_TAB = "current_tab"
         private const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
