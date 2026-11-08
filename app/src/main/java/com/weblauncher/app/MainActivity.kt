@@ -444,6 +444,7 @@ class MainActivity : AppCompatActivity() {
 
         applyDarkSites()
         setupMiaBridge()
+        setupYouTube()
         webView.setOnScrollChangeListener { _, _, y, _, oldY -> onWebScroll(y, oldY) }
         webView.setOnLongClickListener {
             val hit = webView.hitTestResult
@@ -487,6 +488,7 @@ class MainActivity : AppCompatActivity() {
             }
             override fun onPageFinished(view: WebView?, url: String?) {
                 webProgress.visibility = View.INVISIBLE
+                if (YouTube.isYouTube(url) && !ytDocStartSupported()) view?.evaluateJavascript(YouTube.script(ytConfig()), null)
                 val pageUrl = url.orEmpty()
                 val safeTitle = view?.title?.trim().orEmpty().takeIf { isRealPageTitle(it, pageUrl) }
                 if (safeTitle != null) webTitle.text = safeTitle
@@ -1187,6 +1189,14 @@ class MainActivity : AppCompatActivity() {
         item("Nuova scheda") { openNewTab(false) }
         item("Nuova scheda senza cronologia") { openNewTab(true) }
         item("Schede aperte (${webTabs.size})") { showTabSwitcher() }
+        if (YouTube.isYouTube(webView.url)) {
+            item("✨ Riassumi video") { summarizeVideo() }
+            item("✨ Chiedi al video") { askVideo() }
+            item("🎬 Finestrella") { enterVideoPip() }
+            item("⏩ Velocità (${ytPrefs.getFloat("speed", 1f)}x)") { ytSpeedDialog() }
+            item("▶ Segui il canale") { followCurrentChannel() }
+            item("⚙ Opzioni YouTube") { ytOptionsDialog() }
+        }
         item("✨ Riassumi pagina", hasPage) { summarizePage() }
         item("✨ Chiedi alla pagina", hasPage) { askThePage() }
         item("📖 Modalità lettura", hasPage) { openReaderMode() }
@@ -3111,11 +3121,15 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.audioPanel).setBackgroundColor(palette.bg)
         findViewById<TextView>(R.id.audioHeading).setTextColor(palette.text)
         findViewById<View>(R.id.btnAudioSearch).setOnClickListener {
-            if (audioTab == "radio") showRadioSearch() else showPodcastSearch()
+            when (audioTab) { "radio" -> showRadioSearch(); "video" -> addChannelDialog(); else -> showPodcastSearch() }
         }
         val refresh = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.audioRefresh)
         refresh.setOnRefreshListener {
-            if (audioTab == "radio") { radioCache.clear(); refresh.isRefreshing = false; renderAudio() } else refreshEpisodes()
+            when (audioTab) {
+                "radio" -> { radioCache.clear(); refresh.isRefreshing = false; renderAudio() }
+                "video" -> refreshYtVideos()
+                else -> refreshEpisodes()
+            }
         }
     }
 
@@ -3339,7 +3353,7 @@ class MainActivity : AppCompatActivity() {
         fun dp(v: Int) = (v * d).toInt()
         val tabs = findViewById<android.widget.LinearLayout>(R.id.audioTabs)
         tabs.removeAllViews()
-        listOf("podcast" to "🎙 Podcast", "radio" to "📻 Radio").forEach { (key, label) ->
+        listOf("podcast" to "🎙 Podcast", "radio" to "📻 Radio", "video" to "▶ Video").forEach { (key, label) ->
             val active = key == audioTab
             tabs.addView(TextView(this).apply {
                 text = label; textSize = 14f
@@ -3359,6 +3373,7 @@ class MainActivity : AppCompatActivity() {
         val list = findViewById<android.widget.LinearLayout>(R.id.audioList)
         list.removeAllViews()
         if (audioTab == "radio") { renderRadio(list); return }
+        if (audioTab == "video") { renderVideos(list); return }
 
         val subs = audio.subscriptions()
         if (subs.isEmpty()) {
@@ -4144,6 +4159,390 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // ======================= YouTube =======================
+
+    private val ytPrefs by lazy { getSharedPreferences("wl_yt", MODE_PRIVATE) }
+    private var ytScript: androidx.webkit.ScriptHandler? = null
+    private var ytPlaying = false
+    private var ytTranscriptCallback: ((org.json.JSONObject) -> Unit)? = null
+    private var inPip = false
+
+    private fun ytConfig() = YouTube.Config(
+        skipAds = ytPrefs.getBoolean("skipAds", true),
+        sponsorBlock = ytPrefs.getBoolean("sponsorBlock", true),
+        clean = ytPrefs.getBoolean("clean", false),
+        background = ytPrefs.getBoolean("background", true),
+        speed = ytPrefs.getFloat("speed", 1f),
+        quality = ytPrefs.getString("quality", "auto") ?: "auto"
+    )
+
+    private fun ytDocStartSupported() =
+        androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)
+
+    /** (Re)installs the YouTube script with the current options. */
+    private fun installYouTubeScript() {
+        if (!ytDocStartSupported()) return
+        runCatching { ytScript?.remove() }
+        ytScript = runCatching {
+            androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, YouTube.script(ytConfig()), YouTube.ORIGINS)
+        }.getOrNull()
+    }
+
+    private fun setupYouTube() {
+        installYouTubeScript()
+        if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.WEB_MESSAGE_LISTENER)) return
+        androidx.webkit.WebViewCompat.addWebMessageListener(webView, YouTube.BRIDGE, YouTube.ORIGINS) { _, message, origin, isMainFrame, _ ->
+            if (!isMainFrame || !YouTube.isYouTube(origin.toString())) return@addWebMessageListener
+            val m = runCatching { org.json.JSONObject(message.data ?: "") }.getOrNull() ?: return@addWebMessageListener
+            when (m.optString("t")) {
+                "sb" -> fetchSponsorSegments(m.optString("id"))
+                "state" -> ytPlaying = m.optBoolean("playing")
+                "transcript" -> {
+                    val cb = ytTranscriptCallback
+                    ytTranscriptCallback = null
+                    m.optJSONObject("data")?.let { cb?.invoke(it) }
+                }
+            }
+        }
+    }
+
+    private fun fetchSponsorSegments(id: String) {
+        if (!Regex("[\\w-]{11}").matches(id)) return
+        Thread {
+            val segs = runCatching {
+                val cats = Uri.encode("[\"sponsor\",\"selfpromo\",\"interaction\",\"intro\",\"outro\"]")
+                val c = java.net.URL("https://sponsor.ajay.app/api/skipSegments?videoID=$id&categories=$cats")
+                    .openConnection() as java.net.HttpURLConnection
+                c.connectTimeout = 6000; c.readTimeout = 8000
+                if (c.responseCode != 200) "[]" else c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }.let { body ->
+                    val arr = org.json.JSONArray(body)
+                    val out = org.json.JSONArray()
+                    for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        val seg = o.optJSONArray("segment") ?: continue
+                        out.put(org.json.JSONObject().put("start", seg.optDouble(0)).put("end", seg.optDouble(1))
+                            .put("category", o.optString("category")))
+                    }
+                    out.toString()
+                }
+            }.getOrDefault("[]")
+            runOnUiThread {
+                if (YouTube.isYouTube(webView.url)) webView.evaluateJavascript("window.__wlSegments&&__wlSegments('$id',$segs)", null)
+            }
+        }.start()
+    }
+
+    private fun withVideoInfo(onData: (org.json.JSONObject) -> Unit) {
+        if (!YouTube.isYouTube(webView.url)) { toast("Apri un video di YouTube"); return }
+        toast("Leggo il video…")
+        ytTranscriptCallback = onData
+        webView.evaluateJavascript("window.__wlTranscript ? (__wlTranscript(), 1) : 0") { r ->
+            if (r != "1") { ytTranscriptCallback = null; toast("Ricarica la pagina di YouTube e riprova") }
+        }
+        uiHandler.postDelayed({
+            if (ytTranscriptCallback === onData) { ytTranscriptCallback = null; toast("Il video non ha risposto, riprova") }
+        }, 15_000)
+    }
+
+    private fun videoContext(o: org.json.JSONObject): String {
+        val transcript = o.optString("transcript")
+        return "Video YouTube «${o.optString("title")}» del canale ${o.optString("channel")}.\n" +
+            (if (transcript.isNotBlank()) "--- TRASCRIZIONE (con minuti) ---\n$transcript\n--- FINE ---\n"
+             else "Trascrizione non disponibile. Descrizione del video:\n${o.optString("description")}\n") + "\n"
+    }
+
+    private fun summarizeVideo() {
+        if (!aiReady()) return
+        withVideoInfo { o ->
+            val has = o.optString("transcript").isNotBlank()
+            showAiSheet(
+                title = "Riassunto video",
+                context = videoContext(o),
+                firstQuestion = if (has) "Riassumi il video in italiano: una frase iniziale e i punti principali, " +
+                    "ognuno con il minuto [mm:ss] in cui inizia." else
+                    "Non c'è la trascrizione: dimmi di cosa parla il video in base a titolo e descrizione, e avvisa che è un riassunto parziale.",
+                showFirstQuestion = false
+            )
+        }
+    }
+
+    private fun askVideo() {
+        if (!aiReady()) return
+        withVideoInfo { o ->
+            showAiSheet(title = "Chiedi al video", context = videoContext(o), firstQuestion = null,
+                hint = "Es. a che minuto spiega…? quali prodotti consiglia?")
+        }
+    }
+
+    private fun followCurrentChannel() {
+        webView.evaluateJavascript("window.__wlChannel ? __wlChannel() : '{}'") { raw ->
+            val o = runCatching { org.json.JSONObject(jsString(raw)) }.getOrNull()
+            val id = o?.optString("id").orEmpty()
+            if (!id.startsWith("UC")) { toast("Apri un video o la pagina del canale"); return@evaluateJavascript }
+            addYtChannel(YtChannel(id, o?.optString("name").orEmpty().ifBlank { "Canale" }))
+        }
+    }
+
+    private fun ytSpeedDialog() {
+        val speeds = floatArrayOf(1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
+        val labels = speeds.map { (if (it % 1f == 0f) it.toInt().toString() else it.toString()) + "x" }.toTypedArray()
+        val cur = speeds.indexOfFirst { kotlin.math.abs(it - ytPrefs.getFloat("speed", 1f)) < 0.01f }.coerceAtLeast(0)
+        MaterialAlertDialogBuilder(this).setTitle("Velocità video")
+            .setSingleChoiceItems(labels, cur) { d, w ->
+                ytPrefs.edit().putFloat("speed", speeds[w]).apply()
+                webView.evaluateJavascript("window.__wlSetSpeed&&__wlSetSpeed(${speeds[w]})", null)
+                installYouTubeScript()
+                d.dismiss()
+            }.show()
+    }
+
+    private fun ytQualityDialog() {
+        val values = arrayOf("auto", "small", "medium", "large", "hd720", "hd1080")
+        val labels = arrayOf("Automatica", "240p (meno dati)", "360p", "480p", "720p", "1080p")
+        val cur = values.indexOf(ytPrefs.getString("quality", "auto")).coerceAtLeast(0)
+        MaterialAlertDialogBuilder(this).setTitle("Qualità preferita")
+            .setSingleChoiceItems(labels, cur) { d, w ->
+                ytPrefs.edit().putString("quality", values[w]).apply()
+                installYouTubeScript()
+                d.dismiss()
+                if (currentTab == TAB_SETTINGS) renderSettings()
+                toast("Vale dai prossimi video (se YouTube lo permette)")
+            }.show()
+    }
+
+    private fun ytOptionsDialog() {
+        val keys = arrayOf("skipAds", "sponsorBlock", "clean", "background", "autoPip")
+        val labels = arrayOf("⏩ Salta automaticamente gli annunci", "⏭ SponsorBlock (salta sponsor e sigle)",
+            "🔇 Interfaccia pulita (niente Shorts e consigliati)", "🎧 Audio a schermo spento", "🎬 Finestrella quando esci dall'app")
+        val defaults = booleanArrayOf(true, true, false, true, true)
+        val checked = BooleanArray(keys.size) { ytPrefs.getBoolean(keys[it], defaults[it]) }
+        MaterialAlertDialogBuilder(this).setTitle("YouTube")
+            .setMultiChoiceItems(labels, checked) { _, i, c -> checked[i] = c }
+            .setPositiveButton("Salva") { _, _ ->
+                val e = ytPrefs.edit()
+                keys.forEachIndexed { i, k -> e.putBoolean(k, checked[i]) }
+                e.apply()
+                installYouTubeScript()
+                if (YouTube.isYouTube(webView.url)) webView.reload()
+                if (currentTab == TAB_SETTINGS) renderSettings()
+            }
+            .setNeutralButton("Qualità") { _, _ -> ytQualityDialog() }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
+    // ---------- picture-in-picture ----------
+
+    private fun canPip() = android.os.Build.VERSION.SDK_INT >= 26 &&
+        packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+
+    private fun enterVideoPip() {
+        if (!canPip()) { toast("La finestrella non è supportata su questo telefono"); return }
+        if (!YouTube.isYouTube(webView.url)) { toast("Funziona con i video di YouTube"); return }
+        webView.evaluateJavascript("window.__wlPip&&__wlPip(true)", null)
+        try {
+            val params = android.app.PictureInPictureParams.Builder().setAspectRatio(android.util.Rational(16, 9)).build()
+            enterPictureInPictureMode(params)
+        } catch (_: Exception) {
+            webView.evaluateJavascript("window.__wlPip&&__wlPip(false)", null)
+        }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (currentTab == TAB_BROWSER && ytPlaying && YouTube.isYouTube(webView.url) &&
+            ytPrefs.getBoolean("autoPip", true) && canPip() && !inPip
+        ) enterVideoPip()
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        inPip = isInPictureInPictureMode
+        browserToolbar.isVisible = !inPip
+        bottomBar.isVisible = !inPip
+        webProgress.visibility = if (inPip) View.GONE else View.INVISIBLE
+        if (inPip) findViewById<View>(R.id.miniPlayer).isVisible = false else updateMiniPlayer()
+        webView.evaluateJavascript("window.__wlPip&&__wlPip(${inPip})", null)
+    }
+
+    // ---------- followed channels (public RSS, no account) ----------
+
+    data class YtChannel(val id: String, val name: String)
+
+    private fun ytChannels(): List<YtChannel> = runCatching {
+        com.google.gson.Gson().fromJson<List<YtChannel>>(ytPrefs.getString("channels", "[]"),
+            object : com.google.gson.reflect.TypeToken<List<YtChannel>>() {}.type)
+    }.getOrNull().orEmpty()
+
+    private fun saveYtChannels(list: List<YtChannel>) {
+        ytPrefs.edit().putString("channels", com.google.gson.Gson().toJson(list)).apply()
+    }
+
+    private fun addYtChannel(c: YtChannel) {
+        if (ytChannels().any { it.id == c.id }) { toast("Segui già ${c.name}"); return }
+        saveYtChannels(ytChannels() + c)
+        ytVideos = emptyList()
+        toast("▶ Ora segui ${c.name}: lo trovi in Ascolta → Video")
+    }
+
+    private var ytVideos: List<NewsItem> = emptyList()
+
+    private fun refreshYtVideos() {
+        val chans = ytChannels()
+        val refresh = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.audioRefresh)
+        if (chans.isEmpty()) { refresh.isRefreshing = false; return }
+        refresh.isRefreshing = true
+        Thread {
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
+            val all = try {
+                pool.invokeAll(chans.map { ch ->
+                    java.util.concurrent.Callable {
+                        runCatching {
+                            val c = java.net.URL("https://www.youtube.com/feeds/videos.xml?channel_id=" + ch.id).openConnection() as java.net.HttpURLConnection
+                            c.connectTimeout = 8000; c.readTimeout = 10000
+                            c.setRequestProperty("Cookie", "SOCS=CAI")
+                            val bytes = c.inputStream.use { it.readBytes() }
+                            news.parseFeed(bytes, NewsSource(ch.id, ch.name, "Video", "")).take(15)
+                        }.getOrDefault(emptyList())
+                    }
+                }, 40, java.util.concurrent.TimeUnit.SECONDS).flatMap { f -> runCatching { f.get() }.getOrDefault(emptyList()) }
+            } finally { pool.shutdownNow() }
+            runOnUiThread {
+                refresh.isRefreshing = false
+                if (all.isNotEmpty()) {
+                    ytVideos = all.filter { !it.link.contains("/shorts/") }.sortedByDescending { it.time }
+                    ytPrefs.edit().putLong("refreshed", System.currentTimeMillis()).apply()
+                }
+                if (currentTab == TAB_AUDIO && audioTab == "video") renderAudio()
+            }
+        }.start()
+    }
+
+    private fun renderVideos(list: android.widget.LinearLayout) {
+        val palette = AppRepository.palette(this)
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val chans = ytChannels()
+        if (chans.isEmpty()) {
+            list.addView(TextView(this).apply {
+                text = "Nessun canale seguito.\n\nApri un video su YouTube → menu ⋮ → «Segui il canale», " +
+                    "oppure tocca «Cerca» e scrivi il nome del canale (es. @nomecanale).\n\n" +
+                    "Vedrai solo i video dei tuoi canali: niente consigliati, niente Shorts."
+                textSize = 15f; setTextColor(palette.textMuted); setPadding(dp(14), dp(24), dp(14), dp(16))
+            })
+            return
+        }
+        if (ytVideos.isEmpty() && System.currentTimeMillis() - ytPrefs.getLong("refreshed", 0L) > 60_000L) refreshYtVideos()
+        sectionLabel(list, "CANALI · ${chans.size}")
+        val row = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
+        chans.forEach { ch ->
+            row.addView(TextView(this).apply {
+                text = ch.name; textSize = 13f; setTextColor(palette.text)
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 16 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+                }
+                layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }
+                setOnClickListener { openInBrowser("https://m.youtube.com/channel/${ch.id}/videos") }
+                setOnLongClickListener {
+                    MaterialAlertDialogBuilder(this@MainActivity).setTitle(ch.name)
+                        .setItems(arrayOf("Apri il canale", "Non seguire più")) { _, w ->
+                            if (w == 0) openInBrowser("https://m.youtube.com/channel/${ch.id}/videos")
+                            else { saveYtChannels(ytChannels().filter { it.id != ch.id }); ytVideos = ytVideos.filter { it.sourceId != ch.id }; renderAudio() }
+                        }.show()
+                    true
+                }
+            })
+        }
+        list.addView(android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; setPadding(dp(6), 0, 0, 0); addView(row) })
+        sectionLabel(list, "ULTIMI VIDEO")
+        if (ytVideos.isEmpty()) {
+            list.addView(TextView(this).apply { text = "Trascina in giù per caricare"; textSize = 14f; setTextColor(palette.textMuted); setPadding(dp(10), dp(8), 0, 0) })
+        }
+        ytVideos.take(60).forEach { v ->
+            val r = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(6), dp(8), dp(6), dp(8))
+                val tv = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                setBackgroundResource(tv.resourceId)
+                setOnClickListener { openInBrowser(v.link) }
+                setOnLongClickListener {
+                    MaterialAlertDialogBuilder(this@MainActivity).setTitle(v.title)
+                        .setItems(arrayOf("Apri", "Apri in nuova scheda", "Condividi", "🔖 Leggi dopo (link)")) { _, w ->
+                            when (w) {
+                                0 -> openInBrowser(v.link)
+                                1 -> openInNewTab(v.link)
+                                2 -> startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "${v.title}\n${v.link}")
+                                }, "Condividi video"))
+                                3 -> saveForLater(ReaderDoc(v.title, v.source, v.link, v.image, v.summary.ifBlank { v.title }))
+                            }
+                        }.show()
+                    true
+                }
+            }
+            r.addView(ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(128), dp(72)).apply { marginEnd = dp(12) }
+                background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 10 * d; setColor(palette.iconTile) }
+                load(v.image) { transformations(coil.transform.RoundedCornersTransformation(20f)) }
+            })
+            val box = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+            }
+            box.addView(TextView(this).apply {
+                text = v.title; textSize = 14.5f; maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(palette.text); setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            box.addView(TextView(this).apply {
+                text = "${v.source} · ${NewsAdapter.ago(v.time)}"; textSize = 12f; setTextColor(palette.textMuted); setPadding(0, dp(3), 0, 0)
+            })
+            r.addView(box)
+            list.addView(r)
+        }
+    }
+
+    private fun addChannelDialog() {
+        val d = resources.displayMetrics.density
+        val et = TextInputEditText(this).apply { hint = "@nomecanale o link del canale"; setSingleLine() }
+        val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
+        MaterialAlertDialogBuilder(this).setTitle("Segui un canale YouTube").setView(box)
+            .setPositiveButton("Cerca") { _, _ ->
+                val raw = et.text?.toString()?.trim().orEmpty()
+                if (raw.isEmpty()) return@setPositiveButton
+                val url = when {
+                    raw.startsWith("http") -> raw.replace("://youtube.com", "://www.youtube.com").replace("://m.youtube.com", "://www.youtube.com")
+                    raw.startsWith("@") -> "https://www.youtube.com/$raw"
+                    raw.startsWith("UC") && raw.length == 24 -> "https://www.youtube.com/channel/$raw"
+                    else -> "https://www.youtube.com/@" + raw.replace(" ", "")
+                }
+                toast("Cerco il canale…")
+                Thread {
+                    val found = runCatching {
+                        val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+                        c.connectTimeout = 8000; c.readTimeout = 12000
+                        c.setRequestProperty("Cookie", "SOCS=CAI")
+                        c.setRequestProperty("Accept-Language", "it-IT,it;q=0.9")
+                        c.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+                        val html = c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                        val id = Regex("<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/channel/(UC[\\w-]{22})\"").find(html)?.groupValues?.get(1)
+                            ?: Regex("\"(?:externalId|channelId|browseId)\":\"(UC[\\w-]{22})\"").find(html)?.groupValues?.get(1)
+                        val name = Regex("<meta property=\"og:title\" content=\"([^\"]+)\"").find(html)?.groupValues?.get(1)
+                        if (id == null) null else YtChannel(id, androidx.core.text.HtmlCompat.fromHtml(name ?: "Canale", 0).toString())
+                    }.getOrNull()
+                    runOnUiThread {
+                        if (found == null) toast("Canale non trovato: prova dal video, menu ⋮ → Segui il canale")
+                        else { addYtChannel(found); if (currentTab == TAB_AUDIO) { audioTab = "video"; refreshYtVideos(); renderAudio() } }
+                    }
+                }.start()
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -4769,6 +5168,17 @@ class MainActivity : AppCompatActivity() {
         section("NOTIZIE")
         row("Fonti notizie", "${news.enabledIds().size} attive su ${news.allSources().size}") { showNewsSources() }
         row("Aggiungi una fonte", "Da qualsiasi sito con notizie") { addNewsSourceDialog() }
+
+        section("YOUTUBE")
+        row("Opzioni YouTube", listOfNotNull(
+            "salta annunci".takeIf { ytPrefs.getBoolean("skipAds", true) },
+            "SponsorBlock".takeIf { ytPrefs.getBoolean("sponsorBlock", true) },
+            "pulita".takeIf { ytPrefs.getBoolean("clean", false) },
+            "audio a schermo spento".takeIf { ytPrefs.getBoolean("background", true) },
+            "finestrella".takeIf { ytPrefs.getBoolean("autoPip", true) }
+        ).joinToString(", ").ifBlank { "Tutto spento" }) { ytOptionsDialog() }
+        row("Velocità e qualità", "${ytPrefs.getFloat("speed", 1f)}x · ${ytPrefs.getString("quality", "auto")}") { ytSpeedDialog() }
+        row("Canali seguiti", "${ytChannels().size} · in Ascolta → Video") { audioTab = "video"; showTab(TAB_AUDIO) }
 
         section("APP INTEGRATE")
         val miaOnHome = apps.any { MiaAi.isMiaUrl(it.url) }
