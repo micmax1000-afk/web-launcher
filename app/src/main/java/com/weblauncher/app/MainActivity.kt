@@ -67,6 +67,9 @@ class MainActivity : AppCompatActivity() {
     private var suggestToken = 0
     private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var relockPending = false
+    /** Disk work (history, backup) off the UI thread: keeps scrolling and page loads smooth. */
+    private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
+    private var lastRecorded = ""
     private val assetLoader by lazy {
         androidx.webkit.WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", androidx.webkit.WebViewAssetLoader.AssetsPathHandler(this))
@@ -392,6 +395,11 @@ class MainActivity : AppCompatActivity() {
         s.displayZoomControls = false
         s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         s.setGeolocationEnabled(true)
+        // dark background while a page loads: no white flash with the dark theme
+        webView.setBackgroundColor(if (AppRepository.isLightUi(this)) android.graphics.Color.WHITE else AppRepository.palette(this).bg)
+        if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.OFF_SCREEN_PRERASTER)) {
+            androidx.webkit.WebSettingsCompat.setOffscreenPreRaster(s, true)
+        }
         s.textZoom = repo.textZoom()
         blockAdsOn = repo.blockAds()
         hideBarsOn = repo.hideBarsOnScroll()
@@ -442,10 +450,10 @@ class MainActivity : AppCompatActivity() {
                 if (MiaAi.isMiaUrl(url) &&
                     !androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)
                 ) view?.evaluateJavascript(MiaAi.SPEECH_SHIM, null)
-                webProgress.isVisible = true; webProgress.progress = 0
+                webProgress.visibility = View.VISIBLE; webProgress.progress = 0
             }
             override fun onPageFinished(view: WebView?, url: String?) {
-                webProgress.isVisible = false
+                webProgress.visibility = View.INVISIBLE
                 val pageUrl = url.orEmpty()
                 val safeTitle = view?.title?.trim().orEmpty().takeIf { isRealPageTitle(it, pageUrl) }
                 if (safeTitle != null) webTitle.text = safeTitle
@@ -457,8 +465,7 @@ class MainActivity : AppCompatActivity() {
                 if (!webAddress.isFocused && pageUrl.startsWith("http")) webAddress.setText(displayUrl(pageUrl))
                 if (pageUrl.startsWith("http")) {
                     if (tab?.privateMode != true && safeTitle != null && !isLockedUrl(pageUrl)) {
-                        repo.addRecent(safeTitle, pageUrl)
-                        repo.addHistory(safeTitle, pageUrl)
+                        recordVisit(safeTitle, pageUrl)
                     }
                     browserHasPage = true
                     updateBrowserBody()
@@ -470,7 +477,7 @@ class MainActivity : AppCompatActivity() {
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 webProgress.progress = newProgress
-                webProgress.isVisible = newProgress < 100
+                webProgress.visibility = if (newProgress < 100) View.VISIBLE else View.INVISIBLE
             }
             override fun onReceivedTitle(view: WebView?, title: String?) {
                 val pageUrl = view?.url.orEmpty()
@@ -479,8 +486,7 @@ class MainActivity : AppCompatActivity() {
                 val tab = webTabs.getOrNull(webTabIndex) ?: return
                 tab.title = safeTitle
                 if (!tab.privateMode && pageUrl.startsWith("http") && !isLockedUrl(pageUrl)) {
-                    repo.addRecent(safeTitle, pageUrl)
-                    repo.addHistory(safeTitle, pageUrl)
+                    recordVisit(safeTitle, pageUrl)
                 }
                 renderTabStrip()
             }
@@ -1293,13 +1299,18 @@ class MainActivity : AppCompatActivity() {
         val appHits = apps.filter {
             it.name.lowercase(Locale.ROOT).contains(lq) || it.url.lowercase(Locale.ROOT).contains(lq)
         }.take(3)
-        val histHits = repo.loadHistory().filter {
-            it.title.lowercase(Locale.ROOT).contains(lq) || it.url.lowercase(Locale.ROOT).contains(lq)
-        }.distinctBy { it.url }.filter { h -> appHits.none { normalizeUrl(it.url) == h.url } }.take(4)
-        renderSuggestions(q, appHits, histHits, emptyList())
+        renderSuggestions(q, appHits, emptyList(), emptyList())
+        val appUrls = appHits.map { normalizeUrl(it.url) }.toSet()
         val endpoint = suggestEndpoint()
-        if (!repo.searchSuggestions() || endpoint == null || looksLikeUrl(q)) return
+        val wantRemote = repo.searchSuggestions() && endpoint != null && !looksLikeUrl(q)
         Thread {
+            val histHits = repo.loadHistory().filter {
+                it.title.lowercase(Locale.ROOT).contains(lq) || it.url.lowercase(Locale.ROOT).contains(lq)
+            }.distinctBy { it.url }.filter { it.url !in appUrls }.take(4)
+            runOnUiThread {
+                if (token == suggestToken && webAddress.isFocused) renderSuggestions(q, appHits, histHits, emptyList())
+            }
+            if (!wantRemote) return@Thread
             val remote = try {
                 val conn = java.net.URL(endpoint + Uri.encode(q)).openConnection() as java.net.HttpURLConnection
                 conn.connectTimeout = 2500
@@ -1853,6 +1864,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        io.shutdown()
         tts?.shutdown()
         tts = null
         super.onDestroy()
@@ -2409,7 +2421,7 @@ class MainActivity : AppCompatActivity() {
         row("Suggerimenti di ricerca", "Mentre scrivi l'indirizzo (dal motore scelto)", switch = repo.searchSuggestions()) {
             repo.setSearchSuggestions(!repo.searchSuggestions()); renderSettings()
         }
-        row("Nascondi barre scorrendo", "Più spazio per leggere le pagine", switch = repo.hideBarsOnScroll()) {
+        row("Nascondi barre scorrendo", "Più spazio, ma lo scorrimento è meno fluido", switch = repo.hideBarsOnScroll()) {
             repo.setHideBarsOnScroll(!repo.hideBarsOnScroll()); hideBarsOn = repo.hideBarsOnScroll(); renderSettings()
         }
         row("Dimensione testo", value = "${repo.textZoom()}%") { showTextZoomDialog() }
@@ -2733,7 +2745,25 @@ class MainActivity : AppCompatActivity() {
 
     private fun autoBackupNow() {
         val raw = repo.getAutoBackupUri() ?: return
-        writeBackupToUri(Uri.parse(raw), quiet = true)
+        val json = backupJson()
+        io.execute {
+            try {
+                val uri = Uri.parse(raw)
+                (contentResolver.openOutputStream(uri, "wt") ?: contentResolver.openOutputStream(uri))
+                    ?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+                    ?: repo.setAutoBackupUri(null)
+            } catch (_: Exception) { repo.setAutoBackupUri(null) }
+        }
+    }
+
+    private fun recordVisit(title: String, url: String) {
+        val key = "$url|$title"
+        if (key == lastRecorded) return
+        lastRecorded = key
+        io.execute {
+            repo.addRecent(title, url)
+            repo.addHistory(title, url)
+        }
     }
 
     private fun startAutoBackupSetup() {

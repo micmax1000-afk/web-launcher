@@ -237,7 +237,7 @@
             <TextView android:id="@+id/webTitle" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
         </LinearLayout>
 
-        <ProgressBar android:id="@+id/webProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="3dp" android:max="100" android:progress="0" android:progressTint="?attr/colorPrimary" android:visibility="gone" />
+        <ProgressBar android:id="@+id/webProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="3dp" android:max="100" android:progress="0" android:progressTint="?attr/colorPrimary" android:visibility="invisible" />
 
         <ScrollView
             android:id="@+id/suggestPanel"

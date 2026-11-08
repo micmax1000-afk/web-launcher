@@ -122,7 +122,7 @@ class AppRepository(context: Context) {
     fun blockAds(): Boolean = prefs.getBoolean(KEY_BLOCK_ADS, true)
     fun setBlockAds(on: Boolean) { prefs.edit().putBoolean(KEY_BLOCK_ADS, on).apply() }
 
-    fun hideBarsOnScroll(): Boolean = prefs.getBoolean(KEY_HIDE_BARS, true)
+    fun hideBarsOnScroll(): Boolean = prefs.getBoolean(KEY_HIDE_BARS, false)
     fun setHideBarsOnScroll(on: Boolean) { prefs.edit().putBoolean(KEY_HIDE_BARS, on).apply() }
 
     fun showMostUsed(): Boolean = prefs.getBoolean(KEY_MOST_USED, true)
