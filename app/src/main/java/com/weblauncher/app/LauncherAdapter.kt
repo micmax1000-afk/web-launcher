@@ -27,7 +27,7 @@ class LauncherAdapter(
 
     private val rows = mutableListOf<ListRow>()
 
-    fun submit(apps: List<AppItem>, categories: List<String>, query: String) {
+    fun submit(apps: List<AppItem>, categories: List<String>, query: String, mostUsed: Boolean = false) {
         rows.clear()
         val q = query.trim().lowercase()
         val filtered = if (q.isEmpty()) apps else apps.filter {
@@ -39,6 +39,14 @@ class LauncherAdapter(
         if (filtered.isEmpty()) {
             notifyDataSetChanged()
             return
+        }
+
+        if (mostUsed && q.isEmpty() && apps.size >= 6) {
+            val top = apps.filter { it.openCount > 0 }.sortedByDescending { it.openCount }.take(4)
+            if (top.size >= 2) {
+                rows.add(ListRow.Header(MOST_USED))
+                top.forEach { rows.add(ListRow.App(it)) }
+            }
         }
 
         val pinned = filtered.filter { it.pinned }.sortedBy { it.sortOrder }
@@ -66,6 +74,10 @@ class LauncherAdapter(
             }
 
         notifyDataSetChanged()
+    }
+
+    companion object {
+        const val MOST_USED = "Più usate"
     }
 
     fun isAppRow(position: Int): Boolean =
@@ -209,6 +221,7 @@ class LauncherAdapter(
             initials.text = item.name.take(2).uppercase()
             initials.visibility = View.VISIBLE
             pin.visibility = if (item.pinned) View.VISIBLE else View.GONE
+            if (item.locked) { pin.visibility = View.VISIBLE; pin.text = "🔒" } else pin.text = "★"
 
             val local = item.iconPath?.let { java.io.File(it) }?.takeIf { it.exists() }
             val host = try { Uri.parse(item.url).host } catch (_: Exception) { null }

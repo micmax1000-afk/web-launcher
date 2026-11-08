@@ -240,6 +240,20 @@
         <ProgressBar android:id="@+id/webProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="3dp" android:max="100" android:progress="0" android:progressTint="?attr/colorPrimary" android:visibility="gone" />
 
         <ScrollView
+            android:id="@+id/suggestPanel"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:visibility="gone">
+            <LinearLayout
+                android:id="@+id/suggestList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingVertical="6dp" />
+        </ScrollView>
+
+        <ScrollView
             android:id="@+id/recentsPanel"
             android:layout_width="match_parent"
             android:layout_height="0dp"

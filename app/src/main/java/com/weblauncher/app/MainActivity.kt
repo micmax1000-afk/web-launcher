@@ -56,6 +56,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webTitle: TextView
     private lateinit var webAddress: EditText
     private lateinit var tabCount: TextView
+    private lateinit var suggestPanel: View
+    private lateinit var suggestList: android.widget.LinearLayout
+    private lateinit var browserToolbar: View
+    private lateinit var bottomBar: View
+    @Volatile private var blockAdsOn = true
+    private var hideBarsOn = true
+    private var barsHidden = false
+    private var scrollAccum = 0
+    private var suggestToken = 0
+    private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var relockPending = false
     private lateinit var addressIcon: ImageView
     private lateinit var settingsPanel: View
     private lateinit var settingsList: android.widget.LinearLayout
@@ -159,6 +170,14 @@ class MainActivity : AppCompatActivity() {
         Uri.parse(origin.orEmpty()).host?.removePrefix("www.") ?: "Il sito"
     } catch (_: Exception) { "Il sito" }
 
+    private val bookmarkLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importBookmarks(uri)
+    }
+
+    private val defaultBrowserLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { if (currentTab == TAB_SETTINGS) renderSettings() }
+
     private val iconPicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val id = iconTargetId ?: return@registerForActivityResult
         val item = apps.firstOrNull { it.id == id } ?: return@registerForActivityResult
@@ -220,6 +239,10 @@ class MainActivity : AppCompatActivity() {
         webTitle = findViewById(R.id.webTitle)
         webAddress = findViewById(R.id.webAddress)
         tabCount = findViewById(R.id.tabCount)
+        suggestPanel = findViewById(R.id.suggestPanel)
+        suggestList = findViewById(R.id.suggestList)
+        browserToolbar = findViewById(R.id.browserToolbar)
+        bottomBar = findViewById(R.id.bottomBar)
         addressIcon = findViewById(R.id.addressIcon)
         settingsPanel = findViewById(R.id.settingsPanel)
         settingsList = findViewById(R.id.settingsList)
@@ -258,7 +281,20 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnWebHome).setOnClickListener { showTab(TAB_HOME) }
         findViewById<View>(R.id.btnWebMenu).setOnClickListener { showBrowserMenu(it) }
         findViewById<View>(R.id.btnTabs).setOnClickListener { showTabSwitcher() }
+        webAddress.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(e: Editable?) {
+                if (!webAddress.isFocused) return
+                val q = e?.toString()?.trim().orEmpty()
+                if (q.isEmpty() || q == webView.url) { hideSuggestions(); return }
+                val token = ++suggestToken
+                uiHandler.removeCallbacksAndMessages(SUGGEST_TAG)
+                uiHandler.postAtTime({ showSuggestions(q, token) }, SUGGEST_TAG, android.os.SystemClock.uptimeMillis() + 150)
+            }
+        })
         webAddress.setOnFocusChangeListener { _, focused ->
+            if (!focused) hideSuggestions() else showBars()
             val url = webView.url?.takeIf { it.startsWith("http") && browserHasPage }
             if (focused) {
                 webAddress.setText(url.orEmpty())
@@ -276,7 +312,7 @@ class MainActivity : AppCompatActivity() {
         restoreSavedTabs()
         renderTabStrip()
         showTab(if (savedInstanceState?.getInt(STATE_TAB) == TAB_SETTINGS) TAB_SETTINGS else TAB_HOME)
-        openShortcut(intent)
+        if (savedInstanceState == null) openShortcut(intent)
         val night = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
             android.content.res.Configuration.UI_MODE_NIGHT_YES
         WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightStatusBars = !night
@@ -309,10 +345,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupLauncher() {
         adapter = LauncherAdapter(
-            onClick = {
-                noteUse(it)
-                openInBrowser(normalizeUrl(it.url))
-            },
+            onClick = { openApp(it) },
             onMenu = { item -> showAppMenu(item) },
             onHeader = { name -> showCategoryMenu(name) },
             onReorder = { fromId, toId -> applyReorder(fromId, toId) }
@@ -338,6 +371,9 @@ class MainActivity : AppCompatActivity() {
         s.displayZoomControls = false
         s.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
         s.setGeolocationEnabled(true)
+        s.textZoom = repo.textZoom()
+        blockAdsOn = repo.blockAds()
+        hideBarsOn = repo.hideBarsOnScroll()
         s.allowFileAccess = false
         s.mediaPlaybackRequiresUserGesture = true
         s.cacheMode = WebSettings.LOAD_DEFAULT
@@ -349,6 +385,7 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, !repo.blockThirdPartyCookies())
 
         applyDarkSites()
+        webView.setOnScrollChangeListener { _, _, y, _, oldY -> onWebScroll(y, oldY) }
         webView.setOnLongClickListener {
             val hit = webView.hitTestResult
             val extra = hit.extra
@@ -371,7 +408,13 @@ class MainActivity : AppCompatActivity() {
                 if (url.startsWith("http://") || url.startsWith("https://")) return false
                 return try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); true } catch (_: Exception) { true }
             }
+            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): android.webkit.WebResourceResponse? {
+                if (!blockAdsOn || request == null) return null
+                return AdBlocker.intercept(request.url?.host, request.isForMainFrame)
+            }
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                AdBlocker.resetCount()
+                showBars()
                 webProgress.isVisible = true; webProgress.progress = 0
             }
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -386,7 +429,10 @@ class MainActivity : AppCompatActivity() {
                 }
                 if (!webAddress.isFocused && pageUrl.startsWith("http")) webAddress.setText(displayUrl(pageUrl))
                 if (pageUrl.startsWith("http")) {
-                    if (tab?.privateMode != true && safeTitle != null) repo.addRecent(safeTitle, pageUrl)
+                    if (tab?.privateMode != true && safeTitle != null && !isLockedUrl(pageUrl)) {
+                        repo.addRecent(safeTitle, pageUrl)
+                        repo.addHistory(safeTitle, pageUrl)
+                    }
                     browserHasPage = true
                     updateBrowserBody()
                     renderTabStrip()
@@ -405,7 +451,10 @@ class MainActivity : AppCompatActivity() {
                 webTitle.text = safeTitle
                 val tab = webTabs.getOrNull(webTabIndex) ?: return
                 tab.title = safeTitle
-                if (!tab.privateMode && pageUrl.startsWith("http")) repo.addRecent(safeTitle, pageUrl)
+                if (!tab.privateMode && pageUrl.startsWith("http") && !isLockedUrl(pageUrl)) {
+                    repo.addRecent(safeTitle, pageUrl)
+                    repo.addHistory(safeTitle, pageUrl)
+                }
                 renderTabStrip()
             }
 
@@ -613,6 +662,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun showTab(tab: Int) {
         currentTab = tab
+        showBars()
+        hideSuggestions()
         homePanel.isVisible = tab == TAB_HOME
         browserPanel.isVisible = tab == TAB_BROWSER
         settingsPanel.isVisible = tab == TAB_SETTINGS
@@ -666,7 +717,9 @@ class MainActivity : AppCompatActivity() {
     private fun persistTabs() {
         if (!::repo.isInitialized) return
         runCatching { saveCurrentTab() }
-        val keep = webTabs.withIndex().filter { !it.value.privateMode && it.value.url.startsWith("http") }
+        val keep = webTabs.withIndex().filter {
+            !it.value.privateMode && it.value.url.startsWith("http") && !isLockedUrl(it.value.url)
+        }
         val active = keep.indexOfFirst { it.index == webTabIndex }.coerceAtLeast(0)
         repo.saveTabs(keep.map { SavedTab(it.value.url, it.value.title, it.value.desktop) }, active)
     }
@@ -674,6 +727,24 @@ class MainActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putInt(STATE_TAB, currentTab)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        if (::webView.isInitialized && isLockedUrl(webView.url)) relockPending = true
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!relockPending) return
+        relockPending = false
+        if (!isLockedUrl(webView.url)) return
+        webView.visibility = View.INVISIBLE
+        authenticate("Sblocca la pagina", strict = false, onFail = {
+            closeCurrentTab()
+            showTab(TAB_HOME)
+            webView.visibility = View.VISIBLE
+        }) { webView.visibility = View.VISIBLE }
     }
 
     override fun onPause() {
@@ -689,7 +760,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openShortcut(intent: Intent?) {
-        val url = intent?.getStringExtra("shortcut_url") ?: return
+        val external = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data
+            ?.takeIf { it.scheme == "http" || it.scheme == "https" }?.toString()
+        val url = intent?.getStringExtra("shortcut_url") ?: external ?: return
         if (url.isBlank()) return
         if (webTabs.getOrNull(webTabIndex)?.url?.startsWith("http") == true) openNewTab(false)
         openInBrowser(normalizeUrl(url))
@@ -698,6 +771,7 @@ class MainActivity : AppCompatActivity() {
     private fun goAddress() {
         val raw = webAddress.text?.toString()?.trim().orEmpty()
         if (raw.isEmpty()) return
+        leaveAddressBar()
         val url = if (looksLikeUrl(raw)) normalizeUrl(raw) else searchUrl(raw)
         openInBrowser(url)
     }
@@ -919,7 +993,16 @@ class MainActivity : AppCompatActivity() {
             }
             elevation = 12f * d
         }
-        val popup = android.widget.PopupWindow(root, dp(272), android.view.ViewGroup.LayoutParams.WRAP_CONTENT, true)
+        val scroller = android.widget.ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            addView(root)
+        }
+        val maxH = resources.displayMetrics.heightPixels - dp(120)
+        root.measure(
+            View.MeasureSpec.makeMeasureSpec(dp(272), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        val popup = android.widget.PopupWindow(scroller, dp(272), android.view.ViewGroup.LayoutParams.WRAP_CONTENT, true)
         popup.elevation = 12f * d
         popup.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
 
@@ -985,7 +1068,11 @@ class MainActivity : AppCompatActivity() {
         item("Nuova scheda") { openNewTab(false) }
         item("Nuova scheda senza cronologia") { openNewTab(true) }
         item("Schede aperte (${webTabs.size})") { showTabSwitcher() }
+        item("Cronologia") { showHistoryPage() }
+        item("Download") { showDownloadsPage() }
         item("Trova nella pagina", hasPage) { showFindDialog() }
+        item("Traduci in italiano", hasPage) { translateCurrentPage() }
+        item("Dimensione testo (${repo.textZoom()}%)") { showTextZoomDialog() }
         item("Sito desktop", hasPage, tab.desktop) {
             tab.desktop = !tab.desktop
             applyTabChrome()
@@ -994,6 +1081,17 @@ class MainActivity : AppCompatActivity() {
         item("Apri in Chrome / altro browser", hasPage) { openExternally() }
         item("Chiudi scheda") { closeCurrentTab() }
         item("Impostazioni") { showTab(TAB_SETTINGS) }
+        if (blockAdsOn && hasPage) root.addView(TextView(this).apply {
+            text = "🛡 ${AdBlocker.blockedCount} pubblicità e tracker bloccati"
+            textSize = 13f
+            setTextColor(palette.textMuted)
+            setPadding(dp(20), dp(8), dp(14), dp(4))
+        })
+        root.measure(
+            View.MeasureSpec.makeMeasureSpec(dp(272), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        if (root.measuredHeight > maxH) popup.height = maxH
         popup.showAsDropDown(anchor, -dp(228), -anchor.height + dp(4))
     }
 
@@ -1049,6 +1147,607 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    // ======================= Apps with fingerprint lock =======================
+
+    private fun openApp(item: AppItem) {
+        val launch = {
+            noteUse(item)
+            openInBrowser(normalizeUrl(item.url))
+        }
+        if (item.locked) authenticate("Apri ${item.name}", strict = false) { launch() } else launch()
+    }
+
+    private fun hostOf(url: String?): String? = try {
+        Uri.parse(url.orEmpty()).host?.lowercase()?.removePrefix("www.")
+    } catch (_: Exception) { null }
+
+    private fun isLockedUrl(url: String?): Boolean {
+        val host = hostOf(url) ?: return false
+        return apps.any { a ->
+            if (!a.locked) return@any false
+            val h = hostOf(normalizeUrl(a.url)) ?: return@any false
+            host == h || host.endsWith(".$h")
+        }
+    }
+
+    /**
+     * Fingerprint / face / PIN prompt. strict = true refuses when the phone has no screen lock
+     * (used to turn a lock on); otherwise the action runs anyway with a warning.
+     */
+    private fun authenticate(title: String, strict: Boolean = true, onFail: () -> Unit = {}, onOk: () -> Unit) {
+        val auth = androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_WEAK or
+            androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        val can = androidx.biometric.BiometricManager.from(this).canAuthenticate(auth)
+        if (can != androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS) {
+            if (strict) {
+                toast("Imposta prima un blocco schermo (PIN o impronta) nel telefono")
+                onFail()
+            } else {
+                toast("Blocco schermo non attivo: app aperta senza impronta")
+                onOk()
+            }
+            return
+        }
+        val prompt = androidx.biometric.BiometricPrompt(
+            this,
+            ContextCompat.getMainExecutor(this),
+            object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: androidx.biometric.BiometricPrompt.AuthenticationResult) {
+                    onOk()
+                }
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    onFail()
+                }
+            }
+        )
+        val info = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+            .setTitle(title)
+            .setSubtitle("Usa impronta, volto o PIN")
+            .setAllowedAuthenticators(auth)
+            .build()
+        prompt.authenticate(info)
+    }
+
+    // ======================= Hide bars while scrolling =======================
+
+    private fun onWebScroll(y: Int, oldY: Int) {
+        if (!hideBarsOn || currentTab != TAB_BROWSER || webAddress.isFocused || customView != null) return
+        val d = resources.displayMetrics.density
+        val dy = y - oldY
+        if ((dy > 0 && scrollAccum < 0) || (dy < 0 && scrollAccum > 0)) scrollAccum = 0
+        scrollAccum += dy
+        when {
+            !barsHidden && scrollAccum > 40 * d && y > 140 * d -> hideBars()
+            barsHidden && (scrollAccum < -40 * d || y < 8 * d) -> showBars()
+        }
+    }
+
+    private fun hideBars() {
+        barsHidden = true
+        scrollAccum = 0
+        browserToolbar.isVisible = false
+        bottomBar.isVisible = false
+    }
+
+    private fun showBars() {
+        scrollAccum = 0
+        if (!barsHidden) return
+        barsHidden = false
+        browserToolbar.isVisible = true
+        bottomBar.isVisible = true
+    }
+
+    // ======================= Address bar suggestions =======================
+
+    private fun leaveAddressBar() {
+        webAddress.clearFocus()
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+        imm.hideSoftInputFromWindow(webAddress.windowToken, 0)
+        hideSuggestions()
+    }
+
+    private fun hideSuggestions() {
+        if (!suggestPanel.isVisible) return
+        suggestPanel.isVisible = false
+        findViewById<View>(R.id.webViewHost).isVisible = true
+        updateBrowserBody()
+    }
+
+    private fun suggestEndpoint(): String? = when (repo.getSearchEngine()) {
+        SearchEngine.GOOGLE -> "https://suggestqueries.google.com/complete/search?client=firefox&hl=it&ie=utf-8&oe=utf-8&q="
+        SearchEngine.DUCKDUCKGO -> "https://duckduckgo.com/ac/?type=list&q="
+        SearchEngine.BING -> "https://api.bing.com/osjson.aspx?query="
+        else -> null
+    }
+
+    private fun showSuggestions(q: String, token: Int) {
+        if (token != suggestToken || !webAddress.isFocused) return
+        val lq = q.lowercase(Locale.ROOT)
+        val appHits = apps.filter {
+            it.name.lowercase(Locale.ROOT).contains(lq) || it.url.lowercase(Locale.ROOT).contains(lq)
+        }.take(3)
+        val histHits = repo.loadHistory().filter {
+            it.title.lowercase(Locale.ROOT).contains(lq) || it.url.lowercase(Locale.ROOT).contains(lq)
+        }.distinctBy { it.url }.filter { h -> appHits.none { normalizeUrl(it.url) == h.url } }.take(4)
+        renderSuggestions(q, appHits, histHits, emptyList())
+        val endpoint = suggestEndpoint()
+        if (!repo.searchSuggestions() || endpoint == null || looksLikeUrl(q)) return
+        Thread {
+            val remote = try {
+                val conn = java.net.URL(endpoint + Uri.encode(q)).openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 2500
+                conn.readTimeout = 2500
+                conn.setRequestProperty("User-Agent", mobileUserAgent)
+                val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                conn.disconnect()
+                val arr = org.json.JSONArray(body).getJSONArray(1)
+                (0 until arr.length()).map { arr.getString(it) }.filter { it.isNotBlank() && it != q }.take(5)
+            } catch (_: Exception) { emptyList() }
+            runOnUiThread {
+                if (token == suggestToken && webAddress.isFocused) renderSuggestions(q, appHits, histHits, remote)
+            }
+        }.start()
+    }
+
+    private fun renderSuggestions(q: String, appHits: List<AppItem>, histHits: List<HistoryEntry>, remote: List<String>) {
+        val palette = AppRepository.palette(this)
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        suggestPanel.setBackgroundColor(palette.bg)
+        suggestList.removeAllViews()
+        fun row(icon: Int, title: String, sub: String?, tint: Int = palette.textMuted, onClick: () -> Unit) {
+            val r = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                minimumHeight = dp(56)
+                setPadding(dp(18), dp(8), dp(18), dp(8))
+                val tv = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                setBackgroundResource(tv.resourceId)
+                setOnClickListener { leaveAddressBar(); onClick() }
+            }
+            r.addView(ImageView(this).apply {
+                setImageResource(icon)
+                setColorFilter(tint)
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(18) }
+            })
+            val box = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            box.addView(TextView(this).apply {
+                text = title; textSize = 16f; setTextColor(palette.text)
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            if (!sub.isNullOrBlank()) box.addView(TextView(this).apply {
+                text = sub; textSize = 13f; setTextColor(palette.textMuted)
+                maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            })
+            r.addView(box)
+            suggestList.addView(r)
+        }
+        if (looksLikeUrl(q)) row(R.drawable.ic_web_forward, q, "Vai al sito") { openInBrowser(normalizeUrl(q)) }
+        else row(R.drawable.ic_search, q, "Cerca con ${repo.getSearchEngine().label}") { openInBrowser(searchUrl(q)) }
+        appHits.forEach { a ->
+            row(R.drawable.ic_web_star_filled, a.name, displayUrl(normalizeUrl(a.url)),
+                ContextCompat.getColor(this, R.color.star)) { openApp(a) }
+        }
+        histHits.forEach { h -> row(R.drawable.ic_web_history, recentLabel(RecentSite(h.title, h.url)), displayUrl(h.url)) { openInBrowser(h.url) } }
+        remote.forEach { r -> row(R.drawable.ic_search, r, null) { openInBrowser(searchUrl(r)) } }
+        suggestPanel.isVisible = true
+        recentsPanel.isVisible = false
+        findViewById<View>(R.id.webViewHost).isVisible = false
+    }
+
+    // ======================= Default browser =======================
+
+    private fun isDefaultBrowser(): Boolean = try {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val rm = getSystemService(android.app.role.RoleManager::class.java)
+            rm?.isRoleHeld(android.app.role.RoleManager.ROLE_BROWSER) == true
+        } else {
+            packageManager.resolveActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com")),
+                PackageManager.MATCH_DEFAULT_ONLY
+            )?.activityInfo?.packageName == packageName
+        }
+    } catch (_: Exception) { false }
+
+    private fun requestDefaultBrowser() {
+        if (isDefaultBrowser()) { toast("Web Launcher è già il browser predefinito"); return }
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val rm = getSystemService(android.app.role.RoleManager::class.java)
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_BROWSER)) {
+                    defaultBrowserLauncher.launch(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_BROWSER))
+                    return
+                }
+            }
+            defaultBrowserLauncher.launch(Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS))
+        } catch (_: Exception) {
+            toast("Impostazioni Android → App → App predefinite → Browser")
+        }
+    }
+
+    // ======================= Translate / text size =======================
+
+    private fun translateCurrentPage() {
+        val url = webView.url?.takeIf { it.startsWith("http") } ?: return
+        if (url.contains("translate.goog") || url.contains("translate.google")) { toast("Pagina già tradotta"); return }
+        openInBrowser("https://translate.google.com/translate?sl=auto&tl=it&u=" + Uri.encode(url))
+    }
+
+    private fun showTextZoomDialog() {
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val start = (repo.textZoom() / 10 * 10).coerceIn(50, 200)
+        val label = TextView(this).apply {
+            text = "$start%"
+            textSize = 18f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(AppRepository.palette(this@MainActivity).text)
+        }
+        val slider = com.google.android.material.slider.Slider(this).apply {
+            valueFrom = 50f; valueTo = 200f; stepSize = 10f; value = start.toFloat()
+            addOnChangeListener { _, v, _ ->
+                label.text = "${v.toInt()}%"
+                webView.settings.textZoom = v.toInt()
+            }
+        }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), 0)
+            addView(label)
+            addView(slider)
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Dimensione testo")
+            .setView(box)
+            .setPositiveButton("OK") { _, _ ->
+                repo.setTextZoom(slider.value.toInt())
+                if (currentTab == TAB_SETTINGS) renderSettings()
+            }
+            .setNeutralButton("100%") { _, _ ->
+                repo.setTextZoom(100); webView.settings.textZoom = 100
+                if (currentTab == TAB_SETTINGS) renderSettings()
+            }
+            .setNegativeButton("Annulla") { _, _ -> webView.settings.textZoom = repo.textZoom() }
+            .setOnCancelListener { webView.settings.textZoom = repo.textZoom() }
+            .show()
+    }
+
+    // ======================= Full-screen pages: history, downloads =======================
+
+    private fun openPage(
+        title: String,
+        actionLabel: String? = null,
+        onAction: ((androidx.appcompat.app.AppCompatDialog) -> Unit)? = null,
+        build: (root: android.widget.LinearLayout, body: android.widget.LinearLayout, dialog: androidx.appcompat.app.AppCompatDialog) -> Unit
+    ) {
+        val palette = AppRepository.palette(this)
+        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val dialog = androidx.appcompat.app.AppCompatDialog(this, AppRepository.accentStyle(this))
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setBackgroundColor(palette.bg)
+        }
+        val header = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(8), dp(12), dp(8))
+        }
+        header.addView(android.widget.ImageButton(this).apply {
+            setImageResource(R.drawable.ic_web_back)
+            setColorFilter(palette.text)
+            background = null
+            contentDescription = "Indietro"
+            layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
+            setOnClickListener { dialog.dismiss() }
+        })
+        header.addView(TextView(this).apply {
+            text = title
+            textSize = 22f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(palette.text)
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        if (actionLabel != null && onAction != null) header.addView(TextView(this).apply {
+            text = actionLabel
+            textSize = 15f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(accent)
+            setPadding(dp(12), dp(10), dp(8), dp(10))
+            setOnClickListener { onAction(dialog) }
+        })
+        root.addView(header)
+        val body = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(12), 0, dp(12), dp(24))
+        }
+        root.addView(android.widget.ScrollView(this).apply {
+            layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            addView(body)
+        })
+        build(root, body, dialog)
+        dialog.setContentView(root)
+        dialog.window?.apply {
+            setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(palette.bg))
+            statusBarColor = palette.bg
+            navigationBarColor = palette.bg
+        }
+        dialog.show()
+    }
+
+    private fun listRow(
+        body: android.widget.LinearLayout, title: String, sub: String?,
+        onClick: () -> Unit, onLong: (() -> Unit)? = null, onRemove: (() -> Unit)? = null
+    ) {
+        val palette = AppRepository.palette(this)
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val r = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            minimumHeight = dp(60)
+            setPadding(dp(10), dp(6), 0, dp(6))
+            val tv = android.util.TypedValue()
+            theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+            setBackgroundResource(tv.resourceId)
+            setOnClickListener { onClick() }
+            if (onLong != null) setOnLongClickListener { onLong(); true }
+        }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        box.addView(TextView(this).apply {
+            text = title; textSize = 16f; setTextColor(palette.text)
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        if (!sub.isNullOrBlank()) box.addView(TextView(this).apply {
+            text = sub; textSize = 13f; setTextColor(palette.textMuted)
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(0, dp(2), 0, 0)
+        })
+        r.addView(box)
+        if (onRemove != null) r.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_web_close)
+            setColorFilter(palette.textMuted)
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            layoutParams = android.widget.LinearLayout.LayoutParams(dp(52), dp(52))
+            contentDescription = "Elimina"
+            setOnClickListener { onRemove() }
+        })
+        body.addView(r)
+    }
+
+    private fun sectionLabel(body: android.widget.LinearLayout, text: String) {
+        val d = resources.displayMetrics.density
+        body.addView(TextView(this).apply {
+            this.text = text
+            textSize = 13f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt()))
+            setPadding((10 * d).toInt(), (18 * d).toInt(), 0, (4 * d).toInt())
+        })
+    }
+
+    private fun emptyLabel(body: android.widget.LinearLayout, text: String) {
+        val d = resources.displayMetrics.density
+        body.addView(TextView(this).apply {
+            this.text = text
+            textSize = 15f
+            gravity = android.view.Gravity.CENTER
+            setTextColor(AppRepository.palette(this@MainActivity).textMuted)
+            setPadding(0, (60 * d).toInt(), 0, 0)
+        })
+    }
+
+    private fun dayLabel(time: Long): String {
+        val cal = java.util.Calendar.getInstance()
+        val today = cal.get(java.util.Calendar.DAY_OF_YEAR) to cal.get(java.util.Calendar.YEAR)
+        cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
+        val yesterday = cal.get(java.util.Calendar.DAY_OF_YEAR) to cal.get(java.util.Calendar.YEAR)
+        cal.timeInMillis = time
+        val day = cal.get(java.util.Calendar.DAY_OF_YEAR) to cal.get(java.util.Calendar.YEAR)
+        return when (day) {
+            today -> "Oggi"
+            yesterday -> "Ieri"
+            else -> java.text.SimpleDateFormat("EEEE d MMMM", Locale.ITALIAN).format(java.util.Date(time))
+                .replaceFirstChar { it.uppercase() }
+        }
+    }
+
+    private fun showHistoryPage() {
+        openPage("Cronologia", "Cancella tutto", { dlg ->
+            confirmClear("Cancellare tutta la cronologia?") {
+                clearHistoryAndRecents(); dlg.dismiss(); toast("Cronologia cancellata")
+            }
+        }) { root, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val d = resources.displayMetrics.density
+            val search = EditText(this).apply {
+                hint = "Cerca nella cronologia"
+                setSingleLine()
+                textSize = 16f
+                setTextColor(palette.text)
+                setHintTextColor(palette.textMuted)
+                setPadding((18 * d).toInt(), 0, (18 * d).toInt(), 0)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 24 * d
+                    setColor(palette.iconTile)
+                    setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+                }
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, (48 * d).toInt()
+                ).apply { setMargins((16 * d).toInt(), 0, (16 * d).toInt(), (8 * d).toInt()) }
+            }
+            root.addView(search, 1)
+            val timeFmt = java.text.SimpleDateFormat("HH:mm", Locale.ITALIAN)
+            fun render() {
+                body.removeAllViews()
+                val q = search.text?.toString()?.trim()?.lowercase(Locale.ROOT).orEmpty()
+                val list = repo.loadHistory().filter {
+                    q.isEmpty() || it.title.lowercase(Locale.ROOT).contains(q) || it.url.lowercase(Locale.ROOT).contains(q)
+                }.take(300)
+                if (list.isEmpty()) { emptyLabel(body, if (q.isEmpty()) "La cronologia è vuota" else "Nessun risultato"); return }
+                var lastDay = ""
+                list.forEach { h ->
+                    val day = dayLabel(h.time)
+                    if (day != lastDay) { sectionLabel(body, day); lastDay = day }
+                    listRow(body, recentLabel(RecentSite(h.title, h.url)),
+                        "${timeFmt.format(java.util.Date(h.time))} · ${displayUrl(h.url)}",
+                        onClick = { dialog.dismiss(); openInBrowser(h.url) },
+                        onLong = { showLinkMenu(h.url) },
+                        onRemove = { repo.removeHistory(h.url); render() })
+                }
+            }
+            search.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) { render() }
+            })
+            render()
+        }
+    }
+
+    private fun showDownloadsPage() {
+        val dm = getSystemService(DOWNLOAD_SERVICE) as android.app.DownloadManager
+        openPage("Download", "Cartella", { _ ->
+            try { startActivity(Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS)) }
+            catch (_: Exception) { toast("Apri l'app File → Download") }
+        }) { _, body, _ ->
+            fun open(id: Long) {
+                val uri = dm.getUriForDownloadedFile(id) ?: run { toast("File non trovato"); return }
+                val mime = dm.getMimeTypeForDownloadedFile(id) ?: "*/*"
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                } catch (_: Exception) { toast("Nessuna app per aprire questo file") }
+            }
+            fun share(id: Long) {
+                val uri = dm.getUriForDownloadedFile(id) ?: return
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = dm.getMimeTypeForDownloadedFile(id) ?: "*/*"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }, "Condividi file"))
+            }
+            fun render() {
+                body.removeAllViews()
+                data class Dl(val id: Long, val title: String, val status: Int, val size: Long, val done: Long, val time: Long)
+                val items = mutableListOf<Dl>()
+                try {
+                    dm.query(android.app.DownloadManager.Query())?.use { c ->
+                        val iId = c.getColumnIndex(android.app.DownloadManager.COLUMN_ID)
+                        val iTitle = c.getColumnIndex(android.app.DownloadManager.COLUMN_TITLE)
+                        val iStatus = c.getColumnIndex(android.app.DownloadManager.COLUMN_STATUS)
+                        val iSize = c.getColumnIndex(android.app.DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                        val iDone = c.getColumnIndex(android.app.DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                        val iTime = c.getColumnIndex(android.app.DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP)
+                        while (c.moveToNext()) {
+                            items.add(Dl(c.getLong(iId), c.getString(iTitle).orEmpty(), c.getInt(iStatus),
+                                c.getLong(iSize), c.getLong(iDone), c.getLong(iTime)))
+                        }
+                    }
+                } catch (_: Exception) { }
+                if (items.isEmpty()) { emptyLabel(body, "Nessun download"); return }
+                var lastDay = ""
+                items.sortedByDescending { it.time }.forEach { dl ->
+                    val day = dayLabel(dl.time)
+                    if (day != lastDay) { sectionLabel(body, day); lastDay = day }
+                    val size = android.text.format.Formatter.formatShortFileSize(this, dl.size.coerceAtLeast(0))
+                    val status = when (dl.status) {
+                        android.app.DownloadManager.STATUS_SUCCESSFUL -> size
+                        android.app.DownloadManager.STATUS_FAILED -> "Non riuscito"
+                        android.app.DownloadManager.STATUS_PAUSED -> "In pausa"
+                        else -> if (dl.size > 0) "In corso · ${dl.done * 100 / dl.size}%" else "In corso"
+                    }
+                    val ok = dl.status == android.app.DownloadManager.STATUS_SUCCESSFUL
+                    listRow(body, dl.title.ifBlank { "File" }, status,
+                        onClick = { if (ok) open(dl.id) else toast(status) },
+                        onLong = {
+                            if (ok) MaterialAlertDialogBuilder(this).setTitle(dl.title)
+                                .setItems(arrayOf("Apri", "Condividi")) { _, w -> if (w == 0) open(dl.id) else share(dl.id) }
+                                .show()
+                        },
+                        onRemove = {
+                            confirmClear("Eliminare \"${dl.title}\" dal telefono?") { dm.remove(dl.id); render() }
+                        })
+                }
+            }
+            render()
+        }
+    }
+
+    // ======================= Import bookmarks from Chrome =======================
+
+    private fun showBookmarkImportHelp() {
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Importa preferiti da Chrome")
+            .setMessage(
+                "Chrome sul telefono non esporta i preferiti, serve un computer:\n\n" +
+                "1. Sul computer apri Chrome (con lo stesso account Google)\n" +
+                "2. Menu ⋮ → Preferiti ed elenchi → Gestione preferiti\n" +
+                "3. Menu ⋮ in alto a destra → Esporta preferiti\n" +
+                "4. Metti il file sul telefono (Drive, email, cavo)\n" +
+                "5. Tocca \"Scegli file\" e seleziona il file .html\n\n" +
+                "Poi scegli tu quali siti aggiungere."
+            )
+            .setPositiveButton("Scegli file") { _, _ ->
+                bookmarkLauncher.launch(arrayOf("text/html", "text/*", "application/octet-stream", "*/*"))
+            }
+            .setNegativeButton("Annulla", null)
+            .show()
+    }
+
+    private fun importBookmarks(uri: Uri) {
+        val html = try {
+            contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+        } catch (_: Exception) { null } ?: run { toast("Impossibile leggere il file"); return }
+        val all = BookmarkImport.parse(html)
+        if (all.isEmpty()) { toast("Nessun preferito trovato nel file"); return }
+        val existing = apps.map { normalizeUrl(it.url).trimEnd('/').lowercase() }.toSet()
+        val fresh = all.filter { it.url.trimEnd('/').lowercase() !in existing }
+        if (fresh.isEmpty()) { toast("Sono già tutti nella home"); return }
+        val labels = fresh.map { "${cleanTitle(it.title, it.url)}  ·  ${it.folder}" }.toTypedArray()
+        val checked = BooleanArray(fresh.size) { true }
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle("Scegli i siti (${fresh.size})")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setPositiveButton("Importa", null)
+            .setNeutralButton("Nessuno", null)
+            .setNegativeButton("Annulla", null)
+            .create()
+        dialog.setOnShowListener {
+            val neutral = dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)
+            neutral.setOnClickListener {
+                val select = checked.none { it }
+                checked.indices.forEach { i -> checked[i] = select; dialog.listView.setItemChecked(i, select) }
+                neutral.text = if (select) "Nessuno" else "Tutti"
+            }
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                var added = 0
+                fresh.forEachIndexed { i, b ->
+                    if (!checked[i]) return@forEachIndexed
+                    val cat = b.folder.take(30)
+                    if (cat !in categories) categories.add(cat)
+                    apps.add(AppItem(UUID.randomUUID().toString(), cleanTitle(b.title, b.url).take(40),
+                        normalizeUrl(b.url), cat, false, apps.size))
+                    added++
+                }
+                repo.saveCategories(categories)
+                persistApps(); refreshList()
+                dialog.dismiss()
+                toast(if (added == 0) "Nessun sito importato" else "Importati $added siti")
+            }
+        }
+        dialog.show()
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -1096,6 +1795,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCategoryMenu(name: String) {
+        if (name == LauncherAdapter.MOST_USED) {
+            toast("Si aggiorna da sola in base a quanto usi le app")
+            return
+        }
         if (name == "Preferiti") {
             toast("I preferiti si gestiscono tenendo premuta l'icona")
             return
@@ -1332,7 +2035,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun refreshList() {
-        adapter.submit(apps, categories, searchInput.text?.toString().orEmpty())
+        adapter.submit(apps, categories, searchInput.text?.toString().orEmpty(), repo.showMostUsed())
         findViewById<View>(R.id.emptyState).isVisible = apps.isEmpty()
     }
 
@@ -1350,7 +2053,7 @@ class MainActivity : AppCompatActivity() {
         if (q.isEmpty()) return
         val match = findAppByName(q)
         when {
-            match != null -> { noteUse(match); openInBrowser(normalizeUrl(match.url)) }
+            match != null -> openApp(match)
             looksLikeUrl(q) -> openInBrowser(normalizeUrl(q))
             else -> openInBrowser(searchUrl(q))
         }
@@ -1362,7 +2065,7 @@ class MainActivity : AppCompatActivity() {
         toast("Hai detto: $text")
         val match = findAppByName(text, voice = true)
         when {
-            match != null -> { noteUse(match); openInBrowser(normalizeUrl(match.url)) }
+            match != null -> openApp(match)
             looksLikeUrl(text) -> openInBrowser(normalizeUrl(text))
             else -> openInBrowser(searchUrl(text))
         }
@@ -1426,6 +2129,7 @@ class MainActivity : AppCompatActivity() {
             "Modifica",
             "Cambia icona",
             "Collegamento sul telefono",
+            if (item.locked) "Rimuovi blocco impronta" else "Blocca con impronta",
             "Elimina"
         )
         MaterialAlertDialogBuilder(this).setTitle(item.name).setItems(options) { _, which ->
@@ -1439,7 +2143,17 @@ class MainActivity : AppCompatActivity() {
                 2 -> showAddEditDialog(item)
                 3 -> { iconTargetId = item.id; iconPicker.launch("image/*") }
                 4 -> pinToPhoneHome(item)
-                5 -> MaterialAlertDialogBuilder(this).setMessage("Eliminare \"${item.name}\"?")
+                5 -> if (item.locked) {
+                    authenticate("Rimuovi blocco da ${item.name}", strict = false) {
+                        item.locked = false; persistApps(); refreshList(); toast("Blocco rimosso")
+                    }
+                } else {
+                    authenticate("Blocca ${item.name}") {
+                        item.locked = true; persistApps(); refreshList()
+                        toast("${item.name} chiederà l'impronta")
+                    }
+                }
+                6 -> MaterialAlertDialogBuilder(this).setMessage("Eliminare \"${item.name}\"?")
                     .setPositiveButton("Elimina") { _, _ ->
                         item.iconPath?.let { runCatching { java.io.File(it).delete() } }
                         apps.removeAll { it.id == item.id }; persistApps(); refreshList(); toast("Eliminata")
@@ -1580,7 +2294,17 @@ class MainActivity : AppCompatActivity() {
 
         section("GENERALE")
         row("Aggiungi web app", "Nome, indirizzo e categoria") { showAddEditDialog(null) }
+        row("Browser predefinito", "Apri qui i link di WhatsApp, email…", value = if (isDefaultBrowser()) "Sì" else "No") { requestDefaultBrowser() }
         row("Motore di ricerca", value = engine.label) { showSearchEnginePicker() }
+        row("Suggerimenti di ricerca", "Mentre scrivi l'indirizzo (dal motore scelto)", switch = repo.searchSuggestions()) {
+            repo.setSearchSuggestions(!repo.searchSuggestions()); renderSettings()
+        }
+        row("Nascondi barre scorrendo", "Più spazio per leggere le pagine", switch = repo.hideBarsOnScroll()) {
+            repo.setHideBarsOnScroll(!repo.hideBarsOnScroll()); hideBarsOn = repo.hideBarsOnScroll(); renderSettings()
+        }
+        row("Dimensione testo", value = "${repo.textZoom()}%") { showTextZoomDialog() }
+        row("Cronologia", "Tutte le pagine visitate, con ricerca") { showHistoryPage() }
+        row("Download", "File scaricati") { showDownloadsPage() }
         val themeLabel = when (repo.getThemeMode()) {
             "light" -> "Chiaro"
             "system" -> "Sistema"
@@ -1601,6 +2325,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         section("PRIVACY E SICUREZZA")
+        row("Blocca pubblicità e tracker", "Pagine più veloci, meno dati consumati", switch = repo.blockAds()) {
+            repo.setBlockAds(!repo.blockAds()); blockAdsOn = repo.blockAds()
+            if (browserHasPage) webView.reload()
+            renderSettings()
+        }
         val block3p = repo.blockThirdPartyCookies()
         row("Blocca cookie di terze parti", "Disattiva solo se un login non funziona", switch = block3p) {
             val next = !block3p
@@ -1617,11 +2346,15 @@ class MainActivity : AppCompatActivity() {
         section("BACKUP")
         val autoOn = repo.getAutoBackupUri() != null
         row("Backup", if (autoOn) "Automatico attivo" else "Su file, Drive o condivisione") { showBackupMenu() }
+        row("Importa preferiti da Chrome", "Da un file bookmarks.html") { showBookmarkImportHelp() }
         row("Ripristina", "Da un file di backup") {
             importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
         }
 
         section("HOME")
+        row("Mostra \"Più usate\"", "In cima alla home, quando hai almeno 6 app", switch = repo.showMostUsed()) {
+            repo.setShowMostUsed(!repo.showMostUsed()); refreshList(); renderSettings()
+        }
         row("Sposta le icone", "Tieni premuta un'app → Sposta") { toast("Tieni premuta un'app e scegli Sposta") }
         row("Microfono", "Come attivare il permesso voce") {
             MaterialAlertDialogBuilder(this).setTitle("Microfono")
@@ -1705,6 +2438,7 @@ class MainActivity : AppCompatActivity() {
     private fun clearHistoryAndRecents() {
         webView.clearHistory()
         repo.clearRecents()
+        repo.clearHistory()
         if (!browserHasPage) renderRecents()
     }
 
@@ -2023,6 +2757,7 @@ class MainActivity : AppCompatActivity() {
         private const val TAB_BROWSER = 1
         private const val TAB_SETTINGS = 2
         private const val STATE_TAB = "current_tab"
+        private val SUGGEST_TAG = Any()
         private const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }

@@ -8,5 +8,6 @@ data class AppItem(
     var pinned: Boolean = false,
     var sortOrder: Int = 0,
     var iconPath: String? = null,
-    var openCount: Int = 0
+    var openCount: Int = 0,
+    var locked: Boolean = false
 )

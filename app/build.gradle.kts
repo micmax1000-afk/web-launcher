@@ -11,8 +11,8 @@ android {
         applicationId = "com.weblauncher.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 21
-        versionName = "4.12.0"
+        versionCode = 22
+        versionName = "5.0.0"
     }
 
     buildTypes {
@@ -45,4 +45,5 @@ dependencies {
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("io.coil-kt:coil:2.5.0")
     implementation("androidx.webkit:webkit:1.8.0")
+    implementation("androidx.biometric:biometric:1.1.0")
 }

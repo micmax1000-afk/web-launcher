@@ -7,6 +7,8 @@ import com.google.gson.reflect.TypeToken
 
 data class RecentSite(val title: String, val url: String)
 
+data class HistoryEntry(val title: String, val url: String, val time: Long)
+
 data class SavedTab(val url: String, val title: String, val desktop: Boolean = false)
 
 class AppRepository(context: Context) {
@@ -86,6 +88,51 @@ class AppRepository(context: Context) {
         list.add(0, RecentSite(title.ifBlank { url }, url))
         prefs.edit().putString(KEY_RECENTS, gson.toJson(list.take(12))).apply()
     }
+
+    fun loadHistory(): MutableList<HistoryEntry> {
+        val json = prefs.getString(KEY_HISTORY, null) ?: return mutableListOf()
+        return try {
+            val type = object : TypeToken<MutableList<HistoryEntry>>() {}.type
+            gson.fromJson<MutableList<HistoryEntry>>(json, type)
+                ?.filter { it != null && !it.url.isNullOrBlank() }?.toMutableList() ?: mutableListOf()
+        } catch (_: Exception) { mutableListOf() }
+    }
+
+    fun addHistory(title: String, url: String) {
+        if (!url.startsWith("http")) return
+        val list = loadHistory()
+        val now = System.currentTimeMillis()
+        // same page reloaded within 30 minutes: update instead of duplicating
+        list.removeAll { it.url == url && now - it.time < 30 * 60 * 1000L }
+        list.add(0, HistoryEntry(title.ifBlank { url }, url, now))
+        prefs.edit().putString(KEY_HISTORY, gson.toJson(list.take(MAX_HISTORY))).apply()
+    }
+
+    fun removeHistory(url: String) {
+        val list = loadHistory()
+        list.removeAll { it.url == url }
+        prefs.edit().putString(KEY_HISTORY, gson.toJson(list)).apply()
+        removeRecent(url)
+    }
+
+    fun clearHistory() {
+        prefs.edit().remove(KEY_HISTORY).apply()
+    }
+
+    fun blockAds(): Boolean = prefs.getBoolean(KEY_BLOCK_ADS, true)
+    fun setBlockAds(on: Boolean) { prefs.edit().putBoolean(KEY_BLOCK_ADS, on).apply() }
+
+    fun hideBarsOnScroll(): Boolean = prefs.getBoolean(KEY_HIDE_BARS, true)
+    fun setHideBarsOnScroll(on: Boolean) { prefs.edit().putBoolean(KEY_HIDE_BARS, on).apply() }
+
+    fun showMostUsed(): Boolean = prefs.getBoolean(KEY_MOST_USED, true)
+    fun setShowMostUsed(on: Boolean) { prefs.edit().putBoolean(KEY_MOST_USED, on).apply() }
+
+    fun searchSuggestions(): Boolean = prefs.getBoolean(KEY_SUGGEST, true)
+    fun setSearchSuggestions(on: Boolean) { prefs.edit().putBoolean(KEY_SUGGEST, on).apply() }
+
+    fun textZoom(): Int = prefs.getInt(KEY_TEXT_ZOOM, 100)
+    fun setTextZoom(v: Int) { prefs.edit().putInt(KEY_TEXT_ZOOM, v).apply() }
 
     fun clearRecents() {
         prefs.edit().remove(KEY_RECENTS).apply()
@@ -171,6 +218,13 @@ class AppRepository(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_ACCENT = "accent"
         private const val KEY_RECENTS = "recents"
+        private const val KEY_HISTORY = "history"
+        private const val MAX_HISTORY = 500
+        private const val KEY_BLOCK_ADS = "block_ads"
+        private const val KEY_HIDE_BARS = "hide_bars_on_scroll"
+        private const val KEY_MOST_USED = "show_most_used"
+        private const val KEY_SUGGEST = "search_suggestions"
+        private const val KEY_TEXT_ZOOM = "text_zoom"
         private const val KEY_DARK_SITES = "dark_sites"
         private const val KEY_TABS = "open_tabs"
         private const val KEY_TAB_INDEX = "open_tab_index"
