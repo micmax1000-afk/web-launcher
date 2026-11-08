@@ -39,6 +39,10 @@ class JsonStore<T>(context: Context, name: String, private val type: Type) {
     companion object {
         fun readLater(context: Context) =
             JsonStore<ReadLaterItem>(context, "read_later.json", object : TypeToken<MutableList<ReadLaterItem>>() {}.type)
+        fun cards(context: Context) =
+            JsonStore<LoyaltyCard>(context, "cards.json", object : TypeToken<MutableList<LoyaltyCard>>() {}.type)
+        fun wallet(context: Context) =
+            JsonStore<WalletItem>(context, "wallet.json", object : TypeToken<MutableList<WalletItem>>() {}.type)
         fun notes(context: Context) =
             JsonStore<Note>(context, "notes.json", object : TypeToken<MutableList<Note>>() {}.type)
     }

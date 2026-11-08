@@ -76,6 +76,7 @@ class MainActivity : AppCompatActivity() {
         androidx.webkit.WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", androidx.webkit.WebViewAssetLoader.AssetsPathHandler(this))
             .addPathHandler("/files/pdf/", androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler(this, pdfDir))
+            .addPathHandler("/files/wallet/", androidx.webkit.WebViewAssetLoader.InternalStoragePathHandler(this, walletDir))
             .build()
     }
     private var tts: android.speech.tts.TextToSpeech? = null
@@ -786,6 +787,7 @@ class MainActivity : AppCompatActivity() {
         val tab = webTabs[webTabIndex]
         tab.url = url
         tab.state = null
+        appForUrl(url)?.let { tab.desktop = it.desktop }
         browserHasPage = true
         showTab(TAB_BROWSER)
         if (!webAddress.isFocused) webAddress.setText(displayUrl(url))
@@ -1235,7 +1237,14 @@ class MainActivity : AppCompatActivity() {
             tab.desktop = !tab.desktop
             applyTabChrome()
             webView.reload()
+            val app = appForUrl(webView.url)
+            if (app != null && app.desktop != tab.desktop) {
+                MaterialAlertDialogBuilder(this).setMessage("Usare sempre la versione ${if (tab.desktop) "desktop" else "mobile"} per ${app.name}?")
+                    .setPositiveButton("Sì") { _, _ -> app.desktop = tab.desktop; persistApps() }
+                    .setNegativeButton("Solo ora", null).show()
+            }
         }
+        item("🎫 Salva nei biglietti", hasPage) { saveCurrentToWallet() }
         item("Apri in Chrome / altro browser", hasPage) { openExternally() }
         item("Chiudi scheda") { closeCurrentTab() }
         item("Impostazioni") { showTab(TAB_SETTINGS) }
@@ -2982,7 +2991,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showNotesPage() {
-        openPage("Note", "Nuova", { _ -> editNote(null) }) { _, body, dialog ->
+        openPage("Note", "Nuova", { _ ->
+            MaterialAlertDialogBuilder(this).setItems(arrayOf("📝 Nota", "☑ Lista con spunte", "🛒 Lista della spesa")) { _, w ->
+                when (w) { 0 -> editNote(null); 1 -> showChecklist(null, "Lista"); else -> showChecklist(null, "Lista della spesa") }
+            }.show()
+        }) { _, body, dialog ->
             fun render() {
                 body.removeAllViews()
                 val list = notes.load().sortedByDescending { it.time }
@@ -2991,7 +3004,7 @@ class MainActivity : AppCompatActivity() {
                     val lines = n.text.trim().lines().filter { it.isNotBlank() }
                     listRow(body, lines.firstOrNull()?.take(80) ?: "Nota",
                         "${NewsAdapter.ago(n.time)}${if (lines.size > 1) " · " + lines.drop(1).joinToString(" ").take(80) else ""}",
-                        onClick = { editNote(n) { render() } },
+                        onClick = { if (isChecklist(n.text)) showChecklist(n.id) else editNote(n) { render() } },
                         onLong = {
                             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"; putExtra(Intent.EXTRA_TEXT, n.text)
@@ -3142,6 +3155,8 @@ class MainActivity : AppCompatActivity() {
         chip("🎧 Podcast") { audioTab = "podcast"; showTab(TAB_AUDIO) }
         chip("📻 Radio") { audioTab = "radio"; showTab(TAB_AUDIO) }
         chip("📷 QR") { scanQr() }
+        chip("💳 Carte") { showCardsPage() }
+        chip("🎫 Biglietti") { showWalletPage() }
         chip("⏰ Promemoria") { showRemindersPage() }
         chip("📦 Pacchi") { showParcelsPage() }
         chip("⏱ Tempo") { showUsagePage() }
@@ -5035,6 +5050,445 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ======================= Loyalty cards =======================
+
+    private val cards by lazy { JsonStore.cards(this) }
+
+    /** Full-screen code at maximum brightness, for the checkout scanner. */
+    private fun showCodeFullscreen(title: String, code: String, format: String, color: Int) {
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val dialog = androidx.appcompat.app.AppCompatDialog(this, AppRepository.accentStyle(this))
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER_HORIZONTAL
+            setBackgroundColor(android.graphics.Color.WHITE)
+            setPadding(dp(20), dp(24), dp(20), dp(24))
+        }
+        root.addView(TextView(this).apply {
+            text = title; textSize = 26f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(android.graphics.Color.WHITE)
+            gravity = android.view.Gravity.CENTER; setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 18 * d; setColor(color) }
+            layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(36) }
+        })
+        val width = resources.displayMetrics.widthPixels - dp(40)
+        val bmp = Barcodes.render(code, format, if (Barcodes.is2D(format)) (width * 0.8).toInt() else width)
+        root.addView(ImageView(this).apply {
+            if (bmp != null) setImageBitmap(bmp)
+            adjustViewBounds = true
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2)
+        })
+        root.addView(TextView(this).apply {
+            text = if (bmp == null) "Codice non valido per questo formato:\n$code" else code
+            textSize = 22f; letterSpacing = 0.12f; setTextColor(android.graphics.Color.BLACK)
+            gravity = android.view.Gravity.CENTER; setPadding(0, dp(16), 0, dp(24))
+            setTextIsSelectable(true)
+        })
+        root.addView(com.google.android.material.button.MaterialButton(this).apply {
+            text = "Chiudi"; isAllCaps = false; setOnClickListener { dialog.dismiss() }
+        })
+        dialog.setContentView(android.widget.ScrollView(this).apply { setBackgroundColor(android.graphics.Color.WHITE); addView(root) })
+        dialog.window?.apply {
+            setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+            attributes = attributes.apply { screenBrightness = 1f }
+            statusBarColor = android.graphics.Color.WHITE
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        dialog.window?.let { WindowCompat.getInsetsController(it, it.decorView).isAppearanceLightStatusBars = true }
+        dialog.show()
+    }
+
+    private fun showCardsPage() {
+        openPage("Carte fedeltà", "Aggiungi", { _ -> addCardDialog() }) { _, body, dialog ->
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            fun render() {
+                body.removeAllViews()
+                val list = cards.load()
+                if (list.isEmpty()) {
+                    emptyLabel(body, "Nessuna carta.\nTocca «Aggiungi» e inquadra il codice a barre della tessera.")
+                    return
+                }
+                val grid = android.widget.GridLayout(this).apply { columnCount = 2; setPadding(dp(4), dp(8), dp(4), 0) }
+                list.sortedBy { it.name.lowercase() }.forEach { c ->
+                    grid.addView(TextView(this).apply {
+                        text = c.name; textSize = 17f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        setTextColor(android.graphics.Color.WHITE); gravity = android.view.Gravity.CENTER
+                        maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
+                        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 16 * d; setColor(c.color) }
+                        layoutParams = android.widget.GridLayout.LayoutParams().apply {
+                            width = 0; height = dp(96)
+                            columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+                            setMargins(dp(5), dp(5), dp(5), dp(5))
+                        }
+                        setOnClickListener { showCodeFullscreen(c.name, c.code, c.format, c.color) }
+                        setOnLongClickListener {
+                            MaterialAlertDialogBuilder(this@MainActivity).setTitle(c.name)
+                                .setItems(arrayOf("Mostra", "Rinomina", "Elimina")) { _, w ->
+                                    when (w) {
+                                        0 -> showCodeFullscreen(c.name, c.code, c.format, c.color)
+                                        1 -> {
+                                            val et = TextInputEditText(this@MainActivity).apply { setText(c.name); setSingleLine() }
+                                            val box = android.widget.FrameLayout(this@MainActivity).apply { setPadding(dp(22), dp(8), dp(22), 0); addView(et) }
+                                            MaterialAlertDialogBuilder(this@MainActivity).setTitle("Nome").setView(box)
+                                                .setPositiveButton("Salva") { _, _ ->
+                                                    val n = et.text?.toString()?.trim().orEmpty()
+                                                    if (n.isNotEmpty()) { cards.save(cards.load().map { if (it.id == c.id) it.copy(name = n) else it }); render() }
+                                                }.setNegativeButton("Annulla", null).show()
+                                        }
+                                        2 -> confirmClear("Eliminare la carta ${c.name}?") { cards.save(cards.load().filter { it.id != c.id }); render() }
+                                    }
+                                }.show()
+                            true
+                        }
+                    })
+                }
+                body.addView(grid)
+                body.addView(TextView(this).apply {
+                    text = "Tocca una carta per mostrarla alla cassa (luminosità al massimo). Tieni premuto per modificarla."
+                    textSize = 13f; setTextColor(AppRepository.palette(this@MainActivity).textMuted); setPadding(dp(10), dp(16), dp(10), 0)
+                })
+            }
+            render()
+            cardsRefresh = { render() }
+            dialog.setOnDismissListener { cardsRefresh = null }
+        }
+    }
+
+    private var cardsRefresh: (() -> Unit)? = null
+
+    private fun addCardDialog() {
+        MaterialAlertDialogBuilder(this).setTitle("Nuova carta")
+            .setItems(arrayOf("📷 Inquadra il codice a barre", "⌨️ Scrivi il numero a mano")) { _, w ->
+                if (w == 0) {
+                    try {
+                        com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(this).startScan()
+                            .addOnSuccessListener { b -> saveCardDialog(b.rawValue.orEmpty(), Barcodes.fromMlKit(b.format)) }
+                            .addOnFailureListener { toast("Scanner non disponibile: scrivi il numero a mano") }
+                    } catch (_: Throwable) { toast("Scanner non disponibile: scrivi il numero a mano") }
+                } else saveCardDialog("", null)
+            }.show()
+    }
+
+    private fun saveCardDialog(code: String, format: String?) {
+        val d = resources.displayMetrics.density
+        val name = TextInputEditText(this).apply { hint = "Nome (es. Esselunga, Coop, Decathlon)"; setSingleLine() }
+        val num = TextInputEditText(this).apply { hint = "Numero della carta"; setSingleLine(); setText(code) }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0)
+            addView(name); if (format == null) addView(num)
+        }
+        var chosen = format ?: "EAN_13"
+        val b = MaterialAlertDialogBuilder(this).setTitle(if (format == null) "Carta a mano" else "Codice letto: $code").setView(box)
+            .setPositiveButton("Salva") { _, _ ->
+                val n = name.text?.toString()?.trim().orEmpty().ifBlank { "Carta" }
+                val c = num.text?.toString()?.trim().orEmpty()
+                if (c.isEmpty()) { toast("Manca il numero"); return@setPositiveButton }
+                if (format == null) chosen = when {
+                    Regex("^\\d{13}$").matches(c) -> "EAN_13"
+                    Regex("^\\d{8}$").matches(c) -> "EAN_8"
+                    Regex("^\\d{12}$").matches(c) -> "UPC_A"
+                    else -> "CODE_128"
+                }
+                val color = Barcodes.palette[(n.lowercase().hashCode() and 0x7fffffff) % Barcodes.palette.size]
+                cards.save(cards.load() + LoyaltyCard(UUID.randomUUID().toString(), n, c, chosen, color))
+                toast("💳 Carta $n salvata")
+                cardsRefresh?.invoke()
+            }
+            .setNegativeButton("Annulla", null)
+        b.show()
+    }
+
+    // ======================= Tickets & documents (offline) =======================
+
+    private val wallet by lazy { JsonStore.wallet(this) }
+    private val walletDir by lazy { java.io.File(filesDir, "wallet").apply { mkdirs() } }
+
+    private fun addToWallet(title: String, kind: String, source: java.io.File?, bytes: ByteArray? = null, ext: String = "pdf", format: String? = null, text: String? = null) {
+        io.execute {
+            val id = UUID.randomUUID().toString()
+            val path = when {
+                text != null -> text
+                else -> {
+                    val dest = java.io.File(walletDir, "$id.$ext")
+                    runCatching { if (source != null) source.copyTo(dest, overwrite = true) else dest.writeBytes(bytes!!) }
+                        .onFailure { runOnUiThread { toast("Non salvato") }; return@execute }
+                    dest.absolutePath
+                }
+            }
+            wallet.save(listOf(WalletItem(id, title, kind, path, System.currentTimeMillis(), format)) + wallet.load())
+            runOnUiThread { toast("🎫 Salvato in Biglietti e documenti"); walletRefresh?.invoke() }
+        }
+    }
+
+    private var walletRefresh: (() -> Unit)? = null
+
+    private fun saveCurrentToWallet() {
+        val url = webView.url ?: return
+        if (isPdfViewer(url)) {
+            val file = Uri.parse(url).getQueryParameter("file")?.substringAfterLast('/')?.let { java.io.File(pdfDir, it) }
+            if (file == null || !file.exists()) { toast("PDF non trovato"); return }
+            askWalletTitle(pdfName(url)) { t -> addToWallet(t, "pdf", file) }
+            return
+        }
+        val bmp = runCatching {
+            Bitmap.createBitmap(webView.width, webView.height, Bitmap.Config.ARGB_8888).also { webView.draw(android.graphics.Canvas(it)) }
+        }.getOrNull() ?: return
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+        askWalletTitle(webView.title ?: "Pagina") { t -> addToWallet(t, "image", null, out.toByteArray(), "png") }
+    }
+
+    private fun askWalletTitle(default: String, onOk: (String) -> Unit) {
+        val d = resources.displayMetrics.density
+        val et = TextInputEditText(this).apply { setText(default.take(60)); setSingleLine(); selectAll() }
+        val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
+        MaterialAlertDialogBuilder(this).setTitle("Nome del biglietto o documento").setView(box)
+            .setPositiveButton("Salva") { _, _ -> onOk(et.text?.toString()?.trim().orEmpty().ifBlank { default }) }
+            .setNegativeButton("Annulla", null).show()
+    }
+
+    private val walletPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val mime = contentResolver.getType(uri).orEmpty()
+        val name = displayName(uri).substringBeforeLast('.')
+        io.execute {
+            val bytes = runCatching { contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            runOnUiThread {
+                if (bytes == null) { toast("File non leggibile"); return@runOnUiThread }
+                val isPdf = mime.contains("pdf")
+                askWalletTitle(name) { t -> addToWallet(t, if (isPdf) "pdf" else "image", null, bytes, if (isPdf) "pdf" else "jpg") }
+            }
+        }
+    }
+
+    private fun showImageFullscreen(path: String) {
+        val dialog = androidx.appcompat.app.AppCompatDialog(this, AppRepository.accentStyle(this))
+        val img = ImageView(this).apply {
+            setBackgroundColor(android.graphics.Color.WHITE); scaleType = ImageView.ScaleType.FIT_CENTER
+            load(java.io.File(path))
+            setOnClickListener { dialog.dismiss() }
+        }
+        dialog.setContentView(img)
+        dialog.window?.apply {
+            setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+            attributes = attributes.apply { screenBrightness = 1f }
+        }
+        dialog.show()
+    }
+
+    private fun openWalletItem(w: WalletItem) {
+        when (w.kind) {
+            "pdf" -> {
+                val f = java.io.File(w.path)
+                if (!f.exists()) { toast("File mancante"); return }
+                val viewer = MiaAi.ORIGIN + "/assets/pdf/viewer.html?file=" + Uri.encode("/files/wallet/" + f.name) + "&name=" + Uri.encode(w.title)
+                if (webTabs.getOrNull(webTabIndex)?.url?.startsWith("http") == true) openNewTab(false)
+                openInBrowser(viewer)
+            }
+            "image" -> showImageFullscreen(w.path)
+            "code" -> showCodeFullscreen(w.title, w.path, w.format ?: "QR_CODE", 0xFF3949AB.toInt())
+        }
+    }
+
+    private fun showWalletPage() {
+        openPage("Biglietti e documenti", "Aggiungi", { _ ->
+            MaterialAlertDialogBuilder(this).setTitle("Aggiungi")
+                .setItems(arrayOf("📄 PDF o foto dal telefono", "📷 Inquadra un QR o codice a barre", "ℹ️ Da una pagina aperta")) { _, w ->
+                    when (w) {
+                        0 -> walletPicker.launch(arrayOf("application/pdf", "image/*"))
+                        1 -> try {
+                            com.google.mlkit.vision.codescanner.GmsBarcodeScanning.getClient(this).startScan()
+                                .addOnSuccessListener { b ->
+                                    askWalletTitle("Biglietto") { t -> addToWallet(t, "code", null, format = Barcodes.fromMlKit(b.format), text = b.rawValue.orEmpty()) }
+                                }
+                        } catch (_: Throwable) { toast("Scanner non disponibile") }
+                        2 -> MaterialAlertDialogBuilder(this).setMessage("Apri il biglietto (PDF o pagina con il QR) nel browser, poi menu ⋮ → «🎫 Salva nei biglietti».")
+                            .setPositiveButton("OK", null).show()
+                    }
+                }.show()
+        }) { _, body, dialog ->
+            fun render() {
+                body.removeAllViews()
+                val list = wallet.load()
+                if (list.isEmpty()) {
+                    emptyLabel(body, "Niente salvato.\nBiglietti del treno, carte d'imbarco, biglietti di concerti:\nsi aprono anche senza connessione.")
+                    return
+                }
+                list.forEach { w ->
+                    val icon = when (w.kind) { "pdf" -> "📄"; "image" -> "🖼"; else -> "▦" }
+                    listRow(body, "$icon  ${w.title}", "Salvato ${NewsAdapter.ago(w.time)} · disponibile offline",
+                        onClick = { if (w.kind == "pdf") dialog.dismiss(); openWalletItem(w) },
+                        onLong = {
+                            MaterialAlertDialogBuilder(this).setTitle(w.title).setItems(arrayOf("Apri", "Condividi")) { _, i ->
+                                if (i == 0) { if (w.kind == "pdf") dialog.dismiss(); openWalletItem(w) }
+                                else if (w.kind == "code") copyText("Codice", w.path)
+                                else runCatching {
+                                    val f = java.io.File(w.path)
+                                    val values = android.content.ContentValues().apply {
+                                        put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, f.name)
+                                        put(android.provider.MediaStore.MediaColumns.MIME_TYPE, if (w.kind == "pdf") "application/pdf" else "image/png")
+                                    }
+                                    val collection = if (android.os.Build.VERSION.SDK_INT >= 29) android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                                        else android.provider.MediaStore.Files.getContentUri("external")
+                                    val u = contentResolver.insert(collection, values)!!
+                                    contentResolver.openOutputStream(u)!!.use { o -> f.inputStream().use { it.copyTo(o) } }
+                                    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                                        type = if (w.kind == "pdf") "application/pdf" else "image/png"
+                                        putExtra(Intent.EXTRA_STREAM, u); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }, "Condividi"))
+                                }.onFailure { toast("Condivisione non riuscita") }
+                            }.show()
+                        },
+                        onRemove = {
+                            confirmClear("Eliminare «${w.title}»?") {
+                                if (w.kind != "code") java.io.File(w.path).delete()
+                                wallet.save(wallet.load().filter { it.id != w.id }); render()
+                            }
+                        })
+                }
+            }
+            render()
+            walletRefresh = { render() }
+            dialog.setOnDismissListener { walletRefresh = null }
+        }
+    }
+
+    // ======================= Desktop mode per app =======================
+
+    private fun appForUrl(url: String?): AppItem? {
+        val h = hostOf(url) ?: return null
+        return apps.firstOrNull { a -> hostOf(normalizeUrl(a.url))?.let { it == h || h.endsWith(".$it") } == true }
+    }
+
+    // ======================= Checklists (inside notes) =======================
+
+    private fun isChecklist(text: String) = text.lines().any { it.startsWith("☐ ") || it.startsWith("☑ ") }
+
+    private fun showChecklist(noteId: String?, initialTitle: String = "Lista") {
+        val palette = AppRepository.palette(this)
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        var id = noteId
+        fun load(): Pair<String, MutableList<Pair<Boolean, String>>> {
+            val n = notes.load().firstOrNull { it.id == id }
+            val lines = n?.text?.lines() ?: listOf(initialTitle)
+            val title = lines.firstOrNull { !it.startsWith("☐ ") && !it.startsWith("☑ ") && it.isNotBlank() } ?: initialTitle
+            val items = lines.filter { it.startsWith("☐ ") || it.startsWith("☑ ") }.map { (it.startsWith("☑ ")) to it.drop(2) }.toMutableList()
+            return title to items
+        }
+        fun save(title: String, items: List<Pair<Boolean, String>>) {
+            val text = (listOf(title) + items.map { (if (it.first) "☑ " else "☐ ") + it.second }).joinToString("\n")
+            val list = notes.load()
+            val n = list.firstOrNull { it.id == id }
+            if (n == null) {
+                val nn = Note(UUID.randomUUID().toString(), text, System.currentTimeMillis()); id = nn.id; list.add(nn)
+            } else { n.text = text; n.time = System.currentTimeMillis() }
+            notes.save(list)
+        }
+        openPage(load().first, "Svuota spuntati", { _ ->
+            val (t, items) = load(); save(t, items.filter { !it.first }); checklistRefresh?.invoke()
+        }) { root, body, dialog ->
+            val input = EditText(this).apply {
+                hint = "Aggiungi (anche più cose: latte, pane, uova)"
+                setSingleLine(); textSize = 16f; imeOptions = EditorInfo.IME_ACTION_DONE
+                setTextColor(palette.text); setHintTextColor(palette.textMuted)
+                setPadding(dp(18), 0, dp(18), 0)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 24 * d; setColor(palette.iconTile); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+                }
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, dp(48), 1f)
+            }
+            val row = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(16), 0, dp(10), dp(8))
+                addView(input)
+                addView(android.widget.ImageButton(this@MainActivity).apply {
+                    setImageResource(R.drawable.ic_nav_mic); setColorFilter(palette.text); background = null
+                    setPadding(dp(10), dp(10), dp(10), dp(10)); layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
+                    contentDescription = "Detta"
+                    setOnClickListener {
+                        noteDictationTarget = input
+                        input.tag = "dictating"
+                        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "it-IT")
+                        }
+                        try { noteSpeechLauncher.launch(intent) } catch (_: Exception) { toast(getString(R.string.no_speech)) }
+                    }
+                })
+            }
+            root.addView(row, 1)
+            fun render() {
+                body.removeAllViews()
+                val (title, items) = load()
+                if (items.isEmpty()) { emptyLabel(body, "Lista vuota: scrivi o detta qui sopra."); return }
+                val ordered = items.withIndex().sortedBy { it.value.first }
+                ordered.forEach { (i, it) ->
+                    val r = android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                        setPadding(dp(6), 0, 0, 0)
+                    }
+                    r.addView(android.widget.CheckBox(this).apply {
+                        isChecked = it.first; text = it.second; textSize = 17f
+                        setTextColor(if (it.first) palette.textMuted else palette.text)
+                        paintFlags = if (it.first) paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG else paintFlags and android.graphics.Paint.STRIKE_THRU_TEXT_FLAG.inv()
+                        layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                        setOnCheckedChangeListener { _, c -> items[i] = c to items[i].second; save(title, items); body.post { render() } }
+                    })
+                    r.addView(ImageView(this).apply {
+                        setImageResource(R.drawable.ic_web_close); setColorFilter(palette.textMuted)
+                        setPadding(dp(14), dp(14), dp(14), dp(14)); layoutParams = android.widget.LinearLayout.LayoutParams(dp(50), dp(50))
+                        setOnClickListener { items.removeAt(i); save(title, items); render() }
+                    })
+                    body.addView(r)
+                }
+            }
+            fun addFromInput() {
+                val t = input.text?.toString()?.trim().orEmpty()
+                if (t.isEmpty()) return
+                val (title, items) = load()
+                splitItems(t).forEach { items.add(false to it) }
+                save(title, items)
+                input.setText("")
+                render()
+            }
+            input.setOnEditorActionListener { _, a, _ -> if (a == EditorInfo.IME_ACTION_DONE) { addFromInput(); true } else false }
+            input.addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, st: Int, c: Int, a: Int) {}
+                override fun onTextChanged(s: CharSequence?, st: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(e: Editable?) {
+                    // dictation fills the field: add it right away
+                    if (noteDictationTarget === input && (e?.length ?: 0) > 0 && input.tag == "dictating") { input.tag = null; addFromInput() }
+                }
+            })
+            render()
+            checklistRefresh = { render() }
+            dialog.setOnDismissListener { checklistRefresh = null; notesRefresh?.invoke() }
+        }
+    }
+
+    private var checklistRefresh: (() -> Unit)? = null
+
+    private fun splitItems(t: String): List<String> =
+        t.split(Regex(",|;|\\s+e\\s+|\\n")).map { it.trim().trimEnd('.') }.filter { it.isNotEmpty() }
+            .map { it.replaceFirstChar { c -> c.uppercase() } }
+
+    /** "aggiungi latte e pane alla lista della spesa" (voice). */
+    private fun addToShoppingList(itemsText: String, listName: String) {
+        val name = listName.trim().replaceFirstChar { it.uppercase() }.ifBlank { "Lista della spesa" }
+        val list = notes.load()
+        var n = list.firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals(name, true) }
+        if (n == null) { n = Note(UUID.randomUUID().toString(), name, System.currentTimeMillis()); list.add(n) }
+        val add = splitItems(itemsText)
+        n.text = (n.text.trimEnd() + "\n" + add.joinToString("\n") { "☐ $it" }).trim()
+        n.time = System.currentTimeMillis()
+        notes.save(list)
+        toast("☑ Aggiunto a $name: ${add.joinToString(", ")}")
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -5355,6 +5809,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleVoiceText(text: String) {
         toast("Hai detto: $text")
+        Regex("^aggiungi\\s+(.+?)\\s+(?:alla|nella|in)\\s+(lista[\\w\\s]*)$", RegexOption.IGNORE_CASE).find(text.trim())?.let { m ->
+            val listName = m.groupValues[2].trim().let { if (it.equals("lista", true)) "Lista della spesa" else it }
+            addToShoppingList(m.groupValues[1], listName); return
+        }
         if (Regex("^(ricordami|ricorda|promemoria|avvisami)\\b", RegexOption.IGNORE_CASE).containsMatchIn(text.trim())) {
             createReminderFromText(text, fromVoice = true); return
         }
@@ -5430,7 +5888,8 @@ class MainActivity : AppCompatActivity() {
             "Cambia icona",
             "Collegamento sul telefono",
             if (item.locked) "Rimuovi blocco impronta" else "Blocca con impronta",
-            "Elimina"
+            "Elimina",
+            if (item.desktop) "🖥 Versione desktop: sì (tocca per togliere)" else "🖥 Apri sempre in versione desktop"
         )
         MaterialAlertDialogBuilder(this).setTitle(item.name).setItems(options) { _, which ->
             when (which) {
@@ -5452,6 +5911,10 @@ class MainActivity : AppCompatActivity() {
                         item.locked = true; persistApps(); refreshList()
                         toast("${item.name} chiederà l'impronta")
                     }
+                }
+                7 -> {
+                    item.desktop = !item.desktop; persistApps()
+                    toast(if (item.desktop) "${item.name} si aprirà in versione desktop" else "${item.name} si aprirà in versione mobile")
                 }
                 6 -> MaterialAlertDialogBuilder(this).setMessage("Eliminare \"${item.name}\"?")
                     .setPositiveButton("Elimina") { _, _ ->
@@ -5651,6 +6114,12 @@ class MainActivity : AppCompatActivity() {
         }
         row("⏰ Promemoria", "Anche a voce: «ricordami domani alle 9 di…»") { showRemindersPage() }
         row("📦 Pacchi", "Traccia le spedizioni") { showParcelsPage() }
+        row("💳 Carte fedeltà", "${cards.load().size} carte · mostra il codice alla cassa") { showCardsPage() }
+        row("🎫 Biglietti e documenti", "Treni, aerei, eventi: anche offline") { showWalletPage() }
+        row("☑ Lista della spesa", "Anche a voce: «aggiungi latte e pane alla lista»") {
+            val n = notes.load().firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals("Lista della spesa", true) }
+            showChecklist(n?.id, "Lista della spesa")
+        }
         row("🧮 Calcoli e conversioni", "Scrivi nella ricerca: «15% di 230», «10 km in miglia», «50 dollari in euro»") {
             showTab(TAB_HOME); searchInput.requestFocus()
         }

@@ -9,5 +9,6 @@ data class AppItem(
     var sortOrder: Int = 0,
     var iconPath: String? = null,
     var openCount: Int = 0,
-    var locked: Boolean = false
+    var locked: Boolean = false,
+    var desktop: Boolean = false
 )
