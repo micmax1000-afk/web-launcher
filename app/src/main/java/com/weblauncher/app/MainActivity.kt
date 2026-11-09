@@ -7391,7 +7391,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun looksLikeQuestion(t: String): Boolean {
         val s = t.trim().lowercase(Locale.ITALIAN)
-        return s.endsWith("?") || Regex("^(chi|cosa|che cosa|che|come|quando|dove|perché|perche|quanto|quanti|quante|quale|quali|qual|dimmi|spiegami|raccontami|sai)\\b").containsMatchIn(s)
+        return s.endsWith("?") || Regex("(?U)^(chi|cosa|che cosa|che|come|quando|dove|perché|perche|quanto|quanti|quante|quale|quali|qual|dimmi|spiegami|raccontami|sai)\\b").containsMatchIn(s)
     }
 
     private fun askByVoice(question: String) {
