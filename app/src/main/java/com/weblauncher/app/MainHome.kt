@@ -118,7 +118,6 @@ internal fun MainActivity.renderTools() {
             val n = notes.load().firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals("Lista della spesa", true) }
             showChecklist(n?.id, "Lista della spesa")
         },
-        Triple("⏰", "Promemoria") { showRemindersPage() },
         Triple("🎙", "Registratore") { showRecorderPage() },
         Triple("🗣", "Chiedi a voce") { listenForQuestion() },
         Triple("🍝", "Ricette") { showRecipesPage() },

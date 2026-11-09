@@ -243,6 +243,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
+    /** Every resource lookup (layouts, dialogs, colors) sees the app's light/dark choice, even after WebView reset it. */
+    override fun getResources(): android.content.res.Resources {
+        val r = super.getResources()
+        if (baseContext != null) runCatching { AppRepository.enforceUiMode(this, r) }
+        return r
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         CrashReporter.install(this)
         AppRepository.applySavedTheme(this)

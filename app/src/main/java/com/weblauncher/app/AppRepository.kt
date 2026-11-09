@@ -71,6 +71,7 @@ class AppRepository(context: Context) {
 
     fun setThemeMode(mode: String) {
         prefs.edit().putString(KEY_THEME, mode).apply()
+        themeChanged()
     }
 
     fun loadRecents(): MutableList<RecentSite> {
@@ -257,6 +258,35 @@ class AppRepository(context: Context) {
         }
 
         /** WebView resets uiMode to the system theme while it is created. Put the chosen theme back. */
+        /** Cached wanted night bits (null = follow the system / not read yet). */
+        @Volatile private var nightBits: Int? = null
+        @Volatile private var nightBitsRead = false
+
+        /**
+         * Keeps the app's light/dark choice on [res]. WebView (each time a page or the AI bridge is created)
+         * resets the configuration to the system's: dialogs opened afterwards came out half dark.
+         * Called from MainActivity.getResources(), so it must be cheap and must not call getResources().
+         */
+        fun enforceUiMode(context: Context, res: android.content.res.Resources) {
+            if (!nightBitsRead) {
+                nightBits = when (context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE).getString(KEY_THEME, "dark")) {
+                    "light" -> android.content.res.Configuration.UI_MODE_NIGHT_NO
+                    "system" -> null
+                    else -> android.content.res.Configuration.UI_MODE_NIGHT_YES
+                }
+                nightBitsRead = true
+            }
+            val want = nightBits ?: return
+            val cfg = res.configuration
+            if ((cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == want) return
+            val config = android.content.res.Configuration(cfg)
+            config.uiMode = (config.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or want
+            @Suppress("DEPRECATION")
+            res.updateConfiguration(config, res.displayMetrics)
+        }
+
+        fun themeChanged() { nightBitsRead = false; nightBits = null }
+
         fun restoreUiMode(context: Context) {
             val mode = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
                 .getString(KEY_THEME, "dark") ?: "dark"
