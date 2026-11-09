@@ -318,6 +318,7 @@ class MainActivity : AppCompatActivity() {
         runCatching { AlertsWorker.schedule(this) }
         runCatching { FullBackup.schedule(this) }
         runCatching { Updater.schedule(this) }
+        runCatching { Stocks.schedule(this) }
         runCatching { Brief.schedule(this) }
         if (android.os.Build.VERSION.SDK_INT < 29 || ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED)
             runCatching { if (Steps.available(this)) { Steps.schedule(this); io.execute { runCatching { Steps.sampleNow(this) } } } }
@@ -952,6 +953,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             "voice" -> { intent.removeExtra(EXTRA_WIDGET); requestMicAndListen(); return }
+            "stocks" -> { intent.removeExtra(EXTRA_WIDGET); showStocksPage(); return }
             "news" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_NEWS); return }
             "reminders" -> { intent.removeExtra(EXTRA_WIDGET); showRemindersPage(); return }
             "recorder" -> { intent.removeExtra(EXTRA_WIDGET); showRecorderPage(); return }

@@ -26,7 +26,7 @@ object SelfTest {
             "pacco" to { Parcels.carrier("RR123456789IT") },
             "anti-phishing" to { PhishingGuard.check("https://poste-verifica-accesso.top/login") },
             "domanda" to { activity.looksLikeQuestion("perché il cielo è blu") },
-            "link viaggi" to { TravelLinks.trainline(TravelLinks.Query("Torino", "Reggio Emilia", null, null, 1)) },
+            "notizie borsa" to { Stocks.parseNewsTitles("<rss><item><title><![CDATA[Eni sale]]></title></item></rss>") },
             "aggiornamenti" to { UpdateLogic.codeFromTag("v7.4.1-b1200") }
         )
         var ok = true

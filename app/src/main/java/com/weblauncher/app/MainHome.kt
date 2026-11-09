@@ -145,8 +145,8 @@ internal fun MainActivity.renderTools() {
     group("UTILITÀ", listOf(
         Triple("📷", "QR code") { scanQr() },
         Triple("🔦", "Torcia e bussola") { showUtilitiesPage() },
+        Triple("📈", "Borsa") { showStocksPage() },
         Triple("📦", "Pacchi") { showParcelsPage() },
-        Triple("✈️", "Viaggi") { showTravelPage() },
         Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
         Triple("⏱", "Tempo di utilizzo") { showUsagePage() },
         Triple("🧮", "Calcoli") {

@@ -20,8 +20,8 @@ P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate 
 | 8 | Finanza | **Entrate** e bilancio del mese |
 | 9 | Finanza | **Spese ricorrenti automatiche** (affitto, rate, abbonamenti) |
 | 10 | Finanza | **Detrazioni per il 730** con documenti fotografati |
-| 11 | Borsa | **Watchlist** (azioni, ETF, indici, cambi, cripto, oro) con grafici |
-| 12 | Borsa | **Avvisi di prezzo** e notizie con "perché si è mosso oggi?" |
+| 11 | Borsa | ✅ **Watchlist** (7.5: Strumenti → 📈 Borsa) (azioni, ETF, indici, cambi, cripto, oro) con grafici |
+| 12 | Borsa | ✅ **Avvisi di prezzo** e notizie con "perché si è mosso oggi?" |
 | 13 | Organizzazione | **Eventi a voce nel calendario** ("metti dentista martedì alle 10") |
 | 14 | Organizzazione | **Compleanni** dai contatti con auguri su WhatsApp |
 | 15 | Promemoria | **"Rimanda 10 minuti" / "Fatto"** direttamente dalla notifica |
@@ -103,7 +103,7 @@ P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate 
 ## Viaggi
 | # | Cosa | Note |
 |---|------|------|
-| 83 | ✅ Cerca voli e hotel (Strumenti → ✈️ Viaggi) | Una pagina con partenza, arrivo, date e persone che apre già compilati Google Voli, Skyscanner, Booking, Airbnb, Trenitalia e Italo |
+| 83 | ❌ Cerca voli e hotel (fatto nella 7.4, tolto su richiesta) | Una pagina con partenza, arrivo, date e persone che apre già compilati Google Voli, Skyscanner, Booking, Airbnb, Trenitalia e Italo |
 | 84 | ❌ Avviso prezzo dei voli (non richiesto) | Usare gli avvisi di Google Voli (gratuiti); un controllo prezzi nostro richiederebbe API a pagamento |
 | 85 | ❌ Cartella del viaggio (non richiesta) | Biglietti, prenotazioni, indirizzi e documenti di un viaggio insieme, anche offline |
 

@@ -14,7 +14,7 @@ android {
         // Su GitHub il numero di build cresce a ogni compilazione (1000 + numero dell'esecuzione),
         // cosi' l'app riconosce da sola le versioni piu' nuove.
         versionCode = System.getenv("WL_VERSION_CODE")?.toIntOrNull() ?: 45
-        versionName = "7.4.1"
+        versionName = "7.5.0"
         // solo italiano e inglese: le librerie includono testi in ~80 lingue che l'app non usa
         resourceConfigurations += listOf("it", "en")
     }
