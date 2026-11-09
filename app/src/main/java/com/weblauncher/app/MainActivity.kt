@@ -310,6 +310,7 @@ class MainActivity : AppCompatActivity() {
         setupNews()
         setupAudio()
         findViewById<View>(R.id.homeToolsScroll).isVisible = false
+        applyHomeLook()
         renderWeather()
         uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
         CrashReporter.pending(this)?.let { report -> uiHandler.postDelayed({ showCrashReport(report) }, 600) }
@@ -414,9 +415,12 @@ class MainActivity : AppCompatActivity() {
             onClick = { openApp(it) },
             onMenu = { item -> showAppMenu(item) },
             onHeader = { name -> showCategoryMenu(name) },
-            onReorder = { fromId, toId -> applyReorder(fromId, toId) }
+            onReorder = { fromId, toId -> applyReorder(fromId, toId) },
+            onFolder = { name, items -> showFolder(name, items) }
         )
-        val glm = GridLayoutManager(this, 4)
+        adapter.spanCount = homePrefs.getInt("cols", 4)
+        adapter.hideNames = homePrefs.getBoolean("hideNames", false)
+        val glm = GridLayoutManager(this, adapter.spanCount)
         glm.spanSizeLookup = adapter.spanSizeLookup()
         recycler.layoutManager = glm
         recycler.adapter = adapter
@@ -766,6 +770,8 @@ class MainActivity : AppCompatActivity() {
         showBars()
         hideSuggestions()
         homePanel.isVisible = tab == TAB_HOME
+        findViewById<View>(R.id.homeWallpaper).isVisible = tab == TAB_HOME && homePrefs.getBoolean("wallpaper", false) &&
+            java.io.File(filesDir, "wallpaper.jpg").exists()
         browserPanel.isVisible = tab == TAB_BROWSER
         settingsPanel.isVisible = tab == TAB_SETTINGS
         findViewById<View>(R.id.toolsPanel).isVisible = tab == TAB_TOOLS
@@ -4533,7 +4539,13 @@ class MainActivity : AppCompatActivity() {
                             c.connectTimeout = 8000; c.readTimeout = 10000
                             c.setRequestProperty("Cookie", "SOCS=CAI")
                             val bytes = c.inputStream.use { it.readBytes() }
-                            news.parseFeed(bytes, NewsSource(ch.id, ch.name, "Video", "")).take(15)
+                            val head = String(bytes, 0, minOf(bytes.size, 4000), Charsets.UTF_8)
+                            val realName = Regex("<title>([^<]+)</title>").find(head)?.groupValues?.get(1)
+                                ?.let { androidx.core.text.HtmlCompat.fromHtml(it, 0).toString().trim() }
+                            if (!realName.isNullOrBlank() && realName != ch.name) runOnUiThread {
+                                saveYtChannels(ytChannels().map { if (it.id == ch.id) it.copy(name = realName) else it })
+                            }
+                            news.parseFeed(bytes, NewsSource(ch.id, realName ?: ch.name, "Video", "")).take(15)
                         }.getOrDefault(emptyList())
                     }
                 }, 40, java.util.concurrent.TimeUnit.SECONDS).flatMap { f -> runCatching { f.get() }.getOrDefault(emptyList()) }
@@ -4574,10 +4586,10 @@ class MainActivity : AppCompatActivity() {
                     cornerRadius = 16 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
                 }
                 layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }
-                setOnClickListener { openInBrowser("https://m.youtube.com/channel/${ch.id}/videos") }
+                setOnClickListener { performLongClick() }
                 setOnLongClickListener {
                     MaterialAlertDialogBuilder(this@MainActivity).setTitle(ch.name)
-                        .setItems(arrayOf("Apri il canale", "Non seguire più")) { _, w ->
+                        .setItems(arrayOf("▶ Apri il canale", "✕ Non seguire più")) { _, w ->
                             if (w == 0) openInBrowser("https://m.youtube.com/channel/${ch.id}/videos")
                             else { saveYtChannels(ytChannels().filter { it.id != ch.id }); ytVideos = ytVideos.filter { it.sourceId != ch.id }; renderAudio() }
                         }.show()
@@ -6139,6 +6151,117 @@ class MainActivity : AppCompatActivity() {
         ))
     }
 
+    // ======================= Home look: columns, names, wallpaper, folders =======================
+
+    private val homePrefs by lazy { getSharedPreferences("wl_home", MODE_PRIVATE) }
+
+    private fun applyHomeLook() {
+        adapter.spanCount = homePrefs.getInt("cols", 4)
+        adapter.hideNames = homePrefs.getBoolean("hideNames", false)
+        (recycler.layoutManager as? GridLayoutManager)?.spanCount = adapter.spanCount
+        val wp = findViewById<ImageView>(R.id.homeWallpaper)
+        val f = java.io.File(filesDir, "wallpaper.jpg")
+        if (homePrefs.getBoolean("wallpaper", false) && f.exists()) {
+            wp.load(f) { memoryCacheKey("wp" + f.lastModified()) }
+            wp.isVisible = currentTab == TAB_HOME
+            val dim = if (AppRepository.isLightUi(this)) 0x55FFFFFF else 0x77000000
+            wp.foreground = android.graphics.drawable.ColorDrawable(dim)
+        } else wp.isVisible = false
+        refreshList()
+    }
+
+    private val wallpaperPicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        io.execute {
+            val ok = runCatching {
+                val bmp = contentResolver.openInputStream(uri)!!.use { android.graphics.BitmapFactory.decodeStream(it) }
+                val scale = minOf(1f, 1600f / maxOf(bmp.width, bmp.height))
+                val small = Bitmap.createScaledBitmap(bmp, (bmp.width * scale).toInt(), (bmp.height * scale).toInt(), true)
+                java.io.File(filesDir, "wallpaper.jpg").outputStream().use { small.compress(Bitmap.CompressFormat.JPEG, 88, it) }
+            }.isSuccess
+            runOnUiThread {
+                if (ok) { homePrefs.edit().putBoolean("wallpaper", true).apply(); applyHomeLook(); toast("Sfondo impostato") }
+                else toast("Immagine non valida")
+                if (currentTab == TAB_SETTINGS) renderSettings()
+            }
+        }
+    }
+
+    private fun chooseFolder(item: AppItem) {
+        val existing = apps.mapNotNull { (it.folder as String?)?.takeIf { f -> f.isNotBlank() } }.distinct().sorted()
+        val opts = existing.map { "📁 $it" } + "➕ Nuova cartella…"
+        MaterialAlertDialogBuilder(this).setTitle("Cartella per ${item.name}").setItems(opts.toTypedArray()) { _, w ->
+            if (w < existing.size) { item.folder = existing[w]; persistApps(); refreshList(); toast("Spostata in ${existing[w]}") }
+            else {
+                val d = resources.displayMetrics.density
+                val et = TextInputEditText(this).apply { hint = "Nome (es. Social, Banche, Acquisti)"; setSingleLine() }
+                val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
+                MaterialAlertDialogBuilder(this).setTitle("Nuova cartella").setView(box)
+                    .setPositiveButton("Crea") { _, _ ->
+                        val n = et.text?.toString()?.trim().orEmpty()
+                        if (n.isNotEmpty()) { item.folder = n; persistApps(); refreshList(); toast("Cartella $n creata") }
+                    }.setNegativeButton("Annulla", null).show()
+            }
+        }.show()
+    }
+
+    private fun showFolder(name: String, items: List<AppItem>) {
+        val palette = AppRepository.palette(this)
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
+        val root = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(16), dp(6), dp(16), dp(24)) }
+        val head = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }
+        head.addView(TextView(this).apply {
+            text = "📁 $name"; textSize = 20f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text)
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+        })
+        head.addView(TextView(this).apply {
+            text = "Rinomina"; textSize = 14f; setPadding(dp(10), dp(8), dp(4), dp(8))
+            setTextColor(com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt()))
+            setOnClickListener {
+                val et = TextInputEditText(this@MainActivity).apply { setText(name); setSingleLine() }
+                val box = android.widget.FrameLayout(this@MainActivity).apply { setPadding(dp(22), dp(8), dp(22), 0); addView(et) }
+                MaterialAlertDialogBuilder(this@MainActivity).setTitle("Nome della cartella").setView(box)
+                    .setPositiveButton("Salva") { _, _ ->
+                        val n = et.text?.toString()?.trim().orEmpty()
+                        if (n.isNotEmpty()) { apps.filter { it.folder == name }.forEach { it.folder = n }; persistApps(); refreshList(); sheet.dismiss() }
+                    }.setNegativeButton("Annulla", null).show()
+            }
+        })
+        root.addView(head)
+        val grid = android.widget.GridLayout(this).apply { columnCount = 4; setPadding(0, dp(10), 0, 0) }
+        items.forEach { a ->
+            grid.addView(android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER_HORIZONTAL
+                setPadding(dp(2), dp(8), dp(2), dp(8))
+                layoutParams = android.widget.GridLayout.LayoutParams().apply {
+                    width = 0; columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+                }
+                addView(ImageView(this@MainActivity).apply {
+                    layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
+                    background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 14 * d; setColor(palette.iconTile) }
+                    setPadding(dp(8), dp(8), dp(8), dp(8))
+                    val local = a.iconPath?.let { java.io.File(it) }?.takeIf { it.exists() }
+                    load(local ?: "https://www.google.com/s2/favicons?domain=${hostOf(normalizeUrl(a.url))}&sz=128")
+                })
+                addView(TextView(this@MainActivity).apply {
+                    text = a.name; textSize = 12f; maxLines = 2; gravity = android.view.Gravity.CENTER; setTextColor(palette.text)
+                    setPadding(0, dp(4), 0, 0)
+                })
+                setOnClickListener { sheet.dismiss(); openApp(a) }
+                setOnLongClickListener { sheet.dismiss(); showAppMenu(a); true }
+            })
+        }
+        root.addView(grid)
+        root.addView(TextView(this).apply {
+            text = "Tieni premuta un'app per toglierla dalla cartella o modificarla."
+            textSize = 12f; setTextColor(palette.textMuted); setPadding(0, dp(12), 0, 0)
+        })
+        sheet.setContentView(root)
+        sheet.show()
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -6539,7 +6662,8 @@ class MainActivity : AppCompatActivity() {
             "Collegamento sul telefono",
             if (item.locked) "Rimuovi blocco impronta" else "Blocca con impronta",
             "Elimina",
-            if (item.desktop) "🖥 Versione desktop: sì (tocca per togliere)" else "🖥 Apri sempre in versione desktop"
+            if (item.desktop) "🖥 Versione desktop: sì (tocca per togliere)" else "🖥 Apri sempre in versione desktop",
+            if (item.folder.isNullOrBlank()) "📁 Metti in una cartella" else "📁 Togli dalla cartella «${item.folder}»"
         )
         MaterialAlertDialogBuilder(this).setTitle(item.name).setItems(options) { _, which ->
             when (which) {
@@ -6562,6 +6686,7 @@ class MainActivity : AppCompatActivity() {
                         toast("${item.name} chiederà l'impronta")
                     }
                 }
+                8 -> if (!item.folder.isNullOrBlank()) { item.folder = null; persistApps(); refreshList() } else chooseFolder(item)
                 7 -> {
                     item.desktop = !item.desktop; persistApps()
                     toast(if (item.desktop) "${item.name} si aprirà in versione desktop" else "${item.name} si aprirà in versione mobile")
@@ -6841,6 +6966,25 @@ class MainActivity : AppCompatActivity() {
                     "• Cerca: barra di ricerca con microfono e notizie\n• Notizie: gli ultimi titoli delle tue fonti")
                 .setPositiveButton("OK", null).show()
         }
+        row("Icone per riga", value = homePrefs.getInt("cols", 4).toString()) {
+            val vals = intArrayOf(3, 4, 5)
+            MaterialAlertDialogBuilder(this).setTitle("Icone per riga")
+                .setSingleChoiceItems(arrayOf("3 (grandi)", "4", "5 (piccole)"), vals.indexOf(homePrefs.getInt("cols", 4)).coerceAtLeast(0)) { dl, w ->
+                    homePrefs.edit().putInt("cols", vals[w]).apply(); applyHomeLook(); dl.dismiss(); renderSettings()
+                }.show()
+        }
+        row("Nascondi i nomi delle app", switch = homePrefs.getBoolean("hideNames", false)) {
+            homePrefs.edit().putBoolean("hideNames", !homePrefs.getBoolean("hideNames", false)).apply(); applyHomeLook(); renderSettings()
+        }
+        row("Sfondo della home", if (homePrefs.getBoolean("wallpaper", false)) "Foto personale · tocca per cambiare" else "Nessuno") {
+            if (homePrefs.getBoolean("wallpaper", false)) {
+                MaterialAlertDialogBuilder(this).setTitle("Sfondo").setItems(arrayOf("Cambia foto", "Togli lo sfondo")) { _, w ->
+                    if (w == 0) wallpaperPicker.launch("image/*")
+                    else { homePrefs.edit().putBoolean("wallpaper", false).apply(); applyHomeLook(); renderSettings() }
+                }.show()
+            } else wallpaperPicker.launch("image/*")
+        }
+        row("📁 Cartelle", "Tieni premuta un'app → «Metti in una cartella»") { toast("Tieni premuta un'app in home → Metti in una cartella") }
         row("Mostra \"Più usate\"", "In cima alla home, quando hai almeno 6 app", switch = repo.showMostUsed()) {
             repo.setShowMostUsed(!repo.showMostUsed()); refreshList(); renderSettings()
         }
@@ -6872,6 +7016,7 @@ class MainActivity : AppCompatActivity() {
         val options = arrayOf(
             "Salva su file o Drive",
             "Condividi",
+            "☁️ Drive dal sito (se non hai l'app Drive)",
             if (autoOn) "Backup automatico: attivo" else "Attiva backup automatico"
         )
         MaterialAlertDialogBuilder(this)
@@ -6880,11 +7025,37 @@ class MainActivity : AppCompatActivity() {
                 when (which) {
                     0 -> exportLauncher.launch("web-launcher-backup.json")
                     1 -> shareBackup()
-                    2 -> if (autoOn) showAutoBackupManager() else startAutoBackupSetup()
+                    2 -> backupViaDriveWeb()
+                    3 -> if (autoOn) showAutoBackupManager() else startAutoBackupSetup()
                 }
             }
             .setNegativeButton("Chiudi", null)
             .show()
+    }
+
+    /** Without the Drive app: save the backup in Downloads, then open Drive web to upload it. */
+    private fun backupViaDriveWeb() {
+        val json = backupJson()
+        io.execute {
+            val ok = runCatching {
+                val values = android.content.ContentValues().apply {
+                    put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "web-launcher-backup.json")
+                    put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "application/json")
+                }
+                val col = if (android.os.Build.VERSION.SDK_INT >= 29) android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI
+                    else android.provider.MediaStore.Files.getContentUri("external")
+                val u = contentResolver.insert(col, values)!!
+                contentResolver.openOutputStream(u, "wt")!!.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+            }.isSuccess
+            runOnUiThread {
+                if (!ok) { toast("Backup non salvato"); return@runOnUiThread }
+                MaterialAlertDialogBuilder(this).setTitle("☁️ Carica su Drive")
+                    .setMessage("Ho salvato «web-launcher-backup.json» nei Download.\n\nOra su Drive: tocca «+ Nuovo» → «Carica file» → Download → scegli il file.\n\n" +
+                        "Per ripristinare: scaricalo da Drive e usa Impostazioni → Ripristina.")
+                    .setPositiveButton("Apri Drive") { _, _ -> showTab(TAB_BROWSER); openInBrowser("https://drive.google.com/drive/my-drive") }
+                    .setNegativeButton("Chiudi", null).show()
+            }
+        }
     }
 
     private fun showAutoBackupManager() {
@@ -7109,8 +7280,20 @@ class MainActivity : AppCompatActivity() {
                 val uri = Uri.parse(raw)
                 (contentResolver.openOutputStream(uri, "wt") ?: contentResolver.openOutputStream(uri))
                     ?.use { it.write(json.toByteArray(Charsets.UTF_8)) }
-                    ?: repo.setAutoBackupUri(null)
-            } catch (_: Exception) { repo.setAutoBackupUri(null) }
+                    ?: throw java.io.IOException("file non raggiungibile")
+                syncPrefs.edit().putInt("fails", 0).apply()
+            } catch (_: Exception) {
+                val fails = syncPrefs.getInt("fails", 0) + 1
+                syncPrefs.edit().putInt("fails", fails).putInt("hash", 0).apply()
+                if (fails == 1 || fails % 5 == 0) runOnUiThread {
+                    MaterialAlertDialogBuilder(this).setTitle("⚠️ Backup automatico non riuscito")
+                        .setMessage("Il file di backup non è raggiungibile (forse l'app Google Drive è stata disinstallata o il file è stato spostato).\n\n" +
+                            "Il backup automatico resta attivo e riproverà. Puoi anche salvarlo nei Download e caricarlo su Drive dal sito.")
+                        .setPositiveButton("Backup via Drive web") { _, _ -> backupViaDriveWeb() }
+                        .setNeutralButton("Scegli altro file") { _, _ -> startAutoBackupSetup() }
+                        .setNegativeButton("Ok", null).show()
+                }
+            }
         }
     }
 

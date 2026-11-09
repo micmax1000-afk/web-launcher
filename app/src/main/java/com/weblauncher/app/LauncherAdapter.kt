@@ -16,14 +16,30 @@ import coil.transform.RoundedCornersTransformation
 sealed class ListRow {
     data class Header(val title: String) : ListRow()
     data class App(val item: AppItem) : ListRow()
+    data class Folder(val name: String, val items: List<AppItem>) : ListRow()
 }
 
 class LauncherAdapter(
     private val onClick: (AppItem) -> Unit,
     private val onMenu: (AppItem) -> Unit,
     private val onHeader: (String) -> Unit,
-    private val onReorder: (fromAppId: String, toAppId: String) -> Unit
+    private val onReorder: (fromAppId: String, toAppId: String) -> Unit,
+    private val onFolder: (String, List<AppItem>) -> Unit = { _, _ -> }
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+
+    var spanCount = 4
+    var hideNames = false
+
+    /** Apps of a category, with apps sharing a folder collapsed into one folder tile. */
+    private fun addGroup(group: List<AppItem>, foldersOn: Boolean) {
+        if (!foldersOn) { group.forEach { rows.add(ListRow.App(it)) }; return }
+        val done = HashSet<String>()
+        group.forEach { a ->
+            val f = (a.folder as String?)?.takeIf { it.isNotBlank() }
+            if (f == null) rows.add(ListRow.App(a))
+            else if (done.add(f)) rows.add(ListRow.Folder(f, group.filter { (it.folder as String?) == f }))
+        }
+    }
 
     private val rows = mutableListOf<ListRow>()
 
@@ -62,7 +78,7 @@ class LauncherAdapter(
                 .sortedBy { it.sortOrder }
             if (group.isEmpty()) continue
             rows.add(ListRow.Header(cat))
-            group.forEach { rows.add(ListRow.App(it)) }
+            addGroup(group, q.isEmpty())
         }
 
         val known = catOrder.toSet()
@@ -70,7 +86,7 @@ class LauncherAdapter(
             .groupBy { it.category }
             .forEach { (cat, list) ->
                 rows.add(ListRow.Header(cat))
-                list.sortedBy { it.sortOrder }.forEach { rows.add(ListRow.App(it)) }
+                addGroup(list.sortedBy { it.sortOrder }, q.isEmpty())
             }
 
         notifyDataSetChanged()
@@ -97,6 +113,7 @@ class LauncherAdapter(
     override fun getItemViewType(position: Int): Int = when (rows[position]) {
         is ListRow.Header -> 0
         is ListRow.App -> 1
+        is ListRow.Folder -> 2
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -114,12 +131,13 @@ class LauncherAdapter(
         when (val row = rows[position]) {
             is ListRow.Header -> (holder as HeaderVH).bind(row.title)
             is ListRow.App -> (holder as AppVH).bind(row.item)
+            is ListRow.Folder -> (holder as AppVH).bindFolder(row.name, row.items)
         }
     }
 
     fun spanSizeLookup() = object : GridLayoutManager.SpanSizeLookup() {
         override fun getSpanSize(position: Int): Int {
-            return if (rows.getOrNull(position) is ListRow.Header) 4 else 1
+            return if (rows.getOrNull(position) is ListRow.Header) spanCount else 1
         }
     }
 
@@ -202,7 +220,31 @@ class LauncherAdapter(
         private val pin: TextView = view.findViewById(R.id.pinBadge)
         private val menuBtn: ImageButton = view.findViewById(R.id.btnAppMenu)
 
+        fun bindFolder(folderName: String, items: List<AppItem>) {
+            val palette = AppRepository.palette(itemView.context)
+            (itemView as? com.google.android.material.card.MaterialCardView)?.apply {
+                setCardBackgroundColor(palette.card); strokeColor = palette.stroke
+            }
+            name.setTextColor(palette.text)
+            name.text = folderName
+            name.visibility = if (hideNames) View.GONE else View.VISIBLE
+            icon.visibility = View.GONE
+            initials.visibility = View.VISIBLE
+            initials.background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = 14f * itemView.resources.displayMetrics.density; setColor(palette.iconTile)
+            }
+            initials.text = "📁"
+            initials.textSize = 20f
+            pin.visibility = View.VISIBLE
+            pin.text = items.size.toString()
+            menuBtn.visibility = View.GONE
+            itemView.setOnClickListener { onFolder(folderName, items) }
+            itemView.setOnLongClickListener { onFolder(folderName, items); true }
+        }
+
         fun bind(item: AppItem) {
+            initials.textSize = 14f
+            name.visibility = if (hideNames) View.GONE else View.VISIBLE
             val palette = AppRepository.palette(itemView.context)
             (itemView as? com.google.android.material.card.MaterialCardView)?.apply {
                 setCardBackgroundColor(palette.card)

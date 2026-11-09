@@ -10,5 +10,6 @@ data class AppItem(
     var iconPath: String? = null,
     var openCount: Int = 0,
     var locked: Boolean = false,
-    var desktop: Boolean = false
+    var desktop: Boolean = false,
+    var folder: String? = null
 )

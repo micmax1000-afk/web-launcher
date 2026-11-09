@@ -6,6 +6,18 @@
     android:layout_height="match_parent"
     android:background="@drawable/bg_screen">
 
+    <ImageView
+        android:id="@+id/homeWallpaper"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:scaleType="centerCrop"
+        android:visibility="gone"
+        android:contentDescription="@null"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <LinearLayout
         android:id="@+id/homePanel"
         android:layout_width="0dp"
