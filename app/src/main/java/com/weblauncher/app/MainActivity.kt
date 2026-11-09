@@ -7574,11 +7574,11 @@ class MainActivity : AppCompatActivity() {
             orientation = android.widget.LinearLayout.VERTICAL; setBackgroundColor(0xFF111317.toInt()); setPadding(dp(22), dp(20), dp(22), dp(20))
         }
         val counter = TextView(this).apply { textSize = 16f; setTextColor(0xFF9AA0A8.toInt()) }
-        val text = TextView(this).apply { textSize = 28f; setTextColor(android.graphics.Color.WHITE); setLineSpacing(0f, 1.25f) }
-        val scroll = android.widget.ScrollView(this).apply { layoutParams = android.widget.LinearLayout.LayoutParams(-1, 0, 1f); addView(text) }
+        val stepText = TextView(this).apply { textSize = 28f; setTextColor(android.graphics.Color.WHITE); setLineSpacing(0f, 1.25f) }
+        val scroll = android.widget.ScrollView(this).apply { layoutParams = android.widget.LinearLayout.LayoutParams(-1, 0, 1f); addView(stepText) }
         fun show() {
             counter.text = "Passaggio ${step + 1} di ${r.steps.size} · ${r.title}"
-            text.text = r.steps[step]
+            stepText.text = r.steps[step]
             speak(r.steps[step], 1f)
         }
         val nav = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
