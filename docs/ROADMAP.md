@@ -100,12 +100,12 @@ P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate 
 | 76 | ✅ Notiziario audio | Notizie → «Il punto» → 🎧 Ascolta |
 | 77 | ✅ Menu della settimana | Ricette → 📅 Menu: una lista della spesa unica, ingredienti uniti |
 
-## Viaggi (da decidere)
+## Viaggi
 | # | Cosa | Note |
 |---|------|------|
-| 83 | Cerca voli e hotel | Una pagina con partenza, arrivo, date e persone che apre già compilati Google Voli, Skyscanner, Booking, Airbnb, Trenitalia e Italo |
-| 84 | Avviso prezzo dei voli | Usare gli avvisi di Google Voli (gratuiti); un controllo prezzi nostro richiederebbe API a pagamento |
-| 85 | Cartella del viaggio | Biglietti, prenotazioni, indirizzi e documenti di un viaggio insieme, anche offline |
+| 83 | ✅ Cerca voli e hotel (Strumenti → ✈️ Viaggi) | Una pagina con partenza, arrivo, date e persone che apre già compilati Google Voli, Skyscanner, Booking, Airbnb, Trenitalia e Italo |
+| 84 | ❌ Avviso prezzo dei voli (non richiesto) | Usare gli avvisi di Google Voli (gratuiti); un controllo prezzi nostro richiederebbe API a pagamento |
+| 85 | ❌ Cartella del viaggio (non richiesta) | Biglietti, prenotazioni, indirizzi e documenti di un viaggio insieme, anche offline |
 
 ## Scartate o sconsigliate
 | Idea | Motivo |
