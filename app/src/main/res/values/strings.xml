@@ -12,4 +12,9 @@
     <string name="favorites">Preferiti</string>
     <string name="widget_search_desc">Barra di ricerca con voce e notizie</string>
     <string name="widget_news_desc">Le ultime notizie delle tue fonti</string>
+    <string name="sc_note">Nuova nota</string>
+    <string name="sc_ask">Chiedi a voce</string>
+    <string name="sc_park">Ho parcheggiato</string>
+    <string name="sc_scan">Scansiona documento</string>
+    <string name="sc_record">Registra</string>
 </resources>

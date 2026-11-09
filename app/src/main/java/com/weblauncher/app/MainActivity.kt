@@ -315,6 +315,8 @@ class MainActivity : AppCompatActivity() {
         renderParkBar()
         io.execute { runCatching { Deadlines.advance(this) } }
         runCatching { AlertsWorker.schedule(this) }
+        runCatching { FullBackup.schedule(this) }
+        io.execute { runCatching { Reminders.rescheduleAll(this) } }
         uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
         CrashReporter.pending(this)?.let { report -> uiHandler.postDelayed({ showCrashReport(report) }, 600) }
         setupNav()
@@ -861,11 +863,16 @@ class MainActivity : AppCompatActivity() {
     override fun onStop() {
         super.onStop()
         vaultDialog?.dismiss()
+        if (lockEnabled() && !isChangingConfigurations) lockedSince = System.currentTimeMillis()
         if (::webView.isInitialized && isLockedUrl(webView.url)) relockPending = true
     }
 
     override fun onStart() {
         super.onStart()
+        if (lockEnabled() && !inPip) {
+            val delay = lockPrefs.getInt("delayMin", 0) * 60_000L
+            if (lockedSince == 0L || System.currentTimeMillis() - lockedSince >= delay) { showLockOverlay(); unlockApp() }
+        }
         if (!relockPending) return
         relockPending = false
         if (!isLockedUrl(webView.url)) return
@@ -904,6 +911,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openShortcut(intent: Intent?) {
+        if (intent != null && handleShare(intent)) { intent.action = null; return }
         when (intent?.getStringExtra(EXTRA_WIDGET)) {
             "search" -> {
                 intent.removeExtra(EXTRA_WIDGET)
@@ -919,6 +927,11 @@ class MainActivity : AppCompatActivity() {
             "news" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_NEWS); return }
             "reminders" -> { intent.removeExtra(EXTRA_WIDGET); showRemindersPage(); return }
             "recorder" -> { intent.removeExtra(EXTRA_WIDGET); showRecorderPage(); return }
+            "new_note" -> { intent.removeExtra(EXTRA_WIDGET); editNote(null); return }
+            "ask" -> { intent.removeExtra(EXTRA_WIDGET); listenForQuestion(); return }
+            "park" -> { intent.removeExtra(EXTRA_WIDGET); parkHere(); return }
+            "scan" -> { intent.removeExtra(EXTRA_WIDGET); scanDocument(); return }
+            "record" -> { intent.removeExtra(EXTRA_WIDGET); showRecorderPage(); if (!RecordingService.isRecording()) startRecording(); return }
             "podcast" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "podcast"; showTab(TAB_AUDIO); return }
         }
         val data = intent?.data
@@ -7089,25 +7102,29 @@ class MainActivity : AppCompatActivity() {
                     val small = Bitmap.createScaledBitmap(bmp, (bmp.width * sc).toInt(), (bmp.height * sc).toInt(), true)
                     shot.outputStream().use { small.compress(Bitmap.CompressFormat.JPEG, 85, it) }
                 }
-                runOnUiThread {
-                    toast("✨ Leggo la scadenza…")
-                    ai.ask(listOf("user" to "Che documento è e quando scade? Rispondi SOLO con JSON {\"documento\":\"nome breve in italiano\",\"scadenza\":\"yyyy-MM-dd\"}."),
-                        "Rispondi solo con JSON valido.", object : AiBridge.Listener {
-                            override fun onDone(text: String, model: String) {
-                                val o = runCatching { org.json.JSONObject(Regex("\\{[\\s\\S]*\\}").find(text)!!.value) }.getOrNull()
-                                val date = runCatching {
-                                    java.text.SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).parse(o!!.getString("scadenza"))!!.time + 9 * 3600_000L
-                                }.getOrNull()
-                                val keep = java.io.File(Deadlines.dir(this@MainActivity), shot.name)
-                                runCatching { shot.copyTo(keep, true) }
-                                if (date == null) toast("Data non trovata: inseriscila a mano")
-                                editDeadline(Deadlines.DEADLINE, null, o?.optString("documento")?.takeIf { it.isNotBlank() && it != "null" }, date, keep.absolutePath)
-                            }
-                            override fun onError(message: String, noKey: Boolean) { toast(message) }
-                        }, listOf(Triple("image", "image/jpeg", "/files/scan/" + shot.name)))
-                }
+                runOnUiThread { deadlineFromImage(shot) }
             }
         }
+    }
+
+    /** An image already in the scan folder: the AI reads what it is and when it expires. */
+    private fun deadlineFromImage(shot: java.io.File) {
+        if (!aiReady()) return
+        toast("✨ Leggo la scadenza…")
+        ai.ask(listOf("user" to "Che documento è e quando scade? Rispondi SOLO con JSON {\"documento\":\"nome breve in italiano\",\"scadenza\":\"yyyy-MM-dd\"}."),
+            "Rispondi solo con JSON valido.", object : AiBridge.Listener {
+                override fun onDone(text: String, model: String) {
+                    val o = runCatching { org.json.JSONObject(Regex("\\{[\\s\\S]*\\}").find(text)!!.value) }.getOrNull()
+                    val date = runCatching {
+                        java.text.SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).parse(o!!.getString("scadenza"))!!.time + 9 * 3600_000L
+                    }.getOrNull()
+                    val keep = java.io.File(Deadlines.dir(this@MainActivity), shot.name)
+                    runCatching { shot.copyTo(keep, true) }
+                    if (date == null) toast("Data non trovata: inseriscila a mano")
+                    editDeadline(Deadlines.DEADLINE, null, o?.optString("documento")?.takeIf { it.isNotBlank() && it != "null" }, date, keep.absolutePath)
+                }
+                override fun onError(message: String, noKey: Boolean) { toast(message) }
+            }, listOf(Triple("image", "image/jpeg", "/files/scan/" + shot.name)))
     }
 
     private fun showDeadlinesPage(tab: String = deadlineTab) {
@@ -7748,6 +7765,202 @@ class MainActivity : AppCompatActivity() {
         dialog.setOnDismissListener { uiHandler.removeCallbacks(tick) }
         dialog.show()
         uiHandler.post(tick)
+    }
+
+    // ======================= Share to Web Launcher =======================
+
+    private fun handleShare(intent: Intent): Boolean {
+        if (intent.action != Intent.ACTION_SEND && intent.action != Intent.ACTION_SEND_MULTIPLE) return false
+        val type = intent.type.orEmpty()
+        if (type.startsWith("text/")) {
+            val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
+            val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)?.trim().orEmpty()
+            if (text.isEmpty()) return true
+            val link = Regex("https?://\\S+").find(text)?.value?.trimEnd('.', ',', ')')
+            if (link != null) {
+                MaterialAlertDialogBuilder(this).setTitle(subject.ifBlank { hostOf(link) ?: "Link" })
+                    .setItems(arrayOf("🌐 Apri qui", "🔖 Leggi dopo", "📝 Salva come nota", "✨ Riassumi con AI")) { _, w ->
+                        when (w) {
+                            0 -> { if (webTabs.getOrNull(webTabIndex)?.url?.startsWith("http") == true) openNewTab(false); openInBrowser(link) }
+                            1 -> {
+                                toast("Salvo l'articolo…")
+                                Thread {
+                                    val body = runCatching { news.articleText(link) }.getOrDefault("")
+                                    runOnUiThread { saveForLater(ReaderDoc(subject.ifBlank { text.substringBefore(link).trim().ifBlank { hostOf(link) ?: link } }, hostOf(link) ?: "", link, null, body.ifBlank { text })) }
+                                }.start()
+                            }
+                            2 -> { notes.save(notes.load() + Note(UUID.randomUUID().toString(), listOf(subject, text).filter { it.isNotBlank() }.joinToString("\n"), System.currentTimeMillis())); toast("📝 Nota salvata") }
+                            3 -> { showTab(TAB_BROWSER); openInBrowser(link); uiHandler.postDelayed({ summarizePage() }, 4000) }
+                        }
+                    }.show()
+            } else {
+                MaterialAlertDialogBuilder(this).setTitle(text.take(60))
+                    .setItems(arrayOf("📝 Salva come nota", "⏰ Crea un promemoria", "🛒 Aggiungi alla lista della spesa", "✨ Chiedi all'AI", "🔐 Salva nella cassaforte")) { _, w ->
+                        when (w) {
+                            0 -> { notes.save(notes.load() + Note(UUID.randomUUID().toString(), listOf(subject, text).filter { it.isNotBlank() }.joinToString("\n"), System.currentTimeMillis())); toast("📝 Nota salvata") }
+                            1 -> createReminderFromText(text)
+                            2 -> addItemsToShoppingList(splitItems(text))
+                            3 -> if (aiReady()) showAiSheet("Testo condiviso", "Testo:\n$text\n\n", null, hint = "Cosa vuoi sapere? Es. riassumi, rispondi, traduci")
+                            4 -> authenticate("Cassaforte", strict = true) { saveVault(subject.ifBlank { text.take(30) }, "text", text.toByteArray(Charsets.UTF_8)) }
+                        }
+                    }.show()
+            }
+            return true
+        }
+        val uris: List<Uri> = if (intent.action == Intent.ACTION_SEND_MULTIPLE) {
+            @Suppress("DEPRECATION") intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+        } else listOfNotNull(@Suppress("DEPRECATION") intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM))
+        if (uris.isEmpty()) return true
+        if (type.contains("pdf")) {
+            MaterialAlertDialogBuilder(this).setTitle(displayName(uris[0]))
+                .setItems(arrayOf("📄 Apri", "🎫 Salva nei biglietti e documenti")) { _, w ->
+                    if (w == 0) openPdfFromUri(uris[0])
+                    else io.execute {
+                        val bytes = runCatching { contentResolver.openInputStream(uris[0])?.use { it.readBytes() } }.getOrNull()
+                        runOnUiThread { if (bytes != null) askWalletTitle(displayName(uris[0]).substringBeforeLast('.')) { t -> addToWallet(t, "pdf", null, bytes, "pdf") } }
+                    }
+                }.show()
+            return true
+        }
+        // images: copy them where the app (and the AI bridge) can read them
+        io.execute {
+            val files = uris.take(10).mapIndexedNotNull { i, u ->
+                runCatching {
+                    val bmp = contentResolver.openInputStream(u)!!.use { android.graphics.BitmapFactory.decodeStream(it) }
+                    val sc = minOf(1f, 1800f / maxOf(bmp.width, bmp.height))
+                    val small = Bitmap.createScaledBitmap(bmp, (bmp.width * sc).toInt(), (bmp.height * sc).toInt(), true)
+                    java.io.File(scanDir, "share_${System.currentTimeMillis()}_$i.jpg").also { f -> f.outputStream().use { small.compress(Bitmap.CompressFormat.JPEG, 88, it) } }
+                }.getOrNull()
+            }
+            runOnUiThread {
+                if (files.isEmpty()) { toast("Immagine non leggibile"); return@runOnUiThread }
+                MaterialAlertDialogBuilder(this).setTitle(if (files.size == 1) "Foto" else "${files.size} foto")
+                    .setItems(arrayOf("🎫 Biglietti e documenti", "🔐 Cassaforte", "🧾 È uno scontrino o una bolletta", "📆 Ha una scadenza (l'AI legge la data)", "✨ Chiedi all'AI")) { _, w ->
+                        when (w) {
+                            0 -> askWalletTitle("Documento") { t -> files.forEachIndexed { i, f -> addToWallet(if (files.size > 1) "$t ${i + 1}" else t, "image", f, ext = "jpg") } }
+                            1 -> authenticate("Cassaforte", strict = true) { askVaultTitle { t -> files.forEachIndexed { i, f -> saveVault(if (files.size > 1) "$t ${i + 1}" else t, "photo", f.readBytes()) } } }
+                            2 -> readReceipt(files, null)
+                            3 -> deadlineFromImage(files.first())
+                            4 -> if (aiReady()) showAiSheet("Foto", null, "Descrivi cosa c'è nell'immagine e, se c'è del testo, riportalo.", false,
+                                firstAttachments = files.take(4).map { Triple("image", "image/jpeg", "/files/scan/" + it.name) })
+                        }
+                    }.show()
+            }
+        }
+        return true
+    }
+
+    // ======================= App lock =======================
+
+    private val lockPrefs by lazy { getSharedPreferences("wl_lock", MODE_PRIVATE) }
+    private var lockedSince = 0L
+    private var lockOverlay: View? = null
+
+    private fun lockEnabled() = lockPrefs.getBoolean("enabled", false)
+
+    private fun showLockOverlay() {
+        if (lockOverlay != null) return
+        val palette = AppRepository.palette(this)
+        val d = resources.displayMetrics.density
+        val v = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER
+            setBackgroundColor(palette.bg); isClickable = true; isFocusable = true; elevation = 100f
+            addView(TextView(this@MainActivity).apply { text = "🔒"; textSize = 56f; gravity = android.view.Gravity.CENTER })
+            addView(TextView(this@MainActivity).apply {
+                text = "Web Launcher è bloccato"; textSize = 18f; setTextColor(palette.text); gravity = android.view.Gravity.CENTER
+                setPadding(0, (12 * d).toInt(), 0, (20 * d).toInt())
+            })
+            addView(com.google.android.material.button.MaterialButton(this@MainActivity).apply {
+                text = "Sblocca"; isAllCaps = false; setOnClickListener { unlockApp() }
+            })
+        }
+        (findViewById<android.view.ViewGroup>(android.R.id.content)).addView(v, android.view.ViewGroup.LayoutParams(-1, -1))
+        lockOverlay = v
+    }
+
+    private fun unlockApp() {
+        authenticate("Sblocca Web Launcher", strict = false) {
+            lockOverlay?.let { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+            lockOverlay = null
+        }
+    }
+
+    private fun toggleAppLock() {
+        if (lockEnabled()) {
+            authenticate("Disattiva il blocco", strict = false) { lockPrefs.edit().putBoolean("enabled", false).apply(); renderSettings(); toast("Blocco disattivato") }
+        } else {
+            authenticate("Attiva il blocco dell'app", strict = true) { lockPrefs.edit().putBoolean("enabled", true).apply(); renderSettings(); toast("🔒 L'app chiederà l'impronta") }
+        }
+    }
+
+    // ======================= Full backup UI =======================
+
+    private val fullBackupCreate = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val auto = pendingFullAuto
+        pendingFullAuto = false
+        if (auto) runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            syncPrefs.edit().putString("fullUri", uri.toString()).apply()
+            FullBackup.schedule(this)
+        }
+        toast("Creo il backup completo…")
+        io.execute {
+            val ok = runCatching { contentResolver.openOutputStream(uri, "wt")!!.use { FullBackup.write(this, it) } }.isSuccess
+            if (ok) syncPrefs.edit().putLong("fullLast", System.currentTimeMillis()).apply()
+            runOnUiThread { toast(if (ok) "✓ Backup completo salvato" + (if (auto) " · si aggiornerà ogni notte" else "") else "Backup non riuscito"); if (currentTab == TAB_SETTINGS) renderSettings() }
+        }
+    }
+    private var pendingFullAuto = false
+
+    private val fullBackupRestore = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        MaterialAlertDialogBuilder(this).setTitle("Ripristinare il backup completo?")
+            .setMessage("App, note, libri, registrazioni, biglietti, spese e impostazioni verranno sostituiti con quelli del backup. Poi l'app si riavvia.")
+            .setPositiveButton("Ripristina") { _, _ ->
+                toast("Ripristino…")
+                io.execute {
+                    val res = runCatching { contentResolver.openInputStream(uri)!!.use { FullBackup.restore(this, it) } }
+                    runOnUiThread {
+                        res.onSuccess {
+                            toast("✓ Ripristinati $it file: riavvio")
+                            uiHandler.postDelayed({
+                                val restart = Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                                startActivity(restart)
+                                Runtime.getRuntime().exit(0)
+                            }, 1200)
+                        }.onFailure { e -> toast(e.message ?: "Ripristino non riuscito") }
+                    }
+                }
+            }.setNegativeButton("Annulla", null).show()
+    }
+
+    private fun showFullBackupMenu() {
+        val last = syncPrefs.getLong("fullLast", 0L)
+        val auto = syncPrefs.getString("fullUri", null) != null
+        MaterialAlertDialogBuilder(this).setTitle("📦 Backup completo")
+            .setMessage("Tutto in un file: app, note, liste, libri, registrazioni, biglietti, garanzie, spese, ricette e impostazioni (la cassaforte no, per sicurezza)." +
+                (if (last > 0) "\n\nUltimo: ${NewsAdapter.ago(last)}" else "") + if (auto) "\nAutomatico ogni notte: attivo" else "")
+            .setPositiveButton(if (auto) "Salva ora" else "Salva su Drive o file") { _, _ ->
+                if (auto) {
+                    io.execute {
+                        val ok = runCatching {
+                            val u = Uri.parse(syncPrefs.getString("fullUri", null))
+                            (contentResolver.openOutputStream(u, "wt") ?: contentResolver.openOutputStream(u))!!.use { FullBackup.write(this, it) }
+                        }.isSuccess
+                        if (ok) syncPrefs.edit().putLong("fullLast", System.currentTimeMillis()).apply()
+                        runOnUiThread { toast(if (ok) "✓ Backup completo aggiornato" else "File non raggiungibile: scegline un altro") }
+                    }
+                } else {
+                    MaterialAlertDialogBuilder(this).setMessage("Vuoi che si aggiorni da solo ogni notte?")
+                        .setPositiveButton("Sì, ogni notte") { _, _ -> pendingFullAuto = true; fullBackupCreate.launch("web-launcher-completo.zip") }
+                        .setNegativeButton("Solo adesso") { _, _ -> pendingFullAuto = false; fullBackupCreate.launch("web-launcher-completo.zip") }.show()
+                }
+            }
+            .setNeutralButton("Ripristina") { _, _ -> fullBackupRestore.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
+            .setNegativeButton(if (auto) "Spegni automatico" else "Chiudi") { _, _ ->
+                if (auto) { syncPrefs.edit().remove("fullUri").apply(); FullBackup.schedule(this); toast("Backup automatico spento") }
+            }.show()
     }
 
     private fun openExternally() {
@@ -8423,6 +8636,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         section("SICUREZZA E PRIVACY")
+        row("🔒 Blocca l'app con impronta", if (lockEnabled()) "Attivo · " + listOf("subito", "dopo 1 minuto", "dopo 5 minuti", "dopo 15 minuti")[listOf(0, 1, 5, 15).indexOf(lockPrefs.getInt("delayMin", 0)).coerceAtLeast(0)]
+            else "Impronta o PIN all'apertura", switch = lockEnabled()) { toggleAppLock() }
+        if (lockEnabled()) row("Quando bloccare", "Dopo quanto tempo fuori dall'app") {
+            val vals = intArrayOf(0, 1, 5, 15)
+            MaterialAlertDialogBuilder(this).setTitle("Blocca")
+                .setSingleChoiceItems(arrayOf("Subito", "Dopo 1 minuto", "Dopo 5 minuti", "Dopo 15 minuti"), vals.indexOf(lockPrefs.getInt("delayMin", 0)).coerceAtLeast(0)) { dl, w ->
+                    lockPrefs.edit().putInt("delayMin", vals[w]).apply(); dl.dismiss(); renderSettings()
+                }.show()
+        }
         row("⚠️ Avviso siti truffa", "Avvisa prima di aprire siti che imitano Poste, banche, corrieri…", switch = toolsPrefs.getBoolean("phishing", true)) {
             toolsPrefs.edit().putBoolean("phishing", !toolsPrefs.getBoolean("phishing", true)).apply(); renderSettings()
         }
@@ -8453,6 +8675,7 @@ class MainActivity : AppCompatActivity() {
         row("Cancella tutti i dati", "Recenti, cronologia, cookie, cache", danger = true) { confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
 
         section("BACKUP E SINCRONIZZAZIONE")
+        row("📦 Backup completo", syncPrefs.getLong("fullLast", 0L).let { if (it > 0) "Ultimo ${NewsAdapter.ago(it)}" + (if (syncPrefs.getString("fullUri", null) != null) " · ogni notte" else "") else "Tutto in un file: libri, registrazioni, biglietti…" }) { showFullBackupMenu() }
         row("🔄 Sincronizza tra dispositivi", if (repo.getAutoBackupUri() != null) "Collegato a un file di backup" else "Tramite un file su Google Drive") { showSyncHelp() }
         val autoOn = repo.getAutoBackupUri() != null
         row("Backup", if (autoOn) "Automatico attivo" else "Su file, Drive o condivisione") { showBackupMenu() }
