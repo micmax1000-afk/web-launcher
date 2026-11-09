@@ -521,13 +521,18 @@
                 app:cornerRadius="20dp" />
         </LinearLayout>
 
-        <LinearLayout
-            android:id="@+id/audioTabs"
+        <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingHorizontal="14dp"
-            android:paddingVertical="10dp" />
+            android:scrollbars="none">
+            <LinearLayout
+                android:id="@+id/audioTabs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp" />
+        </HorizontalScrollView>
 
         <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
             android:id="@+id/audioRefresh"

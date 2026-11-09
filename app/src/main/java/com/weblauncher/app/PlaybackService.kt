@@ -57,7 +57,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun savePosition(player: Player) {
         val id = player.currentMediaItem?.mediaId ?: return
-        if (id.startsWith("radio:") || player.isCurrentMediaItemLive) return
+        if (id.startsWith("radio:") || id.startsWith("music:") || player.isCurrentMediaItemLive) return
         val dur = player.duration.takeIf { it > 0 } ?: return
         AudioStore.savePosition(this, id, player.currentPosition, dur)
     }

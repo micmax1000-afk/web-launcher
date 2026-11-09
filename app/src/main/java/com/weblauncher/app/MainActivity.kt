@@ -316,6 +316,9 @@ class MainActivity : AppCompatActivity() {
         io.execute { runCatching { Deadlines.advance(this) } }
         runCatching { AlertsWorker.schedule(this) }
         runCatching { FullBackup.schedule(this) }
+        runCatching { Brief.schedule(this) }
+        if (android.os.Build.VERSION.SDK_INT < 29 || ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED)
+            runCatching { if (Steps.available(this)) { Steps.schedule(this); io.execute { runCatching { Steps.sampleNow(this) } } } }
         io.execute { runCatching { Reminders.rescheduleAll(this) } }
         uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
         CrashReporter.pending(this)?.let { report -> uiHandler.postDelayed({ showCrashReport(report) }, 600) }
@@ -870,7 +873,7 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         if (lockEnabled() && !inPip) {
-            val delay = lockPrefs.getInt("delayMin", 0) * 60_000L
+            val delay = lockPrefs.getInt("delayMin", 1) * 60_000L
             if (lockedSince == 0L || System.currentTimeMillis() - lockedSince >= delay) { showLockOverlay(); unlockApp() }
         }
         if (!relockPending) return
@@ -933,6 +936,7 @@ class MainActivity : AppCompatActivity() {
             "scan" -> { intent.removeExtra(EXTRA_WIDGET); scanDocument(); return }
             "record" -> { intent.removeExtra(EXTRA_WIDGET); showRecorderPage(); if (!RecordingService.isRecording()) startRecording(); return }
             "podcast" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "podcast"; showTab(TAB_AUDIO); return }
+            "brief" -> { intent.removeExtra(EXTRA_WIDGET); showBrief(null); return }
         }
         val data = intent?.data
         if (intent?.action == Intent.ACTION_VIEW && data != null && (data.scheme == "content" || data.scheme == "file") &&
@@ -3272,13 +3276,14 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.audioPanel).setBackgroundColor(palette.bg)
         findViewById<TextView>(R.id.audioHeading).setTextColor(palette.text)
         findViewById<View>(R.id.btnAudioSearch).setOnClickListener {
-            when (audioTab) { "radio" -> showRadioSearch(); "video" -> addChannelDialog(); else -> showPodcastSearch() }
+            when (audioTab) { "radio" -> showRadioSearch(); "video" -> addChannelDialog(); "music" -> searchMusic(); else -> showPodcastSearch() }
         }
         val refresh = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.audioRefresh)
         refresh.setOnRefreshListener {
             when (audioTab) {
                 "radio" -> { radioCache.clear(); refresh.isRefreshing = false; renderAudio() }
                 "video" -> refreshYtVideos()
+                "music" -> { songs = null; refresh.isRefreshing = false; renderAudio() }
                 else -> refreshEpisodes()
             }
         }
@@ -3504,7 +3509,7 @@ class MainActivity : AppCompatActivity() {
         fun dp(v: Int) = (v * d).toInt()
         val tabs = findViewById<android.widget.LinearLayout>(R.id.audioTabs)
         tabs.removeAllViews()
-        listOf("podcast" to "🎙 Podcast", "radio" to "📻 Radio", "video" to "▶ Video").forEach { (key, label) ->
+        listOf("podcast" to "🎙 Podcast", "radio" to "📻 Radio", "music" to "🎵 Musica", "video" to "▶ Video").forEach { (key, label) ->
             val active = key == audioTab
             tabs.addView(TextView(this).apply {
                 text = label; textSize = 14f
@@ -3525,6 +3530,7 @@ class MainActivity : AppCompatActivity() {
         list.removeAllViews()
         if (audioTab == "radio") { renderRadio(list); return }
         if (audioTab == "video") { renderVideos(list); return }
+        if (audioTab == "music") { renderMusic(list); return }
 
         val subs = audio.subscriptions()
         if (subs.isEmpty()) {
@@ -6309,6 +6315,9 @@ class MainActivity : AppCompatActivity() {
             Triple("🗣", "Chiedi a voce") { listenForQuestion() },
             Triple("🍝", "Ricette") { showRecipesPage() },
             Triple("🚘", "Modalità auto") { showCarMode() },
+            Triple("☀️", "Buongiorno") { previewBrief() },
+            Triple("👟", "Passi") { showStepsPage() },
+            Triple("❤️", "Salute") { showHealthPage() },
             Triple("🔔", "Avvisi") { showAlertsPage() },
             Triple("💰", "Spese") { showExpensesPage() },
             Triple("📆", "Scadenze") { showDeadlinesPage(Deadlines.DEADLINE) },
@@ -7963,6 +7972,338 @@ class MainActivity : AppCompatActivity() {
             }.show()
     }
 
+    // ======================= Morning brief UI =======================
+
+    private fun showBrief(text: String?) {
+        val t = text ?: Brief.lastText(this) ?: run { toast("Nessun buongiorno ancora"); return }
+        MaterialAlertDialogBuilder(this).setTitle("☀️ Buongiorno").setMessage(t)
+            .setPositiveButton("🔊 Ascolta") { _, _ -> speak(t.replace("•", ","), 1f) }
+            .setNegativeButton("Chiudi") { _, _ -> tts?.stop() }
+            .setOnCancelListener { tts?.stop() }.show()
+        speak(t.replace("•", ","), 1f)
+    }
+
+    private fun briefSettings() {
+        val picker = com.google.android.material.timepicker.MaterialTimePicker.Builder()
+            .setTimeFormat(com.google.android.material.timepicker.TimeFormat.CLOCK_24H)
+            .setHour(Brief.hour(this)).setMinute(Brief.minute(this)).setTitleText("Ora del buongiorno").build()
+        picker.addOnPositiveButtonClickListener {
+            ensureNotificationPermission()
+            Brief.set(this, true, picker.hour, picker.minute)
+            toast("☀️ Buongiorno ogni giorno alle %02d:%02d".format(picker.hour, picker.minute))
+            if (currentTab == TAB_SETTINGS) renderSettings()
+        }
+        picker.show(supportFragmentManager, "brief")
+    }
+
+    private fun previewBrief() {
+        toast("Preparo il riepilogo…")
+        io.execute {
+            val t = runCatching { Brief.compose(this) }.getOrDefault("Buongiorno!")
+            runOnUiThread { showBrief(t) }
+        }
+    }
+
+    // ======================= Steps =======================
+
+    private val stepsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) { Steps.schedule(this); io.execute { Steps.sampleNow(this); runOnUiThread { stepsRefresh?.invoke() } } }
+        else toast("Serve il permesso «Attività fisica» per contare i passi")
+    }
+    private var stepsRefresh: (() -> Unit)? = null
+
+    private fun showStepsPage() {
+        if (!Steps.available(this)) { toast("Questo telefono non ha il contapassi"); return }
+        val granted = android.os.Build.VERSION.SDK_INT < 29 ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+        if (!granted) stepsPermission.launch(Manifest.permission.ACTIVITY_RECOGNITION) else { Steps.schedule(this); io.execute { Steps.sampleNow(this); runOnUiThread { stepsRefresh?.invoke() } } }
+        openPage("Passi", "Obiettivo", { _ ->
+            val vals = intArrayOf(4000, 6000, 8000, 10000, 12000)
+            MaterialAlertDialogBuilder(this).setTitle("Obiettivo giornaliero")
+                .setSingleChoiceItems(vals.map { String.format(Locale.ITALIAN, "%,d passi", it) }.toTypedArray(), vals.indexOf(Steps.goal(this)).coerceAtLeast(0)) { dl, w ->
+                    Steps.setGoal(this, vals[w]); dl.dismiss(); stepsRefresh?.invoke()
+                }.show()
+        }) { _, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            fun render() {
+                body.removeAllViews()
+                val today = Steps.today(this); val goal = Steps.goal(this)
+                body.addView(TextView(this).apply {
+                    text = String.format(Locale.ITALIAN, "%,d", today); textSize = 54f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    gravity = android.view.Gravity.CENTER; setTextColor(palette.text); setPadding(0, dp(12), 0, 0)
+                })
+                body.addView(TextView(this).apply {
+                    text = "passi oggi · obiettivo ${String.format(Locale.ITALIAN, "%,d", goal)}" + if (today >= goal) " ✓ 🎉" else ""
+                    textSize = 14f; gravity = android.view.Gravity.CENTER; setTextColor(palette.textMuted)
+                })
+                body.addView(android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    max = goal; progress = today.coerceAtMost(goal); progressTintList = android.content.res.ColorStateList.valueOf(accent)
+                    layoutParams = android.widget.LinearLayout.LayoutParams(-1, dp(14)).apply { setMargins(dp(24), dp(14), dp(24), dp(6)) }
+                })
+                body.addView(TextView(this).apply {
+                    text = "≈ ${String.format(Locale.ITALIAN, "%.1f", today * 0.00075)} km"; textSize = 13f
+                    gravity = android.view.Gravity.CENTER; setTextColor(palette.textMuted)
+                })
+                sectionLabel(body, "ULTIMI 7 GIORNI")
+                val week = (6 downTo 0).map { back ->
+                    java.text.SimpleDateFormat("EEE", Locale.ITALIAN).format(java.util.Date(System.currentTimeMillis() - back * 86_400_000L)).take(3) to Steps.day(this, back)
+                }
+                val maxV = maxOf(week.maxOf { it.second }, goal)
+                val chart = android.widget.LinearLayout(this).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.BOTTOM; setPadding(dp(10), dp(8), dp(10), 0)
+                }
+                week.forEachIndexed { i, (name, v) ->
+                    chart.addView(android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER_HORIZONTAL or android.view.Gravity.BOTTOM
+                        layoutParams = android.widget.LinearLayout.LayoutParams(0, dp(150), 1f)
+                        addView(TextView(this@MainActivity).apply { text = if (v >= 1000) "${v / 1000}k" else v.toString(); textSize = 10f; setTextColor(palette.textMuted) })
+                        addView(View(this@MainActivity).apply {
+                            background = android.graphics.drawable.GradientDrawable().apply {
+                                cornerRadius = 6 * d; setColor(if (v >= goal) 0xFF2FBF71.toInt() else if (i == 6) accent else androidx.core.graphics.ColorUtils.setAlphaComponent(accent, 0x77))
+                            }
+                            layoutParams = android.widget.LinearLayout.LayoutParams(dp(20), (dp(110) * v / maxV).coerceAtLeast(dp(2)))
+                        })
+                        addView(TextView(this@MainActivity).apply { text = name; textSize = 11f; setTextColor(palette.textMuted); setPadding(0, dp(4), 0, 0) })
+                    })
+                }
+                body.addView(chart)
+                body.addView(TextView(this).apply {
+                    text = "Usa il contapassi del telefono: niente account e niente app. I passi si aggiornano circa ogni ora e quando apri questa pagina."
+                    textSize = 12f; setTextColor(palette.textMuted); setPadding(dp(10), dp(16), dp(10), 0)
+                })
+            }
+            render()
+            stepsRefresh = { render() }
+            dialog.setOnDismissListener { stepsRefresh = null }
+        }
+    }
+
+    // ======================= Health diary =======================
+
+    private var healthType = "pressione"
+
+    private fun addMeasureDialog(type: String, onSaved: () -> Unit) {
+        val (label, unit, two) = Health.TYPES[type] ?: return
+        val d = resources.displayMetrics.density
+        fun num(h: String) = TextInputEditText(this).apply {
+            hint = h; setSingleLine(); inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        val a = num(if (two) "Massima ($unit)" else "Valore ($unit)")
+        val b = num("Minima ($unit)")
+        val note = TextInputEditText(this).apply { hint = "Nota (facoltativa)"; setSingleLine() }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL; setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0)
+            addView(a); if (two) addView(b); addView(note)
+        }
+        MaterialAlertDialogBuilder(this).setTitle(label).setView(box)
+            .setPositiveButton("Salva") { _, _ ->
+                val v1 = Calc.num(a.text?.toString().orEmpty())
+                val v2 = if (two) Calc.num(b.text?.toString().orEmpty()) else null
+                if (v1 == null || (two && v2 == null)) { toast("Valore non valido"); return@setPositiveButton }
+                Health.save(this, Health.load(this) + Measure(UUID.randomUUID().toString(), type, v1, v2, System.currentTimeMillis(), note.text?.toString()?.trim().orEmpty()))
+                onSaved()
+            }.setNegativeButton("Annulla", null).show()
+        a.requestFocus()
+    }
+
+    private fun showHealthPage() {
+        openPage("Salute", "Aggiungi", { _ -> addMeasureDialog(healthType) { healthRefresh?.invoke() } }) { root, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            val tabs = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding(dp(12), 0, dp(12), dp(8)) }
+            root.addView(android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) }, 1)
+            fun render() {
+                tabs.removeAllViews()
+                Health.TYPES.forEach { (k, v) ->
+                    val active = k == healthType
+                    tabs.addView(TextView(this).apply {
+                        text = v.first; textSize = 13f; setTextColor(if (active) android.graphics.Color.WHITE else palette.text)
+                        setPadding(dp(12), dp(7), dp(12), dp(7))
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            cornerRadius = 16 * d; setColor(if (active) accent else palette.card); setStroke(d.toInt().coerceAtLeast(1), if (active) accent else palette.stroke)
+                        }
+                        layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }
+                        setOnClickListener { healthType = k; render() }
+                    })
+                }
+                body.removeAllViews()
+                val (label, unit, two) = Health.TYPES[healthType]!!
+                val list = Health.load(this).filter { it.type == healthType }.sortedBy { it.time }
+                if (list.isEmpty()) { emptyLabel(body, "Nessuna misurazione di ${label.substringAfter(' ').lowercase()}.\nTocca «Aggiungi»."); }
+                else {
+                    val last = list.takeLast(30)
+                    body.addView(TextView(this).apply {
+                        text = Health.fmt(list.last()); textSize = 34f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+                        gravity = android.view.Gravity.CENTER; setTextColor(palette.text); setPadding(0, dp(6), 0, 0)
+                    })
+                    body.addView(TextView(this).apply {
+                        text = "ultima · " + NewsAdapter.ago(list.last().time) + if (list.size > 1) " · media ${String.format(Locale.ITALIAN, "%.1f", last.map { it.v1 }.average())}" +
+                            (if (two) "/" + String.format(Locale.ITALIAN, "%.1f", last.mapNotNull { it.v2 }.average()) else "") else ""
+                        textSize = 13f; gravity = android.view.Gravity.CENTER; setTextColor(palette.textMuted)
+                    })
+                    if (last.size >= 2) body.addView(LineChartView(this).apply {
+                        series1 = last.map { it.v1 }; series2 = if (two) last.mapNotNull { it.v2 } else null
+                        color1 = if (two) 0xFFE53935.toInt() else accent; color2 = accent; textColor = palette.textMuted
+                        layoutParams = android.widget.LinearLayout.LayoutParams(-1, dp(180)).apply { setMargins(dp(6), dp(12), dp(6), dp(4)) }
+                    })
+                    sectionLabel(body, "MISURAZIONI")
+                    val f = java.text.SimpleDateFormat("EEE d MMM, HH:mm", Locale.ITALIAN)
+                    list.reversed().take(60).forEach { m ->
+                        listRow(body, Health.fmt(m), f.format(java.util.Date(m.time)) + if (m.note.isNotBlank()) " · ${m.note}" else "",
+                            onClick = {}, onRemove = { Health.save(this, Health.load(this).filter { it.id != m.id }); render() })
+                    }
+                }
+                val btns = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding(dp(6), dp(14), dp(6), 0) }
+                btns.addView(com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = "⏰ Promemoria"; isAllCaps = false; layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) }
+                    setOnClickListener {
+                        val picker = com.google.android.material.timepicker.MaterialTimePicker.Builder()
+                            .setTimeFormat(com.google.android.material.timepicker.TimeFormat.CLOCK_24H).setHour(8).setMinute(0)
+                            .setTitleText("Ogni giorno alle…").build()
+                        picker.addOnPositiveButtonClickListener {
+                            val at = java.util.Calendar.getInstance().apply { set(java.util.Calendar.HOUR_OF_DAY, picker.hour); set(java.util.Calendar.MINUTE, picker.minute); set(java.util.Calendar.SECOND, 0) }.timeInMillis
+                            confirmReminder("Misurare: ${label.substringAfter(' ').lowercase()}", Reminders.next(at, "day"), "day")
+                        }
+                        picker.show(supportFragmentManager, "hr")
+                    }
+                })
+                btns.addView(com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = "📤 Per il medico"; isAllCaps = false; layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                    setOnClickListener {
+                        val f = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALIAN)
+                        val report = Health.TYPES.entries.joinToString("\n\n") { (k, v) ->
+                            val ms = Health.load(this).filter { it.type == k }.sortedBy { it.time }.takeLast(60)
+                            if (ms.isEmpty()) "" else v.first.substringAfter(' ') + ":\n" + ms.joinToString("\n") { f.format(java.util.Date(it.time)) + "  " + Health.fmt(it) + if (it.note.isNotBlank()) " (${it.note})" else "" }
+                        }.trim()
+                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, report); putExtra(Intent.EXTRA_SUBJECT, "Misurazioni") }, "Condividi"))
+                    }
+                })
+                body.addView(btns)
+            }
+            render()
+            healthRefresh = { render() }
+            dialog.setOnDismissListener { healthRefresh = null }
+        }
+    }
+    private var healthRefresh: (() -> Unit)? = null
+
+    // ======================= Music on the phone =======================
+
+    data class Song(val id: Long, val title: String, val artist: String, val album: String, val albumId: Long, val duration: Long)
+
+    private var songs: List<Song>? = null
+    private var musicView = "songs"
+    private var musicFilter: Pair<String, String>? = null
+
+    private val musicPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) { songs = null; renderAudio() } else toast("Serve il permesso per leggere la musica del telefono")
+    }
+
+    private fun musicPerm() = if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
+
+    private fun loadSongs(): List<Song> = runCatching {
+        val out = mutableListOf<Song>()
+        contentResolver.query(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            arrayOf(android.provider.MediaStore.Audio.Media._ID, android.provider.MediaStore.Audio.Media.TITLE, android.provider.MediaStore.Audio.Media.ARTIST,
+                android.provider.MediaStore.Audio.Media.ALBUM, android.provider.MediaStore.Audio.Media.ALBUM_ID, android.provider.MediaStore.Audio.Media.DURATION),
+            android.provider.MediaStore.Audio.Media.IS_MUSIC + " != 0 AND " + android.provider.MediaStore.Audio.Media.DURATION + " > 30000", null,
+            android.provider.MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC")?.use { c ->
+            while (c.moveToNext()) out.add(Song(c.getLong(0), c.getString(1) ?: "Brano", c.getString(2)?.takeIf { it != "<unknown>" } ?: "Artista sconosciuto",
+                c.getString(3) ?: "", c.getLong(4), c.getLong(5)))
+        }
+        out
+    }.getOrDefault(emptyList())
+
+    private fun albumArt(albumId: Long) = "content://media/external/audio/albumart/$albumId"
+
+    private fun playSongs(list: List<Song>, index: Int, shuffle: Boolean = false) {
+        val c = controller ?: run { toast("Lettore non pronto"); return }
+        ensureNotificationPermission()
+        val items = list.map { s ->
+            androidx.media3.common.MediaItem.Builder().setMediaId("music:${s.id}")
+                .setUri(android.content.ContentUris.withAppendedId(android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, s.id))
+                .setMediaMetadata(androidx.media3.common.MediaMetadata.Builder().setTitle(s.title).setArtist(s.artist).setAlbumTitle(s.album)
+                    .setArtworkUri(Uri.parse(albumArt(s.albumId))).setIsPlayable(true).build()).build()
+        }
+        c.setMediaItems(items, index, 0L)
+        c.shuffleModeEnabled = shuffle
+        c.setPlaybackSpeed(1f)
+        c.prepare(); c.play()
+        updateMiniPlayer()
+    }
+
+    private fun renderMusic(list: android.widget.LinearLayout) {
+        val palette = AppRepository.palette(this)
+        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        if (ContextCompat.checkSelfPermission(this, musicPerm()) != PackageManager.PERMISSION_GRANTED) {
+            list.addView(TextView(this).apply {
+                text = "Ascolta gli MP3 e la musica salvata sul telefono, anche a schermo spento."; textSize = 15f; setTextColor(palette.textMuted)
+                gravity = android.view.Gravity.CENTER; setPadding(dp(20), dp(30), dp(20), dp(12))
+            })
+            list.addView(com.google.android.material.button.MaterialButton(this).apply {
+                text = "Consenti l'accesso alla musica"; isAllCaps = false; setOnClickListener { musicPermission.launch(musicPerm()) }
+            })
+            return
+        }
+        val all = songs ?: loadSongs().also { songs = it }
+        if (all.isEmpty()) { emptyLabel(list, "Nessuna canzone trovata sul telefono.\nCopia degli MP3 nella cartella Music."); return }
+        val tabs = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding(dp(6), dp(4), 0, dp(4)) }
+        listOf("songs" to "Brani", "albums" to "Album", "artists" to "Artisti").forEach { (k, l) ->
+            val active = k == musicView && musicFilter == null
+            tabs.addView(TextView(this).apply {
+                text = l; textSize = 13f; setTextColor(if (active) accent else palette.text)
+                if (active) setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setPadding(dp(12), dp(6), dp(12), dp(6))
+                setOnClickListener { musicView = k; musicFilter = null; renderAudio() }
+            })
+        }
+        tabs.addView(TextView(this).apply {
+            text = "🔀 Casuale"; textSize = 13f; setTextColor(accent); setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setPadding(dp(12), dp(6), dp(12), dp(6)); setOnClickListener { playSongs(all, (all.indices).random(), shuffle = true) }
+        })
+        list.addView(tabs)
+        val filter = musicFilter
+        if (filter != null) {
+            val shown = all.filter { if (filter.first == "album") it.album == filter.second else it.artist == filter.second }
+            list.addView(TextView(this).apply {
+                text = "‹  ${filter.second} · ${shown.size} brani"; textSize = 16f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text)
+                setPadding(dp(10), dp(8), 0, dp(4)); setOnClickListener { musicFilter = null; renderAudio() }
+            })
+            shown.forEachIndexed { i, s -> mediaRow(list, albumArt(s.albumId), s.title, "${s.artist} · ${fmtTime(s.duration)}") { playSongs(shown, i) } }
+            return
+        }
+        when (musicView) {
+            "albums" -> all.groupBy { it.album }.toSortedMap(String.CASE_INSENSITIVE_ORDER).forEach { (album, ss) ->
+                mediaRow(list, albumArt(ss.first().albumId), album.ifBlank { "Senza album" }, "${ss.first().artist} · ${ss.size} brani") { musicFilter = "album" to album; renderAudio() }
+            }
+            "artists" -> all.groupBy { it.artist }.toSortedMap(String.CASE_INSENSITIVE_ORDER).forEach { (artist, ss) ->
+                mediaRow(list, albumArt(ss.first().albumId), artist, "${ss.size} brani") { musicFilter = "artist" to artist; renderAudio() }
+            }
+            else -> all.take(500).forEachIndexed { i, s -> mediaRow(list, albumArt(s.albumId), s.title, "${s.artist} · ${fmtTime(s.duration)}") { playSongs(all, i) } }
+        }
+    }
+
+    private fun searchMusic() {
+        val all = songs ?: loadSongs().also { songs = it }
+        openPage("Cerca musica") { root, body, _ ->
+            val et = searchField(root, "Titolo, artista o album", null) { q ->
+                body.removeAllViews()
+                val ql = q.lowercase(Locale.ITALIAN)
+                val res = all.filter { it.title.lowercase(Locale.ITALIAN).contains(ql) || it.artist.lowercase(Locale.ITALIAN).contains(ql) || it.album.lowercase(Locale.ITALIAN).contains(ql) }
+                if (res.isEmpty()) emptyLabel(body, "Nessun brano")
+                res.forEachIndexed { i, s -> mediaRow(body, albumArt(s.albumId), s.title, "${s.artist} · ${s.album}") { playSongs(res, i) } }
+            }
+            et.requestFocus()
+        }
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -8636,12 +8977,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         section("SICUREZZA E PRIVACY")
-        row("🔒 Blocca l'app con impronta", if (lockEnabled()) "Attivo · " + listOf("subito", "dopo 1 minuto", "dopo 5 minuti", "dopo 15 minuti")[listOf(0, 1, 5, 15).indexOf(lockPrefs.getInt("delayMin", 0)).coerceAtLeast(0)]
+        row("🔒 Blocca l'app con impronta", if (lockEnabled()) "Attivo · " + listOf("subito", "dopo 1 minuto", "dopo 5 minuti", "dopo 15 minuti")[listOf(0, 1, 5, 15).indexOf(lockPrefs.getInt("delayMin", 1)).coerceAtLeast(0)]
             else "Impronta o PIN all'apertura", switch = lockEnabled()) { toggleAppLock() }
         if (lockEnabled()) row("Quando bloccare", "Dopo quanto tempo fuori dall'app") {
             val vals = intArrayOf(0, 1, 5, 15)
             MaterialAlertDialogBuilder(this).setTitle("Blocca")
-                .setSingleChoiceItems(arrayOf("Subito", "Dopo 1 minuto", "Dopo 5 minuti", "Dopo 15 minuti"), vals.indexOf(lockPrefs.getInt("delayMin", 0)).coerceAtLeast(0)) { dl, w ->
+                .setSingleChoiceItems(arrayOf("Subito", "Dopo 1 minuto", "Dopo 5 minuti", "Dopo 15 minuti"), vals.indexOf(lockPrefs.getInt("delayMin", 1)).coerceAtLeast(0)) { dl, w ->
                     lockPrefs.edit().putInt("delayMin", vals[w]).apply(); dl.dismiss(); renderSettings()
                 }.show()
         }
@@ -8689,6 +9030,11 @@ class MainActivity : AppCompatActivity() {
             weatherPrefs.edit().putBoolean("hidden", false).apply(); renderWeather(); setupWeather()
         }
         row("🏠 Indirizzo di casa", carPrefs.getString("home", null) ?: "Per «Portami a casa» in modalità auto") { setHomeAddress { renderSettings() } }
+        row("☀️ Buongiorno ogni mattina", if (Brief.enabled(this)) "Alle %02d:%02d · meteo, appuntamenti, scadenze, notizie".format(Brief.hour(this), Brief.minute(this))
+            else "Una notifica con il riepilogo della giornata", switch = Brief.enabled(this)) {
+            if (Brief.enabled(this)) { Brief.set(this, false); renderSettings() } else briefSettings()
+        }
+        if (Brief.enabled(this)) row("Ora del buongiorno", value = "%02d:%02d".format(Brief.hour(this), Brief.minute(this))) { briefSettings() }
         row("📅 Riquadro «Oggi»", "Appuntamenti, promemoria e scadenze sotto la ricerca", switch = homePrefs.getBoolean("today", true)) {
             homePrefs.edit().putBoolean("today", !homePrefs.getBoolean("today", true)).apply(); renderWeather(); renderSettings()
         }
