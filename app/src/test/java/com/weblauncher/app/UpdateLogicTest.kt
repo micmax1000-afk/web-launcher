@@ -38,4 +38,15 @@ class UpdateLogicTest {
         assertFalse(UpdateLogic.isNewer(r, 1062))
         assertFalse(UpdateLogic.isNewer(null, 1))
     }
+
+    @Test fun canaleDiProva() {
+        val list = """[
+          {"tag_name":"v7.4.0-prova-b1100","prerelease":true,"assets":[{"name":"a.apk","browser_download_url":"u1"}]},
+          {"tag_name":"v7.3.0-b1062","prerelease":false,"assets":[{"name":"a.apk","browser_download_url":"u2"}]},
+          {"tag_name":"v7.2.0-b1000","prerelease":false,"assets":[{"name":"a.apk","browser_download_url":"u3"}]}
+        ]"""
+        assertEquals(1062, UpdateLogic.pickBest(list, beta = false)!!.code)
+        assertEquals(1100, UpdateLogic.pickBest(list, beta = true)!!.code)
+        assertNull(UpdateLogic.pickBest("[]", beta = true))
+    }
 }

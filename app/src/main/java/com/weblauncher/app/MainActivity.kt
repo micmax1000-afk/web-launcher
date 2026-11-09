@@ -324,6 +324,7 @@ class MainActivity : AppCompatActivity() {
         io.execute { runCatching { Reminders.rescheduleAll(this) } }
         uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
         CrashReporter.pending(this)?.let { report -> uiHandler.postDelayed({ showCrashReport(report) }, 600) }
+        uiHandler.postDelayed({ runCatching { showNewsAfterUpdate() } }, 900)
         setupNav()
         setupBack()
 

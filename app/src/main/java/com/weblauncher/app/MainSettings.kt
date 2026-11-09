@@ -305,6 +305,10 @@ internal fun MainActivity.renderSettings() {
     row("Avvisami delle nuove versioni", "Controllo automatico due volte al giorno", switch = Updater.autoCheck(this)) {
         Updater.setAutoCheck(this, !Updater.autoCheck(this)); if (Updater.autoCheck(this)) ensureNotificationPermission(); renderSettings()
     }
+    row("🧪 Ricevi le versioni di prova", "Novità prima degli altri, ma possono avere qualche errore", switch = Updater.beta(this)) {
+        Updater.setBeta(this, !Updater.beta(this)); renderSettings()
+    }
+    row("🐞 Segnala un problema", "Con versione, telefono e ultimo errore") { reportProblem() }
 
     section("HOME")
     row("🌦 Meteo in home", if (weatherPrefs.getBoolean("hidden", false)) "Nascosto" else weatherPrefs.getString("city", null) ?: "Scegli la città") {

@@ -115,3 +115,18 @@ jobs:
           cp app/build/outputs/apk/debug/app-debug.apk web-launcher.apk
           git log -1 --pretty=%B | grep -v -i '^co-authored-by\|^claude-session' > notes.txt
           gh release create "$TAG" web-launcher.apk --title "Web Launcher $NAME (build $WL_VERSION_CODE)" --notes-file notes.txt --target "$GITHUB_SHA"
+
+      - name: Pubblica versione di prova (altri rami)
+        if: github.ref != 'refs/heads/main' && github.event_name == 'push' && env.WL_KEYSTORE_FILE != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          NAME=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          TAG="v${NAME}-prova-b${WL_VERSION_CODE}"
+          cp app/build/outputs/apk/debug/app-debug.apk web-launcher.apk
+          git log -1 --pretty=%B | grep -v -i '^co-authored-by\|^claude-session' > notes.txt
+          gh release create "$TAG" web-launcher.apk --prerelease --title "Prova $NAME (build $WL_VERSION_CODE)" --notes-file notes.txt --target "$GITHUB_SHA"
+          # tiene solo le ultime 3 versioni di prova
+          gh release list --limit 100 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease) | .tagName' | tail -n +4 | while read t; do
+            gh release delete "$t" --yes --cleanup-tag || true
+          done

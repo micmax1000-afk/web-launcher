@@ -21,7 +21,7 @@ import java.util.zip.ZipOutputStream
  * and settings, in one ZIP. The vault is excluded on purpose: its key never leaves the phone.
  */
 object FullBackup {
-    private val SKIP_FILES = setOf("news_cache.json", "last_crash.txt", "podcast_episodes.json")
+    private val SKIP_FILES = setOf("news_cache.json", "last_crash.txt", "last_error_seen.txt", "podcast_episodes.json")
     private val SKIP_DIRS = setOf("vault")
 
     private fun prefsDir(c: Context) = File(c.applicationInfo.dataDir, "shared_prefs")

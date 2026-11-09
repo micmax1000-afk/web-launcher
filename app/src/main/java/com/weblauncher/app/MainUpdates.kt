@@ -117,9 +117,62 @@ internal fun MainActivity.downloadUpdate(r: UpdateLogic.Release) {
                     .setMessage("Questa versione è firmata con una chiave diversa da quella installata: Android chiederà di disinstallare l'app, e i dati andrebbero persi.\n\nPrima fai un «Backup completo» (Impostazioni → Backup), poi disinstalla e installa il file scaricato.")
                     .setPositiveButton("Backup completo") { _, _ -> showFullBackupMenu() }
                     .setNegativeButton("Annulla", null).show()
-            } else runCatching { Updater.install(this, apk) }.onFailure { toast("Impossibile avviare l'installazione") }
+            } else {
+                toast("Copia di sicurezza dei dati…")
+                io.execute {
+                    val where = Updater.backupBeforeUpdate(this)
+                    Updater.rememberNotes(this, r)
+                    runOnUiThread {
+                        if (where != null) toast("✓ Backup salvato in $where")
+                        runCatching { Updater.install(this, apk) }.onFailure { toast("Impossibile avviare l'installazione") }
+                    }
+                }
+            }
         }
     }.start()
 }
 
 internal fun MainActivity.toast(msg: String) { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
+
+/** «Novità» once after an update. */
+internal fun MainActivity.showNewsAfterUpdate() {
+    val (name, notes) = Updater.pendingNews(this) ?: return
+    MaterialAlertDialogBuilder(this).setTitle("🎉 Novità di $name")
+        .setMessage(notes.take(2500)).setPositiveButton("OK", null).show()
+}
+
+// ======================= Segnala un problema =======================
+
+internal fun MainActivity.reportProblem() {
+    val d = resources.displayMetrics.density
+    val input = android.widget.EditText(this).apply {
+        hint = "Cosa è successo? (es. «Le notizie non si aprono»)"
+        minLines = 3; gravity = android.view.Gravity.TOP
+    }
+    val box = android.widget.FrameLayout(this).apply {
+        setPadding((20 * d).toInt(), (8 * d).toInt(), (20 * d).toInt(), 0); addView(input)
+    }
+    MaterialAlertDialogBuilder(this).setTitle("🐞 Segnala un problema")
+        .setMessage("Al testo si aggiungono versione dell'app, modello del telefono e l'ultimo errore registrato (nessun dato personale).")
+        .setView(box)
+        .setPositiveButton("Apri su GitHub") { _, _ ->
+            val body = problemReport(input.text.toString())
+            val title = input.text.toString().lines().firstOrNull()?.take(70)?.ifBlank { null } ?: "Problema"
+            val url = "https://github.com/${Updater.REPO}/issues/new?title=" + Uri.encode(title) + "&body=" + Uri.encode(body.take(6000))
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        }
+        .setNeutralButton("Condividi") { _, _ ->
+            startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, "Web Launcher: problema"); putExtra(Intent.EXTRA_TEXT, problemReport(input.text.toString()))
+            }, "Invia segnalazione"))
+        }
+        .setNegativeButton("Annulla", null).show()
+}
+
+internal fun MainActivity.problemReport(text: String): String = buildString {
+    val c = this@problemReport
+    append(text.trim().ifBlank { "(nessuna descrizione)" }).append("\n\n---\n")
+    append("Versione: ${Updater.installedName(c)} (build ${Updater.installedCode(c)})\n")
+    append("Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}) · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}\n")
+    CrashReporter.last(c)?.let { append("\nUltimo errore registrato:\n```\n").append(it.take(3500)).append("\n```\n") }
+}

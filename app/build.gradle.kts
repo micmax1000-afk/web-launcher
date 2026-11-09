@@ -14,7 +14,7 @@ android {
         // Su GitHub il numero di build cresce a ogni compilazione (1000 + numero dell'esecuzione),
         // cosi' l'app riconosce da sola le versioni piu' nuove.
         versionCode = System.getenv("WL_VERSION_CODE")?.toIntOrNull() ?: 45
-        versionName = "7.3.0"
+        versionName = "7.4.0"
     }
 
     // Firma fissa: la chiave arriva dai secret di GitHub (WL_KEYSTORE_BASE64,
