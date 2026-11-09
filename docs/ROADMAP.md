@@ -6,7 +6,7 @@ P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate 
 ## P0 — Base tecnica (prima di tutto)
 | # | Cosa | Perché |
 |---|------|--------|
-| 1 | **Firma fissa dell'APK** | Oggi ogni APK compilato su GitHub può avere una firma diversa: Android rifiuta l'aggiornamento e obbliga a disinstallare, perdendo i dati. Con una chiave fissa gli aggiornamenti si installano sopra. |
+| 1 | ✅ **Firma fissa dell'APK** (7.2.2, chiave nei secret GitHub) | Oggi ogni APK compilato su GitHub può avere una firma diversa: Android rifiuta l'aggiornamento e obbliga a disinstallare, perdendo i dati. Con una chiave fissa gli aggiornamenti si installano sopra. |
 | 2 | **Aggiornamenti dall'app** | Pagina "Versioni" su GitHub Releases e avviso nell'app "È disponibile la 7.3: aggiorna". |
 | 3 | **Pull request verso `main`** | Tutto il lavoro è sul branch di sviluppo. |
 | 4 | **Dividere il codice in moduli** | MainActivity è molto grande: dividerla riduce errori e rende le modifiche più sicure. |

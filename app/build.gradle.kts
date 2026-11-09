@@ -11,19 +11,39 @@ android {
         applicationId = "com.weblauncher.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 44
-        versionName = "7.2.1"
+        versionCode = 45
+        versionName = "7.2.2"
     }
+
+    // Firma fissa: la chiave arriva dai secret di GitHub (WL_KEYSTORE_BASE64,
+    // WL_KEYSTORE_PASSWORD). Con la stessa firma Android installa l'aggiornamento
+    // sopra la versione precedente, senza disinstallare. Senza secret usa la
+    // chiave di debug (solo per prove locali).
+    val ksFile = System.getenv("WL_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    val ksPass = System.getenv("WL_KEYSTORE_PASSWORD")
+    signingConfigs {
+        if (ksFile != null && !ksPass.isNullOrEmpty()) create("fixed") {
+            storeFile = ksFile
+            storePassword = ksPass
+            keyAlias = "weblauncher"
+            keyPassword = ksPass
+        }
+    }
+    val fixedSigning = signingConfigs.findByName("fixed")
 
     buildTypes {
         release {
+            if (fixedSigning != null) signingConfig = fixedSigning
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
-        debug { isMinifyEnabled = false }
+        debug {
+            isMinifyEnabled = false
+            if (fixedSigning != null) signingConfig = fixedSigning
+        }
     }
 
     compileOptions {
