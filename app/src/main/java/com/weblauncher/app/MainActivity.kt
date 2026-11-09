@@ -317,6 +317,7 @@ class MainActivity : AppCompatActivity() {
         io.execute { runCatching { Deadlines.advance(this) } }
         runCatching { AlertsWorker.schedule(this) }
         runCatching { FullBackup.schedule(this) }
+        runCatching { Updater.schedule(this) }
         runCatching { Brief.schedule(this) }
         if (android.os.Build.VERSION.SDK_INT < 29 || ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED)
             runCatching { if (Steps.available(this)) { Steps.schedule(this); io.execute { runCatching { Steps.sampleNow(this) } } } }
@@ -925,6 +926,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun openShortcut(intent: Intent?) {
         if (intent != null && handleShare(intent)) { intent.action = null; return }
+        if (intent?.getBooleanExtra(Updater.EXTRA_UPDATE, false) == true) {
+            intent.removeExtra(Updater.EXTRA_UPDATE); checkForUpdate(manual = true); return
+        }
         when (intent?.getStringExtra(EXTRA_WIDGET)) {
             "search" -> {
                 intent.removeExtra(EXTRA_WIDGET)
@@ -9035,6 +9039,13 @@ class MainActivity : AppCompatActivity() {
             importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
         }
 
+        section("AGGIORNAMENTI")
+        row("⬆️ Controlla aggiornamenti", "Versione ${Updater.installedName(this)} (build ${Updater.installedCode(this)})" +
+            Updater.lastCheck(this).let { if (it > 0) " · controllato ${NewsAdapter.ago(it)}" else "" }) { checkForUpdate(manual = true) }
+        row("Avvisami delle nuove versioni", "Controllo automatico due volte al giorno", switch = Updater.autoCheck(this)) {
+            Updater.setAutoCheck(this, !Updater.autoCheck(this)); if (Updater.autoCheck(this)) ensureNotificationPermission(); renderSettings()
+        }
+
         section("HOME")
         row("🌦 Meteo in home", if (weatherPrefs.getBoolean("hidden", false)) "Nascosto" else weatherPrefs.getString("city", null) ?: "Scegli la città") {
             weatherPrefs.edit().putBoolean("hidden", false).apply(); renderWeather(); setupWeather()
@@ -9525,6 +9536,66 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton("Annulla", null)
             .show()
+    }
+
+    // ======================= Aggiornamenti dall'app (GitHub Releases) =======================
+    private fun checkForUpdate(manual: Boolean) {
+        if (manual) toast("Controllo aggiornamenti…")
+        Thread {
+            val res = runCatching { Updater.fetchLatest(this) }
+            runOnUiThread {
+                if (isFinishing) return@runOnUiThread
+                val r = res.getOrNull()
+                when {
+                    res.isFailure -> if (manual) toast("Controllo non riuscito: verifica la connessione")
+                    r == null -> if (manual) MaterialAlertDialogBuilder(this).setTitle("Aggiornamenti")
+                        .setMessage("Non ci sono ancora versioni pubblicate.").setPositiveButton("OK", null).show()
+                    !UpdateLogic.isNewer(r, Updater.installedCode(this)) -> if (manual) MaterialAlertDialogBuilder(this).setTitle("Sei aggiornato")
+                        .setMessage("Hai già l'ultima versione (${Updater.installedName(this)}, build ${Updater.installedCode(this)}).")
+                        .setPositiveButton("OK", null).show()
+                    else -> MaterialAlertDialogBuilder(this).setTitle("Nuova versione: ${r.name}")
+                        .setMessage((r.notes.take(1200).ifBlank { "Miglioramenti e correzioni." }) +
+                            (if (r.size > 0) "\n\nDimensione: %.1f MB".format(r.size / 1048576.0) else ""))
+                        .setPositiveButton("Aggiorna") { _, _ -> downloadUpdate(r) }
+                        .setNegativeButton("Più tardi", null).show()
+                }
+            }
+        }.start()
+    }
+
+    private fun downloadUpdate(r: UpdateLogic.Release) {
+        if (!Updater.canInstall(this)) {
+            MaterialAlertDialogBuilder(this).setTitle("Permesso necessario")
+                .setMessage("Per installare l'aggiornamento Android chiede di consentire a Web Launcher di installare app. Attivalo nella pagina che si apre, poi torna qui e tocca di nuovo «Aggiorna».")
+                .setPositiveButton("Apri impostazioni") { _, _ -> runCatching { startActivity(Updater.installPermissionIntent(this)) } }
+                .setNegativeButton("Annulla", null).show()
+            return
+        }
+        val d = resources.displayMetrics.density
+        val bar = com.google.android.material.progressindicator.LinearProgressIndicator(this).apply { isIndeterminate = true; max = 100 }
+        val label = TextView(this).apply { text = "Download in corso…"; setPadding(0, 0, 0, (8 * d).toInt()) }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding((24 * d).toInt(), (16 * d).toInt(), (24 * d).toInt(), 0)
+            addView(label); addView(bar)
+        }
+        val dlg = MaterialAlertDialogBuilder(this).setTitle("Aggiornamento ${r.name}").setView(box).setCancelable(false).show()
+        Thread {
+            val res = runCatching {
+                Updater.download(this, r) { p -> runOnUiThread { if (p >= 0) { bar.isIndeterminate = false; bar.setProgressCompat(p, true); label.text = "Download $p%" } } }
+            }
+            runOnUiThread {
+                runCatching { dlg.dismiss() }
+                val apk = res.getOrNull()
+                if (apk == null) { toast(res.exceptionOrNull()?.message ?: "Download non riuscito"); return@runOnUiThread }
+                if (Updater.sameSignature(this, apk) == false) {
+                    MaterialAlertDialogBuilder(this).setTitle("Firma diversa")
+                        .setMessage("Questa versione è firmata con una chiave diversa da quella installata: Android chiederà di disinstallare l'app, e i dati andrebbero persi.\n\nPrima fai un «Backup completo» (Impostazioni → Backup), poi disinstalla e installa il file scaricato.")
+                        .setPositiveButton("Backup completo") { _, _ -> showFullBackupMenu() }
+                        .setNegativeButton("Annulla", null).show()
+                } else runCatching { Updater.install(this, apk) }.onFailure { toast("Impossibile avviare l'installazione") }
+            }
+        }.start()
     }
 
     private fun toast(msg: String) { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }

@@ -4,4 +4,5 @@
     <cache-path name="capture" path="capture/" />
     <cache-path name="scan" path="scan/" />
     <files-path name="deadlines" path="deadlines/" />
+    <cache-path name="update" path="update/" />
 </paths>
