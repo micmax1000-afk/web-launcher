@@ -66,7 +66,6 @@
   {"id": "gn_sardegna", "name": "Sardegna (Google News)", "cat": "Sardegna", "url": "https://news.google.com/rss/search?q=Sardegna%20when%3A2d&hl=it&gl=IT&ceid=IT:it"},
   {"id": "gn_cagliari", "name": "Cagliari (Google News)", "cat": "Sardegna", "url": "https://news.google.com/rss/search?q=Cagliari%20when%3A2d&hl=it&gl=IT&ceid=IT:it"},
   {"id": "gn_sassari", "name": "Sassari (Google News)", "cat": "Sardegna", "url": "https://news.google.com/rss/search?q=Sassari%20when%3A2d&hl=it&gl=IT&ceid=IT:it"},
-  {"id": "unionesarda", "name": "L'Unione Sarda", "cat": "Sardegna", "url": "https://www.unionesarda.it/rss", "alt": ["https://www.unionesarda.it/feed"]},
   {"id": "gn_sicilia", "name": "Sicilia (Google News)", "cat": "Sicilia", "url": "https://news.google.com/rss/search?q=Sicilia%20when%3A2d&hl=it&gl=IT&ceid=IT:it"},
   {"id": "gn_palermo", "name": "Palermo (Google News)", "cat": "Sicilia", "url": "https://news.google.com/rss/search?q=Palermo%20when%3A2d&hl=it&gl=IT&ceid=IT:it"},
   {"id": "gn_catania", "name": "Catania (Google News)", "cat": "Sicilia", "url": "https://news.google.com/rss/search?q=Catania%20when%3A2d&hl=it&gl=IT&ceid=IT:it"},
