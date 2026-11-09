@@ -8177,7 +8177,7 @@ class MainActivity : AppCompatActivity() {
                     setOnClickListener {
                         val f = java.text.SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.ITALIAN)
                         val report = Health.TYPES.entries.joinToString("\n\n") { (k, v) ->
-                            val ms = Health.load(this).filter { it.type == k }.sortedBy { it.time }.takeLast(60)
+                            val ms = Health.load(this@MainActivity).filter { it.type == k }.sortedBy { it.time }.takeLast(60)
                             if (ms.isEmpty()) "" else v.first.substringAfter(' ') + ":\n" + ms.joinToString("\n") { f.format(java.util.Date(it.time)) + "  " + Health.fmt(it) + if (it.note.isNotBlank()) " (${it.note})" else "" }
                         }.trim()
                         startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, report); putExtra(Intent.EXTRA_SUBJECT, "Misurazioni") }, "Condividi"))
