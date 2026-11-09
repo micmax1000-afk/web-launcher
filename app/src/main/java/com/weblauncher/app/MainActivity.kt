@@ -934,6 +934,9 @@ class MainActivity : AppCompatActivity() {
 
     fun openShortcut(intent: Intent?) {
         if (intent != null && handleShare(intent)) { intent.action = null; return }
+        if (intent?.getBooleanExtra(SelfTest.EXTRA, false) == true) {
+            intent.removeExtra(SelfTest.EXTRA); io.execute { SelfTest.run(this) }; return
+        }
         if (intent?.getBooleanExtra(Updater.EXTRA_UPDATE, false) == true) {
             intent.removeExtra(Updater.EXTRA_UPDATE); checkForUpdate(manual = true); return
         }
