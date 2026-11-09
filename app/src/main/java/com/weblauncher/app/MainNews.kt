@@ -77,7 +77,7 @@ internal fun MainActivity.setupNews() {
     refresh.setOnRefreshListener { refreshNews() }
     refresh.setColorSchemeColors(com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt()))
     findViewById<View>(R.id.btnNewsSources).setOnClickListener { showNewsSources() }
-    findViewById<View>(R.id.btnNewsBrief).setOnClickListener { newsBriefing() }
+    findViewById<View>(R.id.btnNewsBrief).setOnClickListener { newsBriefingChoice() }
     val palette = AppRepository.palette(this)
     findViewById<View>(R.id.newsPanel).setBackgroundColor(palette.bg)
     findViewById<TextView>(R.id.newsHeading).setTextColor(palette.text)

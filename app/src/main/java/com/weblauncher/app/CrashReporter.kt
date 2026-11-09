@@ -31,5 +31,8 @@ object CrashReporter {
 
     fun pending(c: Context): String? = file(c).takeIf { it.exists() }?.readText()
 
-    fun clear(c: Context) { file(c).delete() }
+    /** Keeps a copy for «Segnala un problema» even after the popup was dismissed. */
+    fun clear(c: Context) { runCatching { file(c).copyTo(File(c.filesDir, "last_error_seen.txt"), overwrite = true) }; file(c).delete() }
+
+    fun last(c: Context): String? = pending(c) ?: File(c.filesDir, "last_error_seen.txt").takeIf { it.exists() }?.readText()
 }

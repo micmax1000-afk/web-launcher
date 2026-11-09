@@ -239,10 +239,10 @@ internal fun MainActivity.showReader(doc: ReaderDoc, saved: ReadLaterItem? = nul
     barBtn("◐", "Colori") { theme = (theme + 1) % 3; prefs.edit().putInt("reader_theme", theme).apply(); applyStyle() }
     val listenBtn = barBtn("🔊", "Ascolta") { b ->
         if (speaking) { tts?.stop(); speaking = false; b.text = "🔊" }
-        else { speak(doc.title + ".\n" + doc.text, 1f); speaking = true; b.text = "⏹" }
+        else { speak(doc.title + ".\n" + doc.text, prefs.getFloat("reader_rate", 1f)); speaking = true; b.text = "⏹" }
     }
     barBtn("⋮", "Altro") { b ->
-        val opts = mutableListOf("✨ Riassumi", "✨ Traduci in italiano", "Condividi")
+        val opts = mutableListOf("✨ Riassumi", "✨ Traduci in italiano", "🔊 Velocità di lettura", "Condividi")
         if (saved == null) opts.add(0, "🔖 Leggi dopo") else opts.add("Apri l'originale")
         MaterialAlertDialogBuilder(this).setItems(opts.toTypedArray()) { _, w ->
             when (opts[w]) {
@@ -254,6 +254,15 @@ internal fun MainActivity.showReader(doc: ReaderDoc, saved: ReadLaterItem? = nul
                     type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "${doc.title}\n${doc.url}")
                 }, "Condividi"))
                 "Apri l'originale" -> { dialog.dismiss(); openInBrowser(doc.url) }
+                "🔊 Velocità di lettura" -> {
+                    val rates = floatArrayOf(0.8f, 1f, 1.2f, 1.5f, 1.8f)
+                    val cur = rates.indexOfFirst { it == prefs.getFloat("reader_rate", 1f) }.coerceAtLeast(1)
+                    MaterialAlertDialogBuilder(this).setTitle("Velocità di lettura")
+                        .setSingleChoiceItems(arrayOf("Lenta", "Normale", "Un po' veloce", "Veloce", "Molto veloce"), cur) { dl, w ->
+                            prefs.edit().putFloat("reader_rate", rates[w]).apply(); dl.dismiss()
+                            if (speaking) { speak(doc.title + ".\n" + doc.text, rates[w]) }
+                        }.show()
+                }
             }
         }.show()
     }
@@ -305,6 +314,8 @@ internal fun MainActivity.showReadLaterPage() {
         fun render() {
             body.removeAllViews()
             val list = readLater.load()
+            val offline = loadOfflinePages().size
+            if (offline > 0) listRow(body, "📥 Pagine complete offline", "$offline pagine salvate con immagini", onClick = { showOfflinePages() })
             if (list.isEmpty()) {
                 emptyLabel(body, "Nessun articolo salvato.\nNel browser: menu ⋮ → 🔖 Leggi dopo")
                 return

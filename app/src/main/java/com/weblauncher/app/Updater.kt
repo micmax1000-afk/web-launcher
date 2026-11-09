@@ -44,6 +44,15 @@ object UpdateLogic {
     }.getOrNull()
 
     fun isNewer(release: Release?, installedCode: Long) = release != null && release.code > installedCode
+
+    /** From GitHub's /releases list: the newest build (prereleases included only when [beta]). */
+    fun pickBest(jsonArray: String, beta: Boolean): Release? = runCatching {
+        JsonParser.parseString(jsonArray).asJsonArray.map { it.asJsonObject }
+            .filter { o -> beta || o.get("prerelease")?.asBoolean != true }
+            .filter { o -> o.get("draft")?.asBoolean != true }
+            .mapNotNull { o -> parseRelease(o.toString()) }
+            .maxByOrNull { it.code }
+    }.getOrNull()
 }
 
 object Updater {
@@ -65,10 +74,12 @@ object Updater {
         c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("auto", on).apply(); schedule(c)
     }
     fun lastCheck(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong("last", 0L)
+    fun beta(c: Context) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("beta", false)
+    fun setBeta(c: Context, on: Boolean) = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("beta", on).apply()
 
-    /** Network call: run off the main thread. */
+    /** Network call: run off the main thread. Stable channel, or every build with the test channel on. */
     fun fetchLatest(c: Context): UpdateLogic.Release? {
-        val conn = java.net.URL("https://api.github.com/repos/$REPO/releases/latest").openConnection() as java.net.HttpURLConnection
+        val conn = java.net.URL("https://api.github.com/repos/$REPO/releases?per_page=15").openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 10000; conn.readTimeout = 15000
         conn.setRequestProperty("Accept", "application/vnd.github+json")
         conn.setRequestProperty("User-Agent", "WebLauncher-Updater")
@@ -76,7 +87,7 @@ object Updater {
             if (conn.responseCode == 404) return null
             val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
             c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong("last", System.currentTimeMillis()).apply()
-            return UpdateLogic.parseRelease(body)
+            return UpdateLogic.pickBest(body, beta(c))
         } finally { conn.disconnect() }
     }
 
@@ -167,6 +178,41 @@ object Updater {
     }
 
     const val EXTRA_UPDATE = "wl_update"
+
+    /** Notes of the version being installed, shown once after the update («Novità»). */
+    fun rememberNotes(c: Context, r: UpdateLogic.Release) =
+        c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt("notesCode", r.code).putString("notes", r.notes).putString("notesName", r.name).apply()
+
+    /** Returns (name, notes) if the app was just updated and the news were not shown yet. */
+    fun pendingNews(c: Context): Pair<String, String>? {
+        val p = c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val now = installedCode(c).toInt()
+        val seen = p.getInt("seenCode", 0)
+        p.edit().putInt("seenCode", now).apply()
+        if (seen == 0 || seen >= now) return null
+        val notes = p.getString("notes", null)?.takeIf { p.getInt("notesCode", 0) == now && it.isNotBlank() } ?: return null
+        return (p.getString("notesName", null) ?: installedName(c)) to notes
+    }
+
+    /** Safety copy before installing: to the nightly backup file if set, else into Downloads. Returns where. */
+    fun backupBeforeUpdate(c: Context): String? = runCatching {
+        val auto = c.getSharedPreferences("wl_sync", Context.MODE_PRIVATE).getString("fullUri", null)
+        if (auto != null) {
+            val u = Uri.parse(auto)
+            (c.contentResolver.openOutputStream(u, "wt") ?: c.contentResolver.openOutputStream(u))!!.use { FullBackup.write(c, it) }
+            c.getSharedPreferences("wl_sync", Context.MODE_PRIVATE).edit().putLong("fullLast", System.currentTimeMillis()).apply()
+            "il file del backup automatico"
+        } else if (Build.VERSION.SDK_INT >= 29) {
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, "web-launcher-prima-aggiornamento-" +
+                    java.text.SimpleDateFormat("yyyyMMdd-HHmm", java.util.Locale.ROOT).format(java.util.Date()) + ".zip")
+                put(android.provider.MediaStore.Downloads.MIME_TYPE, "application/zip")
+            }
+            val uri = c.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)!!
+            c.contentResolver.openOutputStream(uri)!!.use { FullBackup.write(c, it) }
+            "la cartella Download"
+        } else null
+    }.getOrNull()
 }
 
 class UpdateWorker(context: Context, params: WorkerParameters) : Worker(context, params) {

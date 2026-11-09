@@ -193,6 +193,11 @@ internal fun MainActivity.renderSettings() {
         else -> "Blu"
     }
     row("Colore", value = accentLabel) { showAccentPicker() }
+    row("🍪 Rifiuta i banner dei cookie", "Tocca «Rifiuta» al posto tuo, quando il sito lo permette", switch = CookieBanners.enabled(this)) {
+        CookieBanners.setEnabled(this, !CookieBanners.enabled(this)); setupCookieBanners(); renderSettings()
+    }
+    row("🛡 Report privacy", "Pubblicità e tracciatori bloccati, sito per sito") { showPrivacyReport() }
+    row("🧹 Siti da dimenticare", "Cookie cancellati alla chiusura: ${SiteCookies.list(this).size} siti") { showForgetSites() }
     row("Siti in modalità scura", "Scurisce i siti chiari quando il tema è scuro", switch = repo.darkSites()) {
         repo.setDarkSites(!repo.darkSites())
         applyDarkSites()
@@ -305,6 +310,10 @@ internal fun MainActivity.renderSettings() {
     row("Avvisami delle nuove versioni", "Controllo automatico due volte al giorno", switch = Updater.autoCheck(this)) {
         Updater.setAutoCheck(this, !Updater.autoCheck(this)); if (Updater.autoCheck(this)) ensureNotificationPermission(); renderSettings()
     }
+    row("🧪 Ricevi le versioni di prova", "Novità prima degli altri, ma possono avere qualche errore", switch = Updater.beta(this)) {
+        Updater.setBeta(this, !Updater.beta(this)); renderSettings()
+    }
+    row("🐞 Segnala un problema", "Con versione, telefono e ultimo errore") { reportProblem() }
 
     section("HOME")
     row("🌦 Meteo in home", if (weatherPrefs.getBoolean("hidden", false)) "Nascosto" else weatherPrefs.getString("city", null) ?: "Scegli la città") {

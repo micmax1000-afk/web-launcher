@@ -14,7 +14,9 @@ android {
         // Su GitHub il numero di build cresce a ogni compilazione (1000 + numero dell'esecuzione),
         // cosi' l'app riconosce da sola le versioni piu' nuove.
         versionCode = System.getenv("WL_VERSION_CODE")?.toIntOrNull() ?: 45
-        versionName = "7.3.0"
+        versionName = "7.4.0"
+        // solo italiano e inglese: le librerie includono testi in ~80 lingue che l'app non usa
+        resourceConfigurations += listOf("it", "en")
     }
 
     // Firma fissa: la chiave arriva dai secret di GitHub (WL_KEYSTORE_BASE64,
@@ -43,7 +45,10 @@ android {
             )
         }
         debug {
-            isMinifyEnabled = false
+            // R8: toglie il codice inutilizzato delle librerie (APK molto più leggero)
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if (fixedSigning != null) signingConfig = fixedSigning
         }
     }

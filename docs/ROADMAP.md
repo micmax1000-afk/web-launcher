@@ -1,6 +1,6 @@
 # Web Launcher — Scaletta delle idee
 
-Stato: **nulla di questo è ancora sviluppato**. Le priorità sono indicative: P0 = da fare prima,
+Stato: ✅ = fatto. Le priorità sono indicative: P0 = da fare prima,
 P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate o sconsigliate.
 
 ## P0 — Base tecnica (prima di tutto)
@@ -8,7 +8,7 @@ P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate 
 |---|------|--------|
 | 1 | ✅ **Firma fissa dell'APK** (7.2.2, chiave nei secret GitHub) | Oggi ogni APK compilato su GitHub può avere una firma diversa: Android rifiuta l'aggiornamento e obbliga a disinstallare, perdendo i dati. Con una chiave fissa gli aggiornamenti si installano sopra. |
 | 2 | ✅ **Aggiornamenti dall'app** (7.3.0) | Pagina "Versioni" su GitHub Releases e avviso nell'app "È disponibile la 7.3: aggiorna". |
-| 3 | **Pull request verso `main`** | Tutto il lavoro è sul branch di sviluppo. |
+| 3 | ✅ **Pull request verso `main`** (PR #1 unita) | Tutto il lavoro è sul branch di sviluppo. |
 | 4 | ✅ **Dividere il codice in moduli** (MainActivity da 9.600 a 1.900 righe + 20 file per area) | MainActivity è molto grande: dividerla riduce errori e rende le modifiche più sicure. |
 | 5 | ✅ **Test automatici** (25 test, già trovati e corretti 2 errori) di base (promemoria, calcoli, backup) eseguiti su GitHub a ogni modifica. |
 
@@ -80,6 +80,33 @@ P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate 
 | 60 | Accessibilità | Compatibilità completa con TalkBack |
 | 61 | Lingua | App anche in inglese |
 
+## Fatto nella 7.4 (idee 62–77)
+| # | Cosa | Note |
+|---|------|------|
+| 62 | ✅ Novità dopo l'aggiornamento | Finestra al primo avvio della nuova versione |
+| 63 | ✅ Backup automatico prima di aggiornare | Sul file del backup notturno, o nella cartella Download |
+| 64 | ✅ Canale «versioni di prova» | Impostazioni → Aggiornamenti; le prove arrivano dai rami di sviluppo |
+| 65 | ✅ Segnala un problema | Con versione, telefono e ultimo errore; apre GitHub o condivide |
+| 66 | ✅ Prova su telefono virtuale | A ogni compilazione: schermate + 600 tocchi casuali; pubblica solo se non ci sono crash |
+| 67 | ✅ APK più leggero | Da ~12,8 a ~6,5 MB (R8 + solo italiano e inglese) |
+| 68 | ✅ Rifiuto automatico dei banner cookie | OneTrust, Didomi, iubenda, Quantcast, Cookiebot… e banner generici |
+| 69 | ✅ Report privacy | Tracciatori bloccati oggi/7 giorni/totale, per sito e per tracciatore |
+| 70 | ✅ Siti da dimenticare | Cookie e dati cancellati alla chiusura della scheda o dell'app |
+| 71 | ✅ Pagine complete offline | Con immagini, da menu ⋮; si aprono senza rete da «Leggi dopo» |
+| 72 | ✅ Leggi ad alta voce | C'era già; aggiunta la velocità di lettura |
+| 73 | ✅ Bollette in PDF | Condividi il PDF → «È una bolletta»: importo, scadenza, promemoria |
+| 74 | ✅ Scontrino da foto | C'era già (Spese → scontrino) |
+| 75 | ✅ Scadenze dei documenti da foto | C'era già (Scadenze → Fotografa il documento) |
+| 76 | ✅ Notiziario audio | Notizie → «Il punto» → 🎧 Ascolta |
+| 77 | ✅ Menu della settimana | Ricette → 📅 Menu: una lista della spesa unica, ingredienti uniti |
+
+## Viaggi
+| # | Cosa | Note |
+|---|------|------|
+| 83 | ✅ Cerca voli e hotel (Strumenti → ✈️ Viaggi) | Una pagina con partenza, arrivo, date e persone che apre già compilati Google Voli, Skyscanner, Booking, Airbnb, Trenitalia e Italo |
+| 84 | ❌ Avviso prezzo dei voli (non richiesto) | Usare gli avvisi di Google Voli (gratuiti); un controllo prezzi nostro richiederebbe API a pagamento |
+| 85 | ❌ Cartella del viaggio (non richiesta) | Biglietti, prenotazioni, indirizzi e documenti di un viaggio insieme, anche offline |
+
 ## Scartate o sconsigliate
 | Idea | Motivo |
 |------|--------|
@@ -90,3 +117,4 @@ P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate 
 | Download dei video di YouTube | Viola i termini di YouTube e il diritto d'autore |
 | Notifiche immediate di social ed email | Non possibili dal browser interno di Android |
 | Sostituire WhatsApp, app bancarie, PosteID, IO | Richiedono le app ufficiali |
+| Comodità (78–82): promemoria per luogo, avviso pioggia, timer, widget Oggi, condividi parcheggio | Non interessano per ora |
