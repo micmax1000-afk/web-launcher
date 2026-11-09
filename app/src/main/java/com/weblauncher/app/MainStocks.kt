@@ -80,6 +80,25 @@ internal fun MainActivity.showStocksPage() {
                 return
             }
             val alerts = Stocks.alerts(this).filter { !it.done }
+            val holdings = Stocks.holdings(this)
+            val summary = TextView(this).apply { textSize = 15f; setTextColor(palette.text); setPadding(dp(14), dp(10), dp(14), dp(10)) }
+            fun refreshSummary() {
+                val totals = Stocks.portfolio(holdings, Stocks.quotes(this@showStocksPage))
+                summary.visibility = if (totals.isEmpty()) View.GONE else View.VISIBLE
+                summary.text = android.text.SpannableStringBuilder("💼 Il mio portafoglio\n").apply {
+                    totals.forEach { t ->
+                        append("Valore ${Stocks.fmtPrice(t.value, t.currency)}  ")
+                        val start = length
+                        append("${if (t.gain >= 0) "+" else "−"}${Stocks.fmtPrice(kotlin.math.abs(t.gain), t.currency)} (${Stocks.fmtPct(t.gainPct)})\n")
+                        setSpan(android.text.style.ForegroundColorSpan(if (t.gain >= 0) UP else DOWN), start, length, 0)
+                    }
+                }.trimEnd()
+            }
+            if (holdings.isNotEmpty()) {
+                summary.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 16 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
+                body.addView(summary, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(6), dp(4), dp(6), dp(10)) })
+                refreshSummary()
+            }
             list.forEach { a ->
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
@@ -122,6 +141,8 @@ internal fun MainActivity.showStocksPage() {
                     val ch = runCatching { Stocks.chart(a.symbol) }.getOrNull()
                     runOnUiThread {
                         if (ch == null) { price.text = "n.d."; return@runOnUiThread }
+                        Stocks.remember(this@showStocksPage, a.symbol, ch)
+                        if (holdings.any { it.symbol == a.symbol }) refreshSummary()
                         val col = if (ch.change >= 0) UP else DOWN
                         price.text = Stocks.fmtPrice(ch.price, ch.currency)
                         change.text = Stocks.fmtPct(ch.changePct)
@@ -217,6 +238,11 @@ internal fun MainActivity.showStockDetail(a: Stocks.Asset) {
         load("1G")
 
         sectionLabel(body, "AZIONI")
+        val h = Stocks.holdings(this).firstOrNull { it.symbol == a.symbol }
+        listRow(body, if (h == null) "💼 Ho queste azioni" else "💼 Le mie quote: ${Stocks.fmtNum(h.qty)} a ${Stocks.fmtPrice(h.cost)}",
+            if (h == null) "Quantità e prezzo medio: calcola guadagno o perdita" else
+                Stocks.quotes(this)[a.symbol]?.let { q -> val g = h.qty * (q.price - h.cost); "Ora vale ${Stocks.fmtPrice(h.qty * q.price, q.currency)} · ${if (g >= 0) "+" else "−"}${Stocks.fmtPrice(kotlin.math.abs(g), q.currency)}" } ?: "Tocca per modificare",
+            onClick = { holdingDialog(a, h) { dialog.dismiss(); showStockDetail(a) } })
         listRow(body, "🔔 Avvisami a un prezzo", "Notifica quando sale sopra o scende sotto un valore", onClick = { stockAlertDialog(a, last) })
         listRow(body, "✨ Perché si è mosso oggi?", "L'AI legge le ultime notizie", onClick = { whyStockMoved(a, last) })
         listRow(body, "📰 Notizie", "Google News su ${a.name}", onClick = {
@@ -270,4 +296,22 @@ internal fun MainActivity.whyStockMoved(a: Stocks.Asset, ch: Stocks.Chart?) {
                     "Se i titoli non bastano a spiegarlo dillo chiaramente. Non dare consigli di investimento.", false)
         }
     }
+}
+
+internal fun MainActivity.holdingDialog(a: Stocks.Asset, h: Stocks.Holding?, done: () -> Unit) {
+    val d = resources.displayMetrics.density
+    val qty = EditText(this).apply { hint = "Quantità (es. 120)"; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL; h?.let { setText(Stocks.fmtNum(it.qty)) } }
+    val cost = EditText(this).apply { hint = "Prezzo medio di acquisto"; inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL; h?.let { setText(Stocks.fmtNum(it.cost)) } }
+    val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding((20 * d).toInt(), (8 * d).toInt(), (20 * d).toInt(), 0); addView(qty); addView(cost) }
+    val b = MaterialAlertDialogBuilder(this).setTitle("💼 ${a.name}").setView(box)
+        .setPositiveButton("Salva") { _, _ ->
+            val q = Calc.num(qty.text.toString()); val c = Calc.num(cost.text.toString())
+            if (q == null || q <= 0 || c == null || c < 0) { toast("Scrivi quantità e prezzo"); return@setPositiveButton }
+            Stocks.saveHoldings(this, Stocks.holdings(this).filter { it.symbol != a.symbol } + Stocks.Holding(a.symbol, a.name, q, c))
+            if (Stocks.watch(this).none { it.symbol == a.symbol }) Stocks.saveWatch(this, Stocks.watch(this) + a)
+            done()
+        }
+        .setNegativeButton("Annulla", null)
+    if (h != null) b.setNeutralButton("Non le ho più") { _, _ -> Stocks.saveHoldings(this, Stocks.holdings(this).filter { it.symbol != a.symbol }); done() }
+    b.show()
 }

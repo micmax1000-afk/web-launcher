@@ -9,6 +9,8 @@ import android.util.Log
 object SelfTest {
     const val EXTRA = "wl_selftest"
     const val TAG = "WL_SELFTEST"
+    const val EXTRA_THEME = "wl_theme_check"
+    const val EXTRA_DIALOG = "wl_dialog_check"
 
     fun run(activity: MainActivity): Boolean {
         val checks = listOf<Pair<String, () -> Any?>>(
@@ -27,6 +29,9 @@ object SelfTest {
             "anti-phishing" to { PhishingGuard.check("https://poste-verifica-accesso.top/login") },
             "domanda" to { activity.looksLikeQuestion("perché il cielo è blu") },
             "notizie borsa" to { Stocks.parseNewsTitles("<rss><item><title><![CDATA[Eni sale]]></title></item></rss>") },
+            "calendario a voce" to { CalendarVoice.clean("aggiungi al calendario cena da Luca sabato alle 20") },
+            "compleanni" to { Birthdays.parseDate("--03-14") },
+            "ricorrenti" to { Finance.dueMonths(202601, 5, java.util.Calendar.getInstance()) },
             "aggiornamenti" to { UpdateLogic.codeFromTag("v7.4.1-b1200") }
         )
         var ok = true

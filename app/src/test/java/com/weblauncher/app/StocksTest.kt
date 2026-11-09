@@ -57,4 +57,24 @@ class StocksTest {
         assertEquals("+3,57%", Stocks.fmtPct(3.5714))
         assertEquals("-1,20%", Stocks.fmtPct(-1.2))
     }
+
+    @Test fun portafoglio() {
+        val h = listOf(Stocks.Holding("ENI.MI", "Eni", 100.0, 13.0), Stocks.Holding("ISP.MI", "Intesa", 200.0, 4.0),
+            Stocks.Holding("AAPL", "Apple", 10.0, 150.0), Stocks.Holding("XXX", "Senza prezzo", 5.0, 1.0))
+        val q = mapOf("ENI.MI" to Stocks.Quote(14.5, 1.0, "EUR", 0), "ISP.MI" to Stocks.Quote(3.5, -1.0, "EUR", 0),
+            "AAPL" to Stocks.Quote(200.0, 0.5, "USD", 0))
+        val t = Stocks.portfolio(h, q)
+        assertEquals(listOf("EUR", "USD"), t.map { it.currency })          // valute separate, la più grande prima
+        val eur = t[0]
+        assertEquals(2150.0, eur.value, 1e-9)                               // 100*14,5 + 200*3,5
+        assertEquals(2100.0, eur.invested, 1e-9)
+        assertEquals(50.0, eur.gain, 1e-9)
+        assertEquals(500.0, t[1].gain, 1e-9)
+        assertTrue(Stocks.portfolio(emptyList(), q).isEmpty())
+    }
+
+    @Test fun rigaDelBuongiorno() {
+        assertEquals("📈 FTSE MIB +0,40% · Eni -1,25%", Stocks.briefLine(listOf("FTSE MIB" to 0.4, "Eni" to -1.25)))
+        assertNull(Stocks.briefLine(emptyList()))
+    }
 }

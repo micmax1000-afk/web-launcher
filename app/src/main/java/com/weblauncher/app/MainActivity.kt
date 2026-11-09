@@ -321,7 +321,7 @@ class MainActivity : AppCompatActivity() {
         applyHomeLook()
         renderWeather()
         renderParkBar()
-        io.execute { runCatching { Deadlines.advance(this) } }
+        io.execute { runCatching { Deadlines.advance(this) }; runCatching { Finance.applyRecurring(this) } }
         runCatching { AlertsWorker.schedule(this) }
         runCatching { FullBackup.schedule(this) }
         runCatching { Updater.schedule(this) }
@@ -942,6 +942,19 @@ class MainActivity : AppCompatActivity() {
 
     fun openShortcut(intent: Intent?) {
         if (intent != null && handleShare(intent)) { intent.action = null; return }
+        // prova automatica del tema (telefono virtuale): imposta un tema, poi apre una finestra di prova
+        intent?.getStringExtra(SelfTest.EXTRA_THEME)?.let { mode ->
+            intent.removeExtra(SelfTest.EXTRA_THEME)
+            if (mode in setOf("light", "dark", "system")) { repo.setThemeMode(mode); AppRepository.applySavedTheme(this) }
+            return
+        }
+        if (intent?.getBooleanExtra(SelfTest.EXTRA_DIALOG, false) == true) {
+            intent.removeExtra(SelfTest.EXTRA_DIALOG)
+            MaterialAlertDialogBuilder(this).setTitle("Prova del tema")
+                .setMessage("Questa finestra deve avere i colori del tema scelto nell'app.\n".repeat(8))
+                .setPositiveButton("OK", null).show()
+            return
+        }
         if (intent?.getBooleanExtra(SelfTest.EXTRA, false) == true) {
             intent.removeExtra(SelfTest.EXTRA); io.execute { SelfTest.run(this) }; return
         }
@@ -1535,6 +1548,8 @@ class MainActivity : AppCompatActivity() {
     var ytScript: androidx.webkit.ScriptHandler? = null
     var cookieScript: androidx.webkit.ScriptHandler? = null
     @Volatile var pageHost: String? = null
+    /** Tools page tiles by group: (group, [(label, emoji)]) — filled by renderTools, used by customizeTools. */
+    var toolsCatalog: List<Pair<String, List<Pair<String, String>>>> = emptyList()
     var ytPlaying = false
     var ytTranscriptCallback: ((org.json.JSONObject) -> Unit)? = null
     var inPip = false
@@ -1738,6 +1753,7 @@ class MainActivity : AppCompatActivity() {
 
     var expenseMonth = java.util.Calendar.getInstance()
     var expensesRefresh: (() -> Unit)? = null
+    var financeRefresh: (() -> Unit)? = null
     var scanPurpose: String? = null
 
     // ======================= Parking & saved places =======================
@@ -1779,7 +1795,8 @@ class MainActivity : AppCompatActivity() {
     var pendingContactCommand: String? = null
     val contactsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         val cmd = pendingContactCommand; pendingContactCommand = null
-        if (ok && cmd != null) systemVoiceCommand(cmd) else if (!ok) toast("Serve il permesso contatti per chiamare per nome")
+        if (ok && cmd == "__birthdays__") showBirthdaysPage()
+        else if (ok && cmd != null) systemVoiceCommand(cmd) else if (!ok) toast("Serve il permesso contatti")
     }
     var torchState = false
 

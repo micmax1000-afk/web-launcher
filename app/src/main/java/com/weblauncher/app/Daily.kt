@@ -94,6 +94,8 @@ object Brief {
         val news = runCatching { NewsRepository(c).cached().first }.getOrNull().orEmpty()
             .sortedWith(compareByDescending<NewsItem> { (it.also ?: emptyList()).size }.thenByDescending { it.time }).take(3)
         if (news.isNotEmpty()) { lines += "📰 Notizie:"; news.forEach { lines += "• ${it.title}" } }
+        runCatching { Birthdays.upcoming(c, 0) }.getOrNull()?.forEach { (p, _) -> lines += "🎂 Oggi compie gli anni ${p.name}" + (p.turning(Calendar.getInstance())?.let { " ($it)" } ?: "") }
+        runCatching { Stocks.briefText(c) }.getOrNull()?.let { lines += it }
         Steps.yesterday(c).takeIf { it > 0 }?.let { lines += "👟 Ieri hai fatto ${String.format(Locale.ITALIAN, "%,d", it)} passi." }
         return lines.joinToString("\n")
     }

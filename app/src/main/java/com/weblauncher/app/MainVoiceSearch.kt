@@ -155,6 +155,7 @@ internal fun MainActivity.systemVoiceCommand(raw: String): Boolean {
         runCatching { startActivity(i); toast("⏱ Timer di ${fmtTime(secs * 1000L)}") }.onFailure { toast("L'orologio del telefono non accetta timer") }
         return true
     }
+    calendarCommand(raw, t)?.let { return it }
     if (Regex("\\b(accendi|spegni|attiva|disattiva)\\b.*\\btorcia\\b|^torcia$").containsMatchIn(t)) {
         val on = !Regex("\\b(spegni|disattiva)\\b").containsMatchIn(t) && !(t == "torcia" && torchState)
         val cm = getSystemService(CAMERA_SERVICE) as android.hardware.camera2.CameraManager
@@ -302,4 +303,23 @@ internal fun MainActivity.updateUnifiedSearch(q: String) {
             box.isVisible = true
         }
     }.start()
+}
+
+/**
+ * «metti dentista martedì alle 10», «aggiungi al calendario cena da Luca sabato alle 20»,
+ * «appuntamento dal commercialista il 12/12 alle 15»: opens the phone's calendar already filled in.
+ */
+internal fun MainActivity.calendarCommand(raw: String, t: String): Boolean? {
+    val (cleaned, hasCal) = CalendarVoice.clean(t) ?: return null
+    val p = Reminders.parse(cleaned) ?: return if (hasCal) { toast("Dimmi anche giorno e ora, es. «martedì alle 10»"); true } else null
+    val title = p.text.ifBlank { "Appuntamento" }
+    val i = Intent(Intent.ACTION_INSERT).setData(android.provider.CalendarContract.Events.CONTENT_URI)
+        .putExtra(android.provider.CalendarContract.Events.TITLE, title)
+        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME, p.at)
+        .putExtra(android.provider.CalendarContract.EXTRA_EVENT_END_TIME, p.at + 3_600_000L)
+    return runCatching {
+        startActivity(i)
+        toast("📅 ${title} · " + java.text.SimpleDateFormat("EEE d MMM HH:mm", Locale.ITALIAN).format(java.util.Date(p.at)) + ": controlla e salva")
+        true
+    }.getOrElse { toast("Nessuna app calendario trovata"); true }
 }

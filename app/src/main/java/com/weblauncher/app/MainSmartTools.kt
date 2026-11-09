@@ -220,13 +220,17 @@ internal fun MainActivity.showRemindersPage() {
         val d = resources.displayMetrics.density
         val et = TextInputEditText(this).apply { hint = "Es. domani alle 9 chiamare il dentista\noppure: ogni giorno alle 8 la pastiglia" }
         var rep: String? = null
-        val chips = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true; setPadding(0, (10 * d).toInt(), 0, 0) }
+        // una sola riga che scorre: niente pulsanti ammassati su più righe
+        val chips = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true; isSingleLine = true; isSelectionRequired = true }
+        val chipScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false; setPadding(0, (10 * d).toInt(), 0, 0); addView(chips)
+        }
         listOf(null to "Una volta", "day" to "Ogni giorno", "weekdays" to "Lun–ven", "week" to "Ogni settimana", "month" to "Ogni mese").forEach { (k, l) ->
             chips.addView(com.google.android.material.chip.Chip(this).apply { text = l; isCheckable = true; isChecked = k == null; setOnClickListener { rep = k } })
         }
         val box = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL; setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0)
-            addView(et); addView(chips)
+            addView(et); addView(chipScroll)
         }
         MaterialAlertDialogBuilder(this).setTitle("Nuovo promemoria").setView(box)
             .setPositiveButton("Crea") { _, _ ->

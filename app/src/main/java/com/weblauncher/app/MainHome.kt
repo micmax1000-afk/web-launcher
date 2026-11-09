@@ -1,5 +1,7 @@
 package com.weblauncher.app
 
+import android.content.Context.MODE_PRIVATE
+
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
@@ -86,8 +88,18 @@ internal fun MainActivity.renderTools() {
         contentDescription = "Impostazioni"
         setOnClickListener { showTab(TAB_SETTINGS) }
     })
+    header.addView(android.widget.ImageButton(this).apply {
+        setImageResource(android.R.drawable.ic_menu_edit); setColorFilter(palette.text); background = null
+        setPadding(dp(12), dp(12), dp(12), dp(12)); scaleType = ImageView.ScaleType.FIT_CENTER
+        layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
+        contentDescription = "Personalizza"
+        setOnClickListener { customizeTools() }
+    }, 1)
     list.addView(header)
-    fun group(title: String, items: List<Triple<String, String, () -> Unit>>) {
+    val groups = mutableListOf<Pair<String, List<Triple<String, String, () -> Unit>>>>()
+    fun group(title: String, items: List<Triple<String, String, () -> Unit>>) { groups += title to items }
+    fun renderGroup(title: String, items: List<Triple<String, String, () -> Unit>>) {
+        if (items.isEmpty()) return
         sectionLabel(list, title)
         val grid = android.widget.GridLayout(this).apply { columnCount = 4 }
         items.forEach { (emoji, label, action) ->
@@ -127,6 +139,9 @@ internal fun MainActivity.renderTools() {
         Triple("❤️", "Salute") { showHealthPage() },
         Triple("🔔", "Avvisi") { showAlertsPage() },
         Triple("💰", "Spese") { showExpensesPage() },
+        Triple("💼", "Finanze") { showFinancePage() },
+        Triple("🧠", "Chiedi ai tuoi dati") { askMyData() },
+        Triple("🎂", "Compleanni") { showBirthdaysPage() },
         Triple("📆", "Scadenze") { showDeadlinesPage(Deadlines.DEADLINE) },
         Triple("🔁", "Abbonamenti") { showDeadlinesPage(Deadlines.SUBSCRIPTION) },
         Triple("🧾", "Garanzie") { showDeadlinesPage(Deadlines.WARRANTY) },
@@ -161,6 +176,16 @@ internal fun MainActivity.renderTools() {
         Triple("✨", "Mia AI") { openMiaAi() },
         Triple("⚙", "Impostazioni") { showTab(TAB_SETTINGS) }
     ))
+    // personalizzazione: tasselli nascosti e preferiti in alto
+    val tp = getSharedPreferences("wl_tools", MODE_PRIVATE)
+    val hidden = tp.getStringSet("hidden", emptySet()).orEmpty()
+    val favs = tp.getString("favs", "").orEmpty().split("|").filter { it.isNotBlank() }
+    val all = groups.flatMap { it.second }
+    toolsCatalog = groups.map { g -> g.first to g.second.map { it.second to it.first } }
+    val favItems = favs.mapNotNull { f -> all.firstOrNull { it.second == f } }
+    renderGroup("⭐ PREFERITI", favItems)
+    groups.forEach { (t, items) -> renderGroup(t, items.filter { it.second !in hidden && it.second !in favs }) }
+    if (hidden.isNotEmpty()) emptyLabel(list, "${hidden.size} strumenti nascosti · tocca ✏️ in alto per mostrarli")
 }
 
 internal fun MainActivity.applyHomeLook() {
@@ -263,4 +288,38 @@ internal fun MainActivity.capturePhoto(target: java.io.File, done: (java.io.File
     captureTarget = target; captureDone = done
     if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchCamera(target)
     else cameraPermission.launch(Manifest.permission.CAMERA)
+}
+
+/** ✏️ in Strumenti: show/hide tiles and choose the favourites shown first. */
+internal fun MainActivity.customizeTools() {
+    val tp = getSharedPreferences("wl_tools", MODE_PRIVATE)
+    val all = toolsCatalog.flatMap { it.second }
+    if (all.isEmpty()) return
+    MaterialAlertDialogBuilder(this).setTitle("Personalizza Strumenti")
+        .setItems(arrayOf("👁 Mostra o nascondi strumenti", "⭐ Scegli i preferiti (in alto)", "↺ Ripristina come all'inizio")) { _, w ->
+            when (w) {
+                0 -> {
+                    val hidden = tp.getStringSet("hidden", emptySet()).orEmpty().toMutableSet()
+                    val labels = all.map { it.first }
+                    val checked = BooleanArray(labels.size) { labels[it] !in hidden }
+                    MaterialAlertDialogBuilder(this).setTitle("Strumenti visibili")
+                        .setMultiChoiceItems(all.map { "${it.second}  ${it.first}" }.toTypedArray(), checked) { _, i, on -> checked[i] = on }
+                        .setPositiveButton("Salva") { _, _ ->
+                            tp.edit().putStringSet("hidden", labels.filterIndexed { i, _ -> !checked[i] }.toSet()).apply(); renderTools()
+                        }.setNegativeButton("Annulla", null).show()
+                }
+                1 -> {
+                    val favs = tp.getString("favs", "").orEmpty().split("|").filter { it.isNotBlank() }.toMutableList()
+                    val labels = all.map { it.first }
+                    val checked = BooleanArray(labels.size) { labels[it] in favs }
+                    MaterialAlertDialogBuilder(this).setTitle("Preferiti (in alto, nell'ordine scelto)")
+                        .setMultiChoiceItems(all.map { "${it.second}  ${it.first}" }.toTypedArray(), checked) { _, i, on ->
+                            checked[i] = on; if (on) favs.add(labels[i]) else favs.remove(labels[i])
+                        }
+                        .setPositiveButton("Salva") { _, _ -> tp.edit().putString("favs", favs.distinct().joinToString("|")).apply(); renderTools() }
+                        .setNegativeButton("Annulla", null).show()
+                }
+                2 -> { tp.edit().clear().apply(); renderTools(); toast("Strumenti ripristinati") }
+            }
+        }.show()
 }

@@ -67,3 +67,41 @@ class NewsWidget : AppWidgetProvider() {
         }
     }
 }
+
+/** Watchlist on the phone's home screen: price and change of the first 5 symbols. */
+class StocksWidget : AppWidgetProvider() {
+    override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        render(context, manager, ids)
+        Stocks.schedule(context)
+        val pr = goAsync()
+        Thread { runCatching { Stocks.refreshAll(context) }; pr.finish() }.start()
+    }
+    override fun onDisabled(context: Context) { Stocks.schedule(context) }
+
+    companion object {
+        fun present(c: Context) = AppWidgetManager.getInstance(c).getAppWidgetIds(ComponentName(c, StocksWidget::class.java)).isNotEmpty()
+
+        fun update(c: Context) {
+            val m = AppWidgetManager.getInstance(c)
+            val ids = m.getAppWidgetIds(ComponentName(c, StocksWidget::class.java))
+            if (ids.isNotEmpty()) render(c, m, ids)
+        }
+
+        fun render(c: Context, manager: AppWidgetManager, ids: IntArray) {
+            val v = RemoteViews(c.packageName, R.layout.widget_stocks)
+            val watch = Stocks.watch(c); val quotes = Stocks.quotes(c)
+            val newest = quotes.values.maxOfOrNull { it.time } ?: 0L
+            v.setTextViewText(R.id.sHeader, "📈 Borsa" + if (newest > 0) " · " + NewsAdapter.ago(newest) else "")
+            v.setOnClickPendingIntent(R.id.sRoot, launch(c, 300) { putExtra(MainActivity.EXTRA_WIDGET, "stocks") })
+            val names = intArrayOf(R.id.s1n, R.id.s2n, R.id.s3n, R.id.s4n, R.id.s5n)
+            val vals = intArrayOf(R.id.s1v, R.id.s2v, R.id.s3v, R.id.s4v, R.id.s5v)
+            names.indices.forEach { i ->
+                val a = watch.getOrNull(i); val q = a?.let { quotes[it.symbol] }
+                v.setTextViewText(names[i], a?.name?.substringBefore(" (")?.take(22) ?: if (i == 0) "Aggiungi titoli in Strumenti → Borsa" else "")
+                v.setTextViewText(vals[i], q?.let { Stocks.fmtPrice(it.price) + "  " + Stocks.fmtPct(it.pct) } ?: "")
+                v.setTextColor(vals[i], if (q == null) 0xFFB0B8C8.toInt() else if (q.pct >= 0) 0xFF4ADE80.toInt() else 0xFFF87171.toInt())
+            }
+            manager.updateAppWidget(ids, v)
+        }
+    }
+}

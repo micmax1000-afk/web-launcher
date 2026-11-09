@@ -15,15 +15,15 @@ P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate 
 ## P1 — Consigliate
 | # | Area | Idea |
 |---|------|------|
-| 6 | AI | **Assistente sui tuoi dati**: "quanto ho speso in benzina a ottobre?", "cosa scade questo mese?" |
-| 7 | Finanza | **Conti e portafogli** (contanti, conto, carta) con saldo |
-| 8 | Finanza | **Entrate** e bilancio del mese |
-| 9 | Finanza | **Spese ricorrenti automatiche** (affitto, rate, abbonamenti) |
-| 10 | Finanza | **Detrazioni per il 730** con documenti fotografati |
+| 6 | AI | ✅ **Assistente sui tuoi dati** (Strumenti → 🧠): "quanto ho speso in benzina a ottobre?", "cosa scade questo mese?" |
+| 7 | Finanza | ✅ **Conti e portafogli** (contanti, conto, carta) con saldo |
+| 8 | Finanza | ✅ **Entrate** e bilancio del mese |
+| 9 | Finanza | ✅ **Spese ricorrenti automatiche** (7.6, Finanze) (affitto, rate, abbonamenti) |
+| 10 | Finanza | ✅ **Detrazioni per il 730** (7.6, Finanze → 730) con documenti fotografati |
 | 11 | Borsa | ✅ **Watchlist** (7.5: Strumenti → 📈 Borsa) (azioni, ETF, indici, cambi, cripto, oro) con grafici |
 | 12 | Borsa | ✅ **Avvisi di prezzo** e notizie con "perché si è mosso oggi?" |
-| 13 | Organizzazione | **Eventi a voce nel calendario** ("metti dentista martedì alle 10") |
-| 14 | Organizzazione | **Compleanni** dai contatti con auguri su WhatsApp |
+| 13 | Organizzazione | ✅ **Eventi a voce nel calendario** ("metti dentista martedì alle 10") |
+| 14 | Organizzazione | ✅ **Compleanni** dai contatti con auguri su WhatsApp |
 | 15 | Promemoria | **"Rimanda 10 minuti" / "Fatto"** direttamente dalla notifica |
 | 16 | Notizie | Argomenti da nascondere, notizie già lette in grigio, salva con un gesto |
 | 17 | Velocità | **Avvio della home più rapido** |
@@ -44,7 +44,7 @@ P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate 
 | 28 | Finanza | Spese divise con amici, prestiti ("Marco mi deve 20 €") |
 | 29 | Finanza | Spese in valuta estera convertite in euro |
 | 30 | Finanza | Monitor prezzi di un prodotto |
-| 31 | Borsa | Portafoglio con guadagni e perdite; indici nel Buongiorno |
+| 31 | Borsa | ✅ Portafoglio con guadagni e perdite; indici nel Buongiorno |
 | 32 | Casa e auto | Manutenzione auto, rifornimenti e consumo medio |
 | 33 | Casa e auto | Letture dei contatori (luce, gas, acqua) |
 | 34 | Casa e auto | Inventario casa (manuali, garanzie, assistenza) |

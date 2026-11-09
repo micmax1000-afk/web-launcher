@@ -133,6 +133,12 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_search_info" />
         </receiver>
+        <receiver android:name=".StocksWidget" android:exported="true" android:label="Web Launcher · Borsa">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_stocks_info" />
+        </receiver>
         <receiver android:name=".NewsWidget" android:exported="true" android:label="Web Launcher · Notizie">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
