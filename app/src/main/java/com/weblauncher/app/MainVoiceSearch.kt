@@ -265,17 +265,6 @@ internal fun MainActivity.updateUnifiedSearch(q: String) {
             repo.loadHistory().filter { has(it.title) || has(it.url) }.distinctBy { it.url }.take(3).forEach { h ->
                 hits += Hit("🕘", recentLabel(RecentSite(h.title, h.url)), displayUrl(h.url), { openInBrowser(h.url) })
             }
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
-                contentResolver.query(android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                    arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER),
-                    android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " LIKE ?", arrayOf("%$query%"), null)?.use { c ->
-                    var n = 0
-                    while (c.moveToNext() && n < 3) {
-                        val name = c.getString(0) ?: continue; val num = c.getString(1) ?: continue; n++
-                        hits += Hit("👤", name, num, { runCatching { startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(num)))) } })
-                    }
-                }
-            }
         }
         runOnUiThread {
             if (token != searchToken) return@runOnUiThread
