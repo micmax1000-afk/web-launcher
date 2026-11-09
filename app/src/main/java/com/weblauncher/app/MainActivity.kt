@@ -322,6 +322,7 @@ class MainActivity : AppCompatActivity() {
         if (android.os.Build.VERSION.SDK_INT < 29 || ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED)
             runCatching { if (Steps.available(this)) { Steps.schedule(this); io.execute { runCatching { Steps.sampleNow(this) } } } }
         io.execute { runCatching { Reminders.rescheduleAll(this) } }
+        runCatching { SiteCookies.clearAll(this) }
         uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
         CrashReporter.pending(this)?.let { report -> uiHandler.postDelayed({ showCrashReport(report) }, 600) }
         uiHandler.postDelayed({ runCatching { showNewsAfterUpdate() } }, 900)
@@ -474,6 +475,7 @@ class MainActivity : AppCompatActivity() {
         applyDarkSites()
         setupMiaBridge()
         setupYouTube()
+        setupCookieBanners()
         webView.setOnScrollChangeListener { _, _, y, _, oldY -> onWebScroll(y, oldY) }
         webView.setOnLongClickListener {
             val hit = webView.hitTestResult
@@ -510,10 +512,11 @@ class MainActivity : AppCompatActivity() {
                 if (request == null) return null
                 if (request.url?.host == MiaAi.HOST) return assetLoader.shouldInterceptRequest(request.url)
                 if (!blockAdsOn) return null
-                return AdBlocker.intercept(request.url?.host, request.isForMainFrame)
+                return AdBlocker.intercept(request.url?.host, request.isForMainFrame, pageHost)
             }
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 AdBlocker.resetCount()
+                pageHost = runCatching { Uri.parse(url).host }.getOrNull()
                 showBars()
                 if (MiaAi.isMiaUrl(url) &&
                     !androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)
@@ -523,6 +526,8 @@ class MainActivity : AppCompatActivity() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 webProgress.visibility = View.INVISIBLE
                 if (YouTube.isYouTube(url) && !ytDocStartSupported()) view?.evaluateJavascript(YouTube.script(ytConfig()), null)
+                if (!ytDocStartSupported() && CookieBanners.enabled(this@MainActivity)) view?.evaluateJavascript(CookieBanners.SCRIPT, null)
+                io.execute { PrivacyStats.flush(this@MainActivity) }
                 val pageUrl = url.orEmpty()
                 val safeTitle = view?.title?.trim().orEmpty().takeIf { isRealPageTitle(it, pageUrl) }
                 if (safeTitle != null) webTitle.text = safeTitle
@@ -877,6 +882,8 @@ class MainActivity : AppCompatActivity() {
             webPaused = true
         }
         vaultDialog?.dismiss()
+        runCatching { forgetClosedSites() }
+        io.execute { PrivacyStats.flush(this) }
         if (lockEnabled() && !isChangingConfigurations) lockedSince = System.currentTimeMillis()
         if (::webView.isInitialized && isLockedUrl(webView.url)) relockPending = true
     }
@@ -1012,6 +1019,7 @@ class MainActivity : AppCompatActivity() {
             webView.clearFormData()
         }
         webTabs.removeAt(webTabIndex)
+        runCatching { forgetClosedSites() }
         if (webTabs.isEmpty()) webTabs.add(WebTab())
         webTabIndex = webTabIndex.coerceAtMost(webTabs.lastIndex)
         restoreTab(webTabs[webTabIndex])
@@ -1285,6 +1293,12 @@ class MainActivity : AppCompatActivity() {
         item("📖 Modalità lettura", hasPage) { openReaderMode() }
         item("🔊 Ascolta la pagina", hasPage) { openReaderMode(listen = true) }
         item("🔖 Leggi dopo", hasPage) { saveCurrentForLater() }
+        item("📥 Salva pagina completa offline", hasPage) { saveOfflinePage() }
+        item("🍪 Dimentica questo sito alla chiusura", hasPage, SiteCookies.has(this, pageHost ?: Uri.parse(webView.url ?: "").host)) {
+            val h = Uri.parse(webView.url ?: "").host ?: return@item
+            val on = SiteCookies.toggle(this, h)
+            toast(if (on) "Cookie e dati di ${PhishingGuard.registered(h)} cancellati quando chiudi la scheda o l'app" else "Il sito non verrà più dimenticato")
+        }
         item("✨ Traduci con AI", hasPage) { translatePageWithAi() }
         item("✨ Scrivi con AI", hasPage) { writeWithAi() }
         item("🛒 Confronta prezzi", hasPage) { comparePrices() }
@@ -1316,7 +1330,8 @@ class MainActivity : AppCompatActivity() {
         item("Chiudi scheda") { closeCurrentTab() }
         item("Impostazioni") { showTab(TAB_SETTINGS) }
         if (blockAdsOn && hasPage) root.addView(TextView(this).apply {
-            text = "🛡 ${AdBlocker.blockedCount} pubblicità e tracker bloccati"
+            text = "🛡 ${AdBlocker.blockedCount} pubblicità e tracker bloccati · report ›"
+            setOnClickListener { popup.dismiss(); showPrivacyReport() }
             textSize = 13f
             setTextColor(palette.textMuted)
             setPadding(dp(20), dp(8), dp(14), dp(4))
@@ -1506,6 +1521,8 @@ class MainActivity : AppCompatActivity() {
 
     val ytPrefs by lazy { getSharedPreferences("wl_yt", MODE_PRIVATE) }
     var ytScript: androidx.webkit.ScriptHandler? = null
+    var cookieScript: androidx.webkit.ScriptHandler? = null
+    @Volatile var pageHost: String? = null
     var ytPlaying = false
     var ytTranscriptCallback: ((org.json.JSONObject) -> Unit)? = null
     var inPip = false

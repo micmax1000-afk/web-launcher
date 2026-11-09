@@ -48,20 +48,25 @@ object AdBlocker {
 
     fun resetCount() { blockedCount = 0 }
 
-    fun isBlocked(host: String?): Boolean {
-        var h = host?.lowercase() ?: return false
+    fun isBlocked(host: String?): Boolean = match(host) != null
+
+    /** The blocklist entry that matches [host] (itself or a parent domain), or null. */
+    fun match(host: String?): String? {
+        var h = host?.lowercase() ?: return null
         while (true) {
-            if (h in domains) return true
+            if (h in domains) return h
             val dot = h.indexOf('.')
-            if (dot < 0 || dot == h.lastIndexOf('.')) return false
+            if (dot < 0 || dot == h.lastIndexOf('.')) return null
             h = h.substring(dot + 1)
         }
     }
 
     /** Returns an empty response when the sub-resource must be blocked, null otherwise. */
-    fun intercept(host: String?, isMainFrame: Boolean): WebResourceResponse? {
-        if (isMainFrame || !isBlocked(host)) return null
+    fun intercept(host: String?, isMainFrame: Boolean, site: String? = null): WebResourceResponse? {
+        if (isMainFrame) return null
+        val hit = match(host) ?: return null
         blockedCount++
+        PrivacyStats.blocked(site, hit)
         return empty
     }
 }

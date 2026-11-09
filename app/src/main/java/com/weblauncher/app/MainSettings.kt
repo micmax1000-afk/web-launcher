@@ -193,6 +193,11 @@ internal fun MainActivity.renderSettings() {
         else -> "Blu"
     }
     row("Colore", value = accentLabel) { showAccentPicker() }
+    row("🍪 Rifiuta i banner dei cookie", "Tocca «Rifiuta» al posto tuo, quando il sito lo permette", switch = CookieBanners.enabled(this)) {
+        CookieBanners.setEnabled(this, !CookieBanners.enabled(this)); setupCookieBanners(); renderSettings()
+    }
+    row("🛡 Report privacy", "Pubblicità e tracciatori bloccati, sito per sito") { showPrivacyReport() }
+    row("🧹 Siti da dimenticare", "Cookie cancellati alla chiusura: ${SiteCookies.list(this).size} siti") { showForgetSites() }
     row("Siti in modalità scura", "Scurisce i siti chiari quando il tema è scuro", switch = repo.darkSites()) {
         repo.setDarkSites(!repo.darkSites())
         applyDarkSites()
