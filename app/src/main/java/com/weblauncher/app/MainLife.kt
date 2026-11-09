@@ -106,7 +106,7 @@ internal fun MainActivity.saveRecipeFromPage() {
 }
 
 internal fun MainActivity.showRecipesPage() {
-    openPage("Ricette") { _, body, dialog ->
+    openPage("Ricette", "📅 Menu", { _ -> weeklyMenu() }) { _, body, dialog ->
         fun render() {
             body.removeAllViews()
             val list = Recipes.load(this)
@@ -401,8 +401,9 @@ internal fun MainActivity.handleShare(intent: Intent): Boolean {
     if (uris.isEmpty()) return true
     if (type.contains("pdf")) {
         MaterialAlertDialogBuilder(this).setTitle(displayName(uris[0]))
-            .setItems(arrayOf("📄 Apri", "🎫 Salva nei biglietti e documenti")) { _, w ->
+            .setItems(arrayOf("📄 Apri", "🎫 Salva nei biglietti e documenti", "🏠 È una bolletta (l'AI legge importo e scadenza)")) { _, w ->
                 if (w == 0) openPdfFromUri(uris[0])
+                else if (w == 2) billFromPdf(uris[0])
                 else io.execute {
                     val bytes = runCatching { contentResolver.openInputStream(uris[0])?.use { it.readBytes() } }.getOrNull()
                     runOnUiThread { if (bytes != null) askWalletTitle(displayName(uris[0]).substringBeforeLast('.')) { t -> addToWallet(t, "pdf", null, bytes, "pdf") } }
