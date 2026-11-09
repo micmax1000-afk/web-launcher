@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="96" align="right" alt="Icona">
+
 # Web Launcher (Android nativo)
 
 Launcher di web app in **Kotlin / Android nativo**.

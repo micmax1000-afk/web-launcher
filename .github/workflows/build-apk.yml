@@ -26,23 +26,6 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Genera icone PNG di fallback
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq imagemagick
-          for dens_size in "mdpi:48" "hdpi:72" "xhdpi:96" "xxhdpi:144" "xxxhdpi:192"; do
-            dens="${dens_size%%:*}"
-            size="${dens_size##*:}"
-            mkdir -p "app/src/main/res/mipmap-$dens"
-            convert -size ${size}x${size} xc:'#0B1220' \
-              -fill '#3B82F6' -draw "roundrectangle $((size*18/100)),$((size*18/100)) $((size*46/100)),$((size*46/100)) $((size*8/100)),$((size*8/100))" \
-              -fill '#10B981' -draw "roundrectangle $((size*54/100)),$((size*18/100)) $((size*82/100)),$((size*46/100)) $((size*8/100)),$((size*8/100))" \
-              -fill '#F59E0B' -draw "roundrectangle $((size*18/100)),$((size*54/100)) $((size*46/100)),$((size*82/100)) $((size*8/100)),$((size*8/100))" \
-              -fill '#EF4444' -draw "roundrectangle $((size*54/100)),$((size*54/100)) $((size*82/100)),$((size*82/100)) $((size*8/100)),$((size*8/100))" \
-              "app/src/main/res/mipmap-$dens/ic_launcher.png"
-            cp "app/src/main/res/mipmap-$dens/ic_launcher.png" "app/src/main/res/mipmap-$dens/ic_launcher_round.png"
-          done
-
       - name: Scarica Gradle 8.2 (con indirizzi di riserva)
         run: |
           set -e

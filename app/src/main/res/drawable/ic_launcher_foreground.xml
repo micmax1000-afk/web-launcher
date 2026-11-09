@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Web Launcher: tre riquadri come le app della home + un mappamondo (il web) -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#5B8CFF" android:pathData="M54,28 L30,46 V76 C30,79 32.5,81.5 35.5,81.5 H47 V62 H61 V81.5 H72.5 C75.5,81.5 78,79 78,76 V46 Z"/>
-    <path android:fillColor="#FFC14D" android:pathData="M54,48 A8,8 0 1,0 54,64 A8,8 0 1,0 54,48 Z"/>
+    <path android:fillColor="#FFFFFFFF" android:pathData="M37,31 H45 A6,6 0 0 1 51,37 V45 A6,6 0 0 1 45,51 H37 A6,6 0 0 1 31,45 V37 A6,6 0 0 1 37,31 Z" />
+    <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.55" android:pathData="M63,31 H71 A6,6 0 0 1 77,37 V45 A6,6 0 0 1 71,51 H63 A6,6 0 0 1 57,45 V37 A6,6 0 0 1 63,31 Z" />
+    <path android:fillColor="#FFFFFFFF" android:fillAlpha="0.55" android:pathData="M37,57 H45 A6,6 0 0 1 51,63 V71 A6,6 0 0 1 45,77 H37 A6,6 0 0 1 31,71 V63 A6,6 0 0 1 37,57 Z" />
+    <path android:strokeColor="#FFFFD166" android:strokeWidth="3" android:pathData="M56.5,67 A10.5,10.5 0 1 0 77.5,67 A10.5,10.5 0 1 0 56.5,67 Z" />
+    <path android:strokeColor="#FFFFD166" android:strokeWidth="2.2" android:strokeLineCap="round"
+        android:pathData="M56.5,67 H77.5 M67,56.5 C62.5,61 62.5,73 67,77.5 M67,56.5 C71.5,61 71.5,73 67,77.5" />
 </vector>
