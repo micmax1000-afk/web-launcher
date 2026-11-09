@@ -513,6 +513,26 @@
     </LinearLayout>
 
     <ScrollView
+        android:id="@+id/toolsPanel"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        android:fillViewport="true"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/miniPlayer"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+        <LinearLayout
+            android:id="@+id/toolsList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="14dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="24dp" />
+    </ScrollView>
+
+    <ScrollView
         android:id="@+id/settingsPanel"
         android:layout_width="0dp"
         android:layout_height="0dp"
@@ -643,8 +663,8 @@
             </LinearLayout>
 
             <LinearLayout android:id="@+id/navSettings" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">
-                <ImageView android:id="@+id/iconSettings" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_settings" app:tint="@color/text_muted" android:contentDescription="@string/settings" />
-                <TextView android:id="@+id/labelSettings" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings" android:textColor="@color/text_muted" android:textSize="11sp" android:layout_marginTop="3dp" />
+                <ImageView android:id="@+id/iconSettings" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_tools" app:tint="@color/text_muted" android:contentDescription="Strumenti" />
+                <TextView android:id="@+id/labelSettings" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Strumenti" android:textColor="@color/text_muted" android:textSize="11sp" android:layout_marginTop="3dp" />
             </LinearLayout>
         </LinearLayout>
     </FrameLayout>

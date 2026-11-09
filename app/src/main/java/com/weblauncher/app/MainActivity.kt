@@ -309,7 +309,7 @@ class MainActivity : AppCompatActivity() {
         setupLauncher()
         setupNews()
         setupAudio()
-        renderHomeTools()
+        findViewById<View>(R.id.homeToolsScroll).isVisible = false
         renderWeather()
         uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
         CrashReporter.pending(this)?.let { report -> uiHandler.postDelayed({ showCrashReport(report) }, 600) }
@@ -375,6 +375,7 @@ class MainActivity : AppCompatActivity() {
             TAB_SETTINGS -> TAB_SETTINGS
             TAB_NEWS -> TAB_NEWS
             TAB_AUDIO -> TAB_AUDIO
+            TAB_TOOLS -> TAB_TOOLS
             else -> TAB_HOME
         })
         if (savedInstanceState == null) openShortcut(intent)
@@ -740,7 +741,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.navBrowser).setOnClickListener { showTab(TAB_BROWSER) }
         findViewById<View>(R.id.navNews).setOnClickListener { showTab(TAB_NEWS) }
         findViewById<View>(R.id.navAudio).setOnClickListener { showTab(TAB_AUDIO) }
-        findViewById<View>(R.id.navSettings).setOnClickListener { showTab(TAB_SETTINGS) }
+        findViewById<View>(R.id.navSettings).setOnClickListener { showTab(TAB_TOOLS) }
     }
 
     private fun setupBack() {
@@ -750,7 +751,8 @@ class MainActivity : AppCompatActivity() {
                     customView != null -> exitFullscreen()
                     currentTab == TAB_BROWSER && webView.canGoBack() -> webView.goBack()
                     currentTab == TAB_BROWSER -> showTab(TAB_HOME)
-                    currentTab == TAB_SETTINGS -> showTab(TAB_HOME)
+                    currentTab == TAB_SETTINGS -> showTab(TAB_TOOLS)
+                    currentTab == TAB_TOOLS -> showTab(TAB_HOME)
                     currentTab == TAB_NEWS -> showTab(TAB_HOME)
                     currentTab == TAB_AUDIO -> showTab(TAB_HOME)
                     else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
@@ -766,6 +768,8 @@ class MainActivity : AppCompatActivity() {
         homePanel.isVisible = tab == TAB_HOME
         browserPanel.isVisible = tab == TAB_BROWSER
         settingsPanel.isVisible = tab == TAB_SETTINGS
+        findViewById<View>(R.id.toolsPanel).isVisible = tab == TAB_TOOLS
+        if (tab == TAB_TOOLS) renderTools()
         findViewById<View>(R.id.newsPanel).isVisible = tab == TAB_NEWS
         findViewById<View>(R.id.audioPanel).isVisible = tab == TAB_AUDIO
         if (tab == TAB_AUDIO) onAudioShown()
@@ -784,8 +788,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageView>(R.id.iconAudio).setColorFilter(if (tab == TAB_AUDIO) accent else muted)
         findViewById<TextView>(R.id.labelAudio).setTextColor(if (tab == TAB_AUDIO) accent else muted)
         findViewById<TextView>(R.id.labelNews).setTextColor(if (tab == TAB_NEWS) accent else muted)
-        iconSettings.setColorFilter(if (tab == TAB_SETTINGS) accent else muted)
-        labelSettings.setTextColor(if (tab == TAB_SETTINGS) accent else muted)
+        val toolsActive = tab == TAB_SETTINGS || tab == TAB_TOOLS
+        iconSettings.setColorFilter(if (toolsActive) accent else muted)
+        labelSettings.setTextColor(if (toolsActive) accent else muted)
     }
 
     private fun openInBrowser(url: String) {
@@ -6046,6 +6051,94 @@ class MainActivity : AppCompatActivity() {
         toast("✨ Invio l'audio… la trascrizione funziona con Gemini")
     }
 
+    // ======================= Tools page (bottom bar) =======================
+
+    private fun renderTools() {
+        val list = findViewById<android.widget.LinearLayout>(R.id.toolsList)
+        list.removeAllViews()
+        val palette = AppRepository.palette(this)
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        findViewById<View>(R.id.toolsPanel).setBackgroundColor(palette.bg)
+        val header = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(6), dp(12), 0, dp(4))
+        }
+        header.addView(TextView(this).apply {
+            text = "Strumenti"; textSize = 28f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text)
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+        })
+        header.addView(android.widget.ImageButton(this).apply {
+            setImageResource(R.drawable.ic_nav_settings); setColorFilter(palette.text); background = null
+            setPadding(dp(10), dp(10), dp(10), dp(10)); scaleType = ImageView.ScaleType.FIT_CENTER
+            layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
+            contentDescription = "Impostazioni"
+            setOnClickListener { showTab(TAB_SETTINGS) }
+        })
+        list.addView(header)
+        fun group(title: String, items: List<Triple<String, String, () -> Unit>>) {
+            sectionLabel(list, title)
+            val grid = android.widget.GridLayout(this).apply { columnCount = 4 }
+            items.forEach { (emoji, label, action) ->
+                grid.addView(android.widget.LinearLayout(this).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER
+                    setPadding(dp(2), dp(10), dp(2), dp(8))
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = 18 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+                    }
+                    layoutParams = android.widget.GridLayout.LayoutParams().apply {
+                        width = 0; height = dp(92)
+                        columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+                        setMargins(dp(4), dp(4), dp(4), dp(4))
+                    }
+                    addView(TextView(this@MainActivity).apply { text = emoji; textSize = 26f; gravity = android.view.Gravity.CENTER })
+                    addView(TextView(this@MainActivity).apply {
+                        text = label; textSize = 12f; gravity = android.view.Gravity.CENTER; setTextColor(palette.text)
+                        maxLines = 2; setPadding(0, dp(4), 0, 0)
+                    })
+                    setOnClickListener { action() }
+                })
+            }
+            list.addView(grid)
+        }
+        group("ORGANIZZA", listOf(
+            Triple("📝", "Note") { showNotesPage() },
+            Triple("🛒", "Lista spesa") {
+                val n = notes.load().firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals("Lista della spesa", true) }
+                showChecklist(n?.id, "Lista della spesa")
+            },
+            Triple("⏰", "Promemoria") { showRemindersPage() },
+            Triple("🎙", "Registratore") { showRecorderPage() }
+        ))
+        group("DOCUMENTI", listOf(
+            Triple("📄", "Scanner") { scanDocument() },
+            Triple("📑", "Apri PDF") { pdfPicker.launch(arrayOf("application/pdf")) },
+            Triple("🎫", "Biglietti") { showWalletPage() },
+            Triple("💳", "Carte fedeltà") { showCardsPage() },
+            Triple("📖", "Libri") { showBooksPage() },
+            Triple("🔖", "Leggi dopo") { showReadLaterPage() }
+        ))
+        group("UTILITÀ", listOf(
+            Triple("📷", "QR code") { scanQr() },
+            Triple("🔦", "Torcia e bussola") { showUtilitiesPage() },
+            Triple("📦", "Pacchi") { showParcelsPage() },
+            Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
+            Triple("⏱", "Tempo di utilizzo") { showUsagePage() },
+            Triple("🧮", "Calcoli") {
+                showTab(TAB_HOME); searchInput.requestFocus()
+                toast("Scrivi nella ricerca: «15% di 230», «10 km in miglia», «50 dollari in euro»")
+            }
+        ))
+        group("BROWSER E APP", listOf(
+            Triple("📚", "Catalogo app") { showCatalogPage() },
+            Triple("🕵️", "Profilo 2") { startActivity(Intent(this, IsolatedBrowserActivity::class.java)) },
+            Triple("⬇", "Download") { showDownloadsPage() },
+            Triple("🕘", "Cronologia") { showHistoryPage() },
+            Triple("✨", "Mia AI") { openMiaAi() },
+            Triple("⚙", "Impostazioni") { showTab(TAB_SETTINGS) }
+        ))
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -6528,6 +6621,13 @@ class MainActivity : AppCompatActivity() {
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
         settingsList.addView(TextView(this).apply {
+            text = "← Strumenti"
+            textSize = 15f
+            setTextColor(accent)
+            setPadding(dp(4), dp(10), dp(4), 0)
+            setOnClickListener { showTab(TAB_TOOLS) }
+        })
+        settingsList.addView(TextView(this).apply {
             text = "Impostazioni"
             textSize = 28f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -6612,7 +6712,7 @@ class MainActivity : AppCompatActivity() {
             g.addView(r)
         }
 
-        section("GENERALE")
+        section("BROWSER E RICERCA")
         row("Aggiungi web app", "Nome, indirizzo e categoria") { showAddEditDialog(null) }
         row("Browser predefinito", "Apri qui i link di WhatsApp, email…", value = if (isDefaultBrowser()) "Sì" else "No") { requestDefaultBrowser() }
         row("Motore di ricerca", value = engine.label) { showSearchEnginePicker() }
@@ -6623,8 +6723,6 @@ class MainActivity : AppCompatActivity() {
             repo.setHideBarsOnScroll(!repo.hideBarsOnScroll()); hideBarsOn = repo.hideBarsOnScroll(); renderSettings()
         }
         row("Dimensione testo", value = "${repo.textZoom()}%") { showTextZoomDialog() }
-        row("Cronologia", "Tutte le pagine visitate, con ricerca") { showHistoryPage() }
-        row("Download", "File scaricati") { showDownloadsPage() }
         val themeLabel = when (repo.getThemeMode()) {
             "light" -> "Chiaro"
             "system" -> "Sistema"
@@ -6665,45 +6763,12 @@ class MainActivity : AppCompatActivity() {
                 .setPositiveButton("OK", null).show()
         }
 
-        section("SOSTITUISCI LE APP")
-        row("📚 Catalogo app web", "${catalog.size} siti pronti da aggiungere alla home") { showCatalogPage() }
-        row("📄 Scanner documenti", "Fogli e ricevute in PDF, con lettura AI") { scanDocument() }
-        row("🔦 Torcia, bussola, livella") { showUtilitiesPage() }
-        row("📖 Libri (EPUB)", "Lettore con temi, segnalibro automatico e lettura ad alta voce") { showBooksPage() }
-        row("🎙 Registratore", "Anche a schermo spento, con trascrizione AI") { showRecorderPage() }
 
         section("COMODITÀ")
         row("📋 Appunti intelligenti", "Propone l'azione per link, pacchi e numeri copiati", switch = toolsPrefs.getBoolean("smartClipboard", true)) {
             toolsPrefs.edit().putBoolean("smartClipboard", !toolsPrefs.getBoolean("smartClipboard", true)).apply(); renderSettings()
         }
-        row("⏰ Promemoria", "Anche a voce: «ricordami domani alle 9 di…»") { showRemindersPage() }
-        row("📦 Pacchi", "Traccia le spedizioni") { showParcelsPage() }
-        row("💳 Carte fedeltà", "${cards.load().size} carte · mostra il codice alla cassa") { showCardsPage() }
-        row("🎫 Biglietti e documenti", "Treni, aerei, eventi: anche offline") { showWalletPage() }
-        row("☑ Lista della spesa", "Anche a voce: «aggiungi latte e pane alla lista»") {
-            val n = notes.load().firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals("Lista della spesa", true) }
-            showChecklist(n?.id, "Lista della spesa")
-        }
-        row("🧮 Calcoli e conversioni", "Scrivi nella ricerca: «15% di 230», «10 km in miglia», «50 dollari in euro»") {
-            showTab(TAB_HOME); searchInput.requestFocus()
-        }
 
-        section("STRUMENTI")
-        row("🌦 Meteo", if (weatherPrefs.getBoolean("hidden", false)) "Nascosto" else weatherPrefs.getString("city", null) ?: "Scegli la città") {
-            weatherPrefs.edit().putBoolean("hidden", false).apply(); renderWeather(); setupWeather()
-        }
-        row("⏱ Tempo di utilizzo", "Quanto usi ogni sito, con limiti giornalieri") { showUsagePage() }
-        row("🔄 Sincronizza tra dispositivi", if (repo.getAutoBackupUri() != null) "Collegato a un file di backup" else "Tramite un file su Google Drive") { showSyncHelp() }
-        row("🧩 Widget", "Ricerca e Notizie sulla schermata del telefono") {
-            MaterialAlertDialogBuilder(this).setTitle("Widget")
-                .setMessage("Tieni premuto su uno spazio vuoto della schermata del telefono → Widget → Web Launcher.\n\n" +
-                    "• Cerca: barra di ricerca con microfono e notizie\n• Notizie: gli ultimi titoli delle tue fonti")
-                .setPositiveButton("OK", null).show()
-        }
-        row("📝 Note", "Scrivi o detta, riordina con l'AI") { showNotesPage() }
-        row("🔖 Leggi dopo", "Articoli salvati, leggibili offline") { showReadLaterPage() }
-        row("📷 Scansiona QR code") { scanQr() }
-        row("📄 Apri un PDF", "Dal telefono o da Drive") { pdfPicker.launch(arrayOf("application/pdf")) }
 
         section("NOTIZIE")
         row("Fonti notizie", "${news.enabledIds().size} attive su ${news.allSources().size}") { showNewsSources() }
@@ -6731,10 +6796,6 @@ class MainActivity : AppCompatActivity() {
         row("⚠️ Avviso siti truffa", "Avvisa prima di aprire siti che imitano Poste, banche, corrieri…", switch = toolsPrefs.getBoolean("phishing", true)) {
             toolsPrefs.edit().putBoolean("phishing", !toolsPrefs.getBoolean("phishing", true)).apply(); renderSettings()
         }
-        row("🕵️ Profilo 2", if (IsolatedBrowserActivity.supported()) "Navigazione separata: altri login, es. un secondo Gmail"
-            else "Richiede «Android System WebView» aggiornato") {
-            startActivity(Intent(this, IsolatedBrowserActivity::class.java))
-        }
         row("Cancella dati del profilo 2", danger = true) {
             confirmClear("Cancellare cookie e login del profilo 2?") { IsolatedBrowserActivity.clear(); toast("Profilo 2 pulito") }
         }
@@ -6761,7 +6822,8 @@ class MainActivity : AppCompatActivity() {
         row("Cancella cache") { confirmClear("Cancellare la cache?") { webView.clearCache(true); toast("Cache cancellata") } }
         row("Cancella tutti i dati", "Recenti, cronologia, cookie, cache", danger = true) { confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
 
-        section("BACKUP")
+        section("BACKUP E SINCRONIZZAZIONE")
+        row("🔄 Sincronizza tra dispositivi", if (repo.getAutoBackupUri() != null) "Collegato a un file di backup" else "Tramite un file su Google Drive") { showSyncHelp() }
         val autoOn = repo.getAutoBackupUri() != null
         row("Backup", if (autoOn) "Automatico attivo" else "Su file, Drive o condivisione") { showBackupMenu() }
         row("Importa preferiti da Chrome", "Da un file bookmarks.html") { showBookmarkImportHelp() }
@@ -6770,6 +6832,15 @@ class MainActivity : AppCompatActivity() {
         }
 
         section("HOME")
+        row("🌦 Meteo in home", if (weatherPrefs.getBoolean("hidden", false)) "Nascosto" else weatherPrefs.getString("city", null) ?: "Scegli la città") {
+            weatherPrefs.edit().putBoolean("hidden", false).apply(); renderWeather(); setupWeather()
+        }
+        row("🧩 Widget", "Ricerca e Notizie sulla schermata del telefono") {
+            MaterialAlertDialogBuilder(this).setTitle("Widget")
+                .setMessage("Tieni premuto su uno spazio vuoto della schermata del telefono → Widget → Web Launcher.\n\n" +
+                    "• Cerca: barra di ricerca con microfono e notizie\n• Notizie: gli ultimi titoli delle tue fonti")
+                .setPositiveButton("OK", null).show()
+        }
         row("Mostra \"Più usate\"", "In cima alla home, quando hai almeno 6 app", switch = repo.showMostUsed()) {
             repo.setShowMostUsed(!repo.showMostUsed()); refreshList(); renderSettings()
         }
@@ -7196,6 +7267,7 @@ class MainActivity : AppCompatActivity() {
         private const val STATE_TAB = "current_tab"
         private const val TAB_NEWS = 3
         private const val TAB_AUDIO = 4
+        private const val TAB_TOOLS = 5
         const val EXTRA_OPEN_PLAYER = "open_player"
         const val EXTRA_WIDGET = "widget_action"
         private const val NEWS_ALL = "Tutte"
