@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/wRoot"
+    android:layout_width="match_parent"
+    android:layout_height="52dp"
+    android:background="@drawable/bg_widget"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingEnd="6dp">
+    <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_search" android:tint="#FF8B9BB4" />
+    <TextView
+        android:id="@+id/wSearch"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:layout_marginStart="12dp"
+        android:gravity="center_vertical"
+        android:text="Cerca o chiedi all'AI"
+        android:textColor="#FF8B9BB4"
+        android:textSize="15sp" />
+    <ImageView android:id="@+id/wNews" android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp" android:src="@drawable/ic_nav_news" android:tint="#FFF0F4FA" />
+    <ImageView android:id="@+id/wMic" android:layout_width="40dp" android:layout_height="40dp" android:padding="9dp" android:src="@drawable/ic_nav_mic" android:tint="#FF5B8CFF" />
+</LinearLayout>

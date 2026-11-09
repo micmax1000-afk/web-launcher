@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <files-path name="places" path="places/" />
+    <cache-path name="capture" path="capture/" />
+    <cache-path name="scan" path="scan/" />
+    <files-path name="deadlines" path="deadlines/" />
+    <cache-path name="update" path="update/" />
+</paths>

@@ -11,19 +11,41 @@ android {
         applicationId = "com.weblauncher.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 17
-        versionName = "4.9.3"
+        // Su GitHub il numero di build cresce a ogni compilazione (1000 + numero dell'esecuzione),
+        // cosi' l'app riconosce da sola le versioni piu' nuove.
+        versionCode = System.getenv("WL_VERSION_CODE")?.toIntOrNull() ?: 45
+        versionName = "7.3.0"
     }
+
+    // Firma fissa: la chiave arriva dai secret di GitHub (WL_KEYSTORE_BASE64,
+    // WL_KEYSTORE_PASSWORD). Con la stessa firma Android installa l'aggiornamento
+    // sopra la versione precedente, senza disinstallare. Senza secret usa la
+    // chiave di debug (solo per prove locali).
+    val ksFile = System.getenv("WL_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.exists() }
+    val ksPass = System.getenv("WL_KEYSTORE_PASSWORD")
+    signingConfigs {
+        if (ksFile != null && !ksPass.isNullOrEmpty()) create("fixed") {
+            storeFile = ksFile
+            storePassword = ksPass
+            keyAlias = "weblauncher"
+            keyPassword = ksPass
+        }
+    }
+    val fixedSigning = signingConfigs.findByName("fixed")
 
     buildTypes {
         release {
+            if (fixedSigning != null) signingConfig = fixedSigning
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
-        debug { isMinifyEnabled = false }
+        debug {
+            isMinifyEnabled = false
+            if (fixedSigning != null) signingConfig = fixedSigning
+        }
     }
 
     compileOptions {
@@ -32,6 +54,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { viewBinding = true }
+    testOptions { unitTests.isReturnDefaultValues = true }
 }
 
 dependencies {
@@ -44,4 +67,15 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.8.2")
     implementation("com.google.code.gson:gson:2.10.1")
     implementation("io.coil-kt:coil:2.5.0")
+    implementation("androidx.webkit:webkit:1.11.0")
+    implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    implementation("androidx.media3:media3-exoplayer:1.3.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.3.1")
+    implementation("androidx.media3:media3-session:1.3.1")
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
+    testImplementation("junit:junit:4.13.2")
 }

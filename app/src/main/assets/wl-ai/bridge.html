@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="it">
+<head><meta charset="utf-8"><title>Web Launcher AI</title></head>
+<body>
+<!-- Invisible page on Mia AI's origin: same localStorage, so it uses the provider,
+     API key and model configured in Mia AI, through Mia AI's own provider code. -->
+<script src="../mia-ai/js/providers.js"></script>
+<script>
+(function () {
+  'use strict';
+  var P = window.MiaProviders;
+  var LS = 'miaai_v1_settings';
+
+  function settings() {
+    try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch (e) { return {}; }
+  }
+  function cfgFor(s, provider, model) {
+    var preset = P.PRESETS[provider] || P.PRESETS.custom;
+    var saved = (s.profiles || {})[provider] || {};
+    return {
+      provider: provider,
+      baseUrl: saved.baseUrl || preset.baseUrl,
+      apiKey: saved.apiKey || '',
+      model: model || (saved.model != null && saved.model !== '' ? saved.model : preset.model),
+      temperature: Number(s.temperature != null ? s.temperature : 0.7)
+    };
+  }
+  function configured(c) {
+    var preset = P.PRESETS[c.provider] || P.PRESETS.custom;
+    return !!c.model && (!preset.needsKey || !!c.apiKey);
+  }
+  function label(c) {
+    var preset = P.PRESETS[c.provider] || P.PRESETS.custom;
+    return (preset.short || preset.label) + ' · ' + c.model;
+  }
+  function post(o) { if (window.WLAi) WLAi.postMessage(JSON.stringify(o)); }
+
+  window.wlStatus = function () {
+    var s = settings();
+    var c = cfgFor(s, s.provider || 'gemini');
+    return JSON.stringify({ configured: configured(c), label: c.model ? label(c) : '' });
+  };
+
+  window.wlAbort = function () { try { P.abort(); } catch (e) {} };
+
+  window.wlAsk = async function (id, messagesJson, system) {
+    var s = settings();
+    var main = cfgFor(s, s.provider || 'gemini');
+    if (!configured(main)) {
+      post({ id: id, t: 'error', code: 'nokey', message: 'Configura provider e chiave in Mia AI.' });
+      return;
+    }
+    var attempts = [main];
+    if (s.autoFallback !== false && Array.isArray(s.favorites)) {
+      s.favorites.forEach(function (f) {
+        if (f.provider === main.provider && f.model === main.model) return;
+        if (P.isSpecialized(f.model)) return;
+        var c = cfgFor(s, f.provider, f.model);
+        if (configured(c)) attempts.push(c);
+      });
+    }
+    var msgs = JSON.parse(messagesJson);
+    // attachments saved by the app (scans, recordings): read them and inline as base64
+    try {
+      for (var mi = 0; mi < msgs.length; mi++) {
+        var atts = msgs[mi].attachments || [];
+        for (var ai = 0; ai < atts.length; ai++) {
+          var at = atts[ai];
+          if (at.url && !at.data) {
+            var blob = await (await fetch(at.url)).blob();
+            at.data = await new Promise(function (res, rej) {
+              var fr = new FileReader();
+              fr.onload = function () { res(String(fr.result).split(',')[1]); };
+              fr.onerror = rej;
+              fr.readAsDataURL(blob);
+            });
+            delete at.url;
+          }
+        }
+      }
+    } catch (e) {
+      post({ id: id, t: 'error', message: 'Allegato non leggibile: ' + e.message });
+      return;
+    }
+    var lastErr = null;
+    for (var i = 0; i < attempts.length && i < 4; i++) {
+      var c = attempts[i];
+      c.systemPrompt = system || s.systemPrompt || '';
+      try {
+        var text = await P.chat(c, msgs, function (full) { post({ id: id, t: 'partial', text: full }); });
+        post({ id: id, t: 'done', text: text, model: label(c) });
+        return;
+      } catch (e) {
+        lastErr = e;
+        if (e && e.name === 'AbortError') { post({ id: id, t: 'error', message: 'Interrotto' }); return; }
+        if (!P.isBusyError(e)) break;
+      }
+    }
+    var msg;
+    try { msg = P.friendlyError(lastErr, (P.PRESETS[main.provider] || {}).label); }
+    catch (x) { msg = String((lastErr && lastErr.message) || lastErr); }
+    post({ id: id, t: 'error', message: String(msg) });
+  };
+})();
+</script>
+</body>
+</html>

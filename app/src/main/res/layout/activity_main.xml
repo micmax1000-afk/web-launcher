@@ -6,13 +6,25 @@
     android:layout_height="match_parent"
     android:background="@drawable/bg_screen">
 
+    <ImageView
+        android:id="@+id/homeWallpaper"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:scaleType="centerCrop"
+        android:visibility="gone"
+        android:contentDescription="@null"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent" />
+
     <LinearLayout
         android:id="@+id/homePanel"
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:orientation="vertical"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/bottomBar"
+        app:layout_constraintBottom_toTopOf="@id/miniPlayer"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
@@ -78,6 +90,31 @@
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
 
+        <LinearLayout
+            android:id="@+id/weatherCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginBottom="8dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="10dp" />
+
+        <HorizontalScrollView
+            android:id="@+id/homeToolsScroll"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+            <LinearLayout
+                android:id="@+id/homeTools"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingHorizontal="14dp"
+                android:paddingBottom="4dp" />
+        </HorizontalScrollView>
+
         <TextView
             android:id="@+id/webSearchHint"
             android:layout_width="match_parent"
@@ -90,15 +127,135 @@
             android:textStyle="bold"
             android:visibility="gone" />
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recycler"
+        <TextView
+            android:id="@+id/aiSearchHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="4dp"
+            android:drawablePadding="8dp"
+            android:gravity="center_vertical"
+            android:textColor="?attr/colorPrimary"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/calcHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingHorizontal="20dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="4dp"
+            android:textColor="?attr/colorPrimary"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/searchResults"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="6dp"
+            android:orientation="vertical"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/clipBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="6dp"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="10dp"
+            android:background="@drawable/bg_search"
+            android:textColor="?attr/colorPrimary"
+            android:textSize="14sp"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/parkBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginHorizontal="16dp"
+            android:layout_marginTop="6dp"
+            android:paddingHorizontal="14dp"
+            android:paddingVertical="10dp"
+            android:background="@drawable/bg_search"
+            android:textColor="?attr/colorPrimary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:visibility="gone" />
+
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
-            android:clipToPadding="false"
-            android:paddingHorizontal="10dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="16dp" />
+            android:layout_weight="1">
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/recycler"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:clipToPadding="false"
+                android:paddingHorizontal="10dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="16dp" />
+
+            <LinearLayout
+                android:id="@+id/emptyState"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:paddingHorizontal="36dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/emptyIcon"
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:src="@drawable/ic_web_star"
+                    app:tint="?attr/colorPrimary"
+                    android:contentDescription="@null" />
+
+                <TextView
+                    android:id="@+id/emptyTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="La tua home è vuota"
+                    android:textColor="@color/text"
+                    android:textSize="20sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/emptyText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:gravity="center"
+                    android:lineSpacingExtra="3dp"
+                    android:text="Cerca un sito qui sopra, aprilo e tocca la stella per salvarlo. Oppure aggiungilo a mano."
+                    android:textColor="@color/text_muted"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnEmptyAdd"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="18dp"
+                    android:text="Aggiungi web app"
+                    android:textAllCaps="false"
+                    app:cornerRadius="22dp" />
+            </LinearLayout>
+        </FrameLayout>
     </LinearLayout>
 
     <LinearLayout
@@ -108,78 +265,96 @@
         android:orientation="vertical"
         android:visibility="gone"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/bottomBar"
+        app:layout_constraintBottom_toTopOf="@id/miniPlayer"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
         <LinearLayout
+            android:id="@+id/browserToolbar"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
+            android:layout_height="60dp"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:background="@color/bg_elevated"
             android:paddingHorizontal="4dp">
 
-            <ImageButton android:id="@+id/btnWebBack" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_previous" app:tint="@color/text" android:contentDescription="Indietro" />
-            <ImageButton android:id="@+id/btnWebForward" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_media_next" app:tint="@color/text" android:contentDescription="Avanti" />
+            <ImageButton android:id="@+id/btnWebHome" android:layout_width="44dp" android:layout_height="44dp" android:padding="10dp" android:scaleType="fitCenter" android:background="?attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_nav_home" app:tint="@color/text" android:contentDescription="Home" />
 
-            <EditText
-                android:id="@+id/webAddress"
+            <LinearLayout
+                android:id="@+id/addressPill"
                 android:layout_width="0dp"
-                android:layout_height="36dp"
+                android:layout_height="44dp"
                 android:layout_weight="1"
-                android:background="@drawable/bg_search"
-                android:hint="Cerca o scrivi un indirizzo"
-                android:textColor="@color/text"
-                android:textColorHint="@color/text_muted"
-                android:textSize="13sp"
-                android:paddingHorizontal="12dp"
-                android:singleLine="true"
-                android:imeOptions="actionGo"
-                android:inputType="textUri"
-                android:importantForAutofill="no" />
+                android:layout_marginHorizontal="4dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="14dp"
+                android:paddingEnd="6dp"
+                android:background="@drawable/bg_search">
 
-            <ImageButton android:id="@+id/btnWebRefresh" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_popup_sync" app:tint="@color/text" android:contentDescription="Aggiorna" />
-            <ImageButton
-                android:id="@+id/btnWebAdd"
-                android:layout_width="36dp"
-                android:layout_height="36dp"
+                <ImageView
+                    android:id="@+id/addressIcon"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:src="@drawable/ic_search"
+                    app:tint="@color/text_muted"
+                    android:contentDescription="@null" />
+
+                <EditText
+                    android:id="@+id/webAddress"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginStart="10dp"
+                    android:background="@android:color/transparent"
+                    android:hint="Cerca o digita l'URL"
+                    android:textColor="@color/text"
+                    android:textColorHint="@color/text_muted"
+                    android:textSize="16sp"
+                    android:singleLine="true"
+                    android:selectAllOnFocus="true"
+                    android:imeOptions="actionGo"
+                    android:inputType="textUri"
+                    android:importantForAutofill="no" />
+            </LinearLayout>
+
+            <FrameLayout
+                android:id="@+id/btnTabs"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:src="@android:drawable/btn_star_big_off"
-                app:tint="@color/star"
-                android:contentDescription="Aggiungi a home" />
-            <ImageButton android:id="@+id/btnWebMenu" android:layout_width="36dp" android:layout_height="36dp" android:background="?attr/selectableItemBackgroundBorderless" android:src="@android:drawable/ic_menu_more" app:tint="@color/text" android:contentDescription="Menu browser" />
+                android:contentDescription="Schede aperte">
+                <TextView
+                    android:id="@+id/tabCount"
+                    android:layout_width="22dp"
+                    android:layout_height="22dp"
+                    android:layout_gravity="center"
+                    android:gravity="center"
+                    android:text="1"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text" />
+            </FrameLayout>
+
+            <ImageButton android:id="@+id/btnWebMenu" android:layout_width="44dp" android:layout_height="44dp" android:padding="10dp" android:scaleType="fitCenter" android:background="?attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_web_more" app:tint="@color/text" android:contentDescription="Menu browser" />
             <TextView android:id="@+id/webTitle" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
         </LinearLayout>
 
-        <HorizontalScrollView
-            android:layout_width="match_parent"
-            android:layout_height="40dp"
-            android:background="@color/bg_elevated"
-            android:scrollbars="none">
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="match_parent"
-                android:gravity="center_vertical"
-                android:paddingHorizontal="8dp">
-                <LinearLayout
-                    android:id="@+id/tabStrip"
-                    android:layout_width="wrap_content"
-                    android:layout_height="match_parent"
-                    android:orientation="horizontal"
-                    android:gravity="center_vertical" />
-                <ImageButton
-                    android:id="@+id/btnNewTab"
-                    android:layout_width="36dp"
-                    android:layout_height="36dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@android:drawable/ic_input_add"
-                    app:tint="?attr/colorPrimary"
-                    android:contentDescription="Nuova scheda" />
-            </LinearLayout>
-        </HorizontalScrollView>
+        <ProgressBar android:id="@+id/webProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="3dp" android:max="100" android:progress="0" android:progressTint="?attr/colorPrimary" android:visibility="invisible" />
 
-        <ProgressBar android:id="@+id/webProgress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="3dp" android:max="100" android:progress="0" android:progressTint="?attr/colorPrimary" android:visibility="gone" />
+        <ScrollView
+            android:id="@+id/suggestPanel"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:visibility="gone">
+            <LinearLayout
+                android:id="@+id/suggestList"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingVertical="6dp" />
+        </ScrollView>
 
         <ScrollView
             android:id="@+id/recentsPanel"
@@ -202,6 +377,291 @@
             android:layout_height="0dp"
             android:layout_weight="1" />
     </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/newsPanel"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/miniPlayer"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="12dp">
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/newsHeading"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Notizie"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/text" />
+                <TextView
+                    android:id="@+id/newsUpdated"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:textColor="@color/text_muted" />
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnNewsBrief"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Il punto"
+                android:textAllCaps="false"
+                app:icon="@drawable/ic_ai"
+                app:iconSize="18dp"
+                app:cornerRadius="20dp" />
+
+            <ImageButton
+                android:id="@+id/btnNewsSources"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_nav_settings"
+                app:tint="@color/text"
+                android:contentDescription="Fonti" />
+        </LinearLayout>
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+            <LinearLayout
+                android:id="@+id/newsChips"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp" />
+        </HorizontalScrollView>
+
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/newsRefresh"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/newsList"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:clipToPadding="false"
+                    android:paddingBottom="12dp" />
+                <TextView
+                    android:id="@+id/newsEmpty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:gravity="center"
+                    android:paddingHorizontal="36dp"
+                    android:textSize="15sp"
+                    android:textColor="@color/text_muted"
+                    android:visibility="gone" />
+            </FrameLayout>
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/audioPanel"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/miniPlayer"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="20dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="12dp">
+            <TextView
+                android:id="@+id/audioHeading"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Ascolta"
+                android:textSize="28sp"
+                android:textStyle="bold"
+                android:textColor="@color/text" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAudioSearch"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Cerca"
+                android:textAllCaps="false"
+                app:icon="@drawable/ic_search"
+                app:iconSize="18dp"
+                app:cornerRadius="20dp" />
+        </LinearLayout>
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+            <LinearLayout
+                android:id="@+id/audioTabs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:paddingHorizontal="14dp"
+                android:paddingVertical="10dp" />
+        </HorizontalScrollView>
+
+        <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
+            android:id="@+id/audioRefresh"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+            <androidx.core.widget.NestedScrollView
+                android:id="@+id/audioScroll"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+                <LinearLayout
+                    android:id="@+id/audioList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="12dp"
+                    android:paddingBottom="16dp" />
+            </androidx.core.widget.NestedScrollView>
+        </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/toolsPanel"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        android:fillViewport="true"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/miniPlayer"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+        <LinearLayout
+            android:id="@+id/toolsList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="14dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="24dp" />
+    </ScrollView>
+
+    <ScrollView
+        android:id="@+id/settingsPanel"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        android:fillViewport="true"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toTopOf="@id/miniPlayer"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+        <LinearLayout
+            android:id="@+id/settingsList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="24dp" />
+    </ScrollView>
+
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/miniPlayer"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="14dp"
+        android:layout_marginTop="4dp"
+        android:visibility="gone"
+        app:cardCornerRadius="20dp"
+        app:cardElevation="0dp"
+        app:strokeWidth="1dp"
+        app:layout_constraintBottom_toTopOf="@id/bottomBar"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="10dp"
+            android:paddingEnd="4dp">
+            <ImageView
+                android:id="@+id/miniArt"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:scaleType="centerCrop"
+                android:contentDescription="@null" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="12dp"
+                android:orientation="vertical">
+                <TextView
+                    android:id="@+id/miniTitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+                <TextView
+                    android:id="@+id/miniSub"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+            </LinearLayout>
+            <ImageButton
+                android:id="@+id/miniPlay"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:padding="10dp"
+                android:scaleType="fitCenter"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_play"
+                android:contentDescription="Riproduci" />
+            <ImageButton
+                android:id="@+id/miniClose"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:padding="12dp"
+                android:scaleType="fitCenter"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:src="@drawable/ic_web_close"
+                android:contentDescription="Ferma" />
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
     <FrameLayout
         android:id="@+id/bottomBar"
@@ -229,14 +689,24 @@
                 <TextView android:id="@+id/labelHome" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/home" android:textColor="?attr/colorPrimary" android:textSize="11sp" android:textStyle="bold" android:layout_marginTop="3dp" />
             </LinearLayout>
 
+            <LinearLayout android:id="@+id/navNews" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">
+                <ImageView android:id="@+id/iconNews" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_news" app:tint="@color/text_muted" android:contentDescription="Notizie" />
+                <TextView android:id="@+id/labelNews" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Notizie" android:textColor="@color/text_muted" android:textSize="11sp" android:layout_marginTop="3dp" />
+            </LinearLayout>
+
+            <LinearLayout android:id="@+id/navAudio" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">
+                <ImageView android:id="@+id/iconAudio" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_audio" app:tint="@color/text_muted" android:contentDescription="Ascolta" />
+                <TextView android:id="@+id/labelAudio" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Ascolta" android:textColor="@color/text_muted" android:textSize="11sp" android:layout_marginTop="3dp" />
+            </LinearLayout>
+
             <LinearLayout android:id="@+id/navBrowser" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">
                 <ImageView android:id="@+id/iconBrowser" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_browser" app:tint="@color/text_muted" android:contentDescription="Browser" />
                 <TextView android:id="@+id/labelBrowser" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Browser" android:textColor="@color/text_muted" android:textSize="11sp" android:layout_marginTop="3dp" />
             </LinearLayout>
 
             <LinearLayout android:id="@+id/navSettings" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">
-                <ImageView android:id="@+id/iconSettings" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_settings" app:tint="@color/text_muted" android:contentDescription="@string/settings" />
-                <TextView android:id="@+id/labelSettings" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/settings" android:textColor="@color/text_muted" android:textSize="11sp" android:layout_marginTop="3dp" />
+                <ImageView android:id="@+id/iconSettings" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_tools" app:tint="@color/text_muted" android:contentDescription="Strumenti" />
+                <TextView android:id="@+id/labelSettings" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Strumenti" android:textColor="@color/text_muted" android:textSize="11sp" android:layout_marginTop="3dp" />
             </LinearLayout>
         </LinearLayout>
     </FrameLayout>

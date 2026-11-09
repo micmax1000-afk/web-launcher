@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=6, user-scalable=yes">
+<title>PDF</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #3a3d42; font-family: -apple-system, Roboto, sans-serif; }
+  #bar { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; align-items: center;
+         padding: 8px 10px; background: #24272b; color: #fff; font-size: 14px; }
+  #q { flex: 1; min-width: 0; padding: 9px 14px; border-radius: 20px; border: 0; background: #3c4047; color: #fff; font-size: 15px; }
+  #info { white-space: nowrap; opacity: .8; font-size: 13px; }
+  button { background: #3c4047; color: #fff; border: 0; border-radius: 18px; padding: 8px 12px; font-size: 14px; }
+  #pages { padding: 4px 0 40px; }
+  .page { position: relative; margin: 10px auto; width: calc(100% - 16px); background: #fff;
+          box-shadow: 0 2px 10px rgba(0,0,0,.45); }
+  .page canvas { display: block; width: 100%; height: 100%; }
+  .page .num { position: absolute; right: 6px; bottom: 6px; font-size: 11px; color: #666;
+               background: rgba(255,255,255,.8); border-radius: 8px; padding: 1px 6px; }
+  .page { scroll-margin-top: 64px; }
+  .page.hit { outline: 4px solid #f5b400; }
+  #msg { color: #fff; text-align: center; padding: 48px 24px; font-size: 15px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <input id="q" type="search" placeholder="Cerca nel PDF" enterkeyhint="search">
+  <span id="info"></span>
+  <button id="save" hidden>Salva</button>
+</div>
+<div id="pages"></div>
+<div id="msg">Apertura del PDF…</div>
+<script type="module">
+  import * as pdfjsLib from './pdf.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.js';
+
+  const params = new URLSearchParams(location.search);
+  const file = params.get('file');
+  const name = params.get('name') || 'PDF';
+  const src = params.get('src');
+  document.title = name;
+  const $ = (s) => document.querySelector(s);
+  const info = $('#info'), msg = $('#msg'), pagesEl = $('#pages');
+  if (src) { const b = $('#save'); b.hidden = false; b.onclick = () => { location.href = 'wl://save?u=' + encodeURIComponent(src); }; }
+
+  window.__pdfText = '';
+  const pageTexts = [];
+  let pdf;
+  try {
+    pdf = await pdfjsLib.getDocument({ url: file, isEvalSupported: false }).promise;
+  } catch (e) {
+    msg.textContent = 'Impossibile aprire il PDF' + (e && e.name === 'PasswordException' ? ': è protetto da password.' : '.');
+    throw e;
+  }
+  msg.remove();
+  info.textContent = pdf.numPages + (pdf.numPages === 1 ? ' pagina' : ' pagine');
+
+  const first = await pdf.getPage(1);
+  const v1 = first.getViewport({ scale: 1 });
+  const ratio = v1.height / v1.width;
+  const holders = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const div = document.createElement('div');
+    div.className = 'page';
+    div.dataset.n = i;
+    div.style.aspectRatio = (1 / ratio).toString();
+    const num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = i;
+    div.appendChild(num);
+    pagesEl.appendChild(div);
+    holders.push(div);
+  }
+
+  const rendered = new Set();
+  async function render(div) {
+    const n = Number(div.dataset.n);
+    if (rendered.has(n)) return;
+    rendered.add(n);
+    const page = await pdf.getPage(n);
+    const base = page.getViewport({ scale: 1 });
+    div.style.aspectRatio = (base.width / base.height).toString();
+    const target = Math.min(2400, div.clientWidth * Math.min(3, (window.devicePixelRatio || 1) * 1.6));
+    const vp = page.getViewport({ scale: target / base.width });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.floor(vp.width);
+    canvas.height = Math.floor(vp.height);
+    div.insertBefore(canvas, div.firstChild);
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+  }
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e) => { if (e.isIntersecting) render(e.target); });
+  }, { rootMargin: '1200px 0px' });
+  holders.forEach((h) => io.observe(h));
+
+  // full text for search and for the launcher's AI (window.__pdfText)
+  (async () => {
+    let total = 0;
+    for (let i = 1; i <= pdf.numPages; i++) {
+      try {
+        const page = await pdf.getPage(i);
+        const tc = await page.getTextContent();
+        const t = tc.items.map((it) => it.str + (it.hasEOL ? '\n' : ' ')).join('').replace(/[ \t]+/g, ' ');
+        pageTexts[i] = t.toLowerCase();
+        if (total < 60000) {
+          const chunk = '[Pagina ' + i + ']\n' + t.trim() + '\n\n';
+          window.__pdfText += chunk;
+          total += chunk.length;
+        }
+      } catch (e) { pageTexts[i] = ''; }
+    }
+    if (!window.__pdfText.replace(/\[Pagina \d+\]/g, '').trim()) {
+      window.__pdfText = '';
+      info.textContent += ' · senza testo (scansione)';
+    }
+  })();
+
+  let hits = [], hitIndex = -1, lastQ = '';
+  function go(n) {
+    holders.forEach((h) => h.classList.remove('hit'));
+    const h = holders[n - 1];
+    h.classList.add('hit');
+    h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  $('#q').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const q = e.target.value.trim().toLowerCase();
+    if (!q) return;
+    if (q !== lastQ) {
+      lastQ = q;
+      hits = [];
+      for (let i = 1; i <= pdf.numPages; i++) if ((pageTexts[i] || '').includes(q)) hits.push(i);
+      hitIndex = -1;
+    }
+    if (!hits.length) { info.textContent = 'Nessun risultato'; return; }
+    hitIndex = (hitIndex + 1) % hits.length;
+    info.textContent = 'Pag. ' + hits[hitIndex] + ' (' + (hitIndex + 1) + '/' + hits.length + ')';
+    go(hits[hitIndex]);
+    e.target.blur();
+  });
+</script>
+</body>
+</html>

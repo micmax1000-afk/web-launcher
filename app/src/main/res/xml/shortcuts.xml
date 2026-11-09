@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="note" android:enabled="true" android:icon="@drawable/ic_sc_note"
+        android:shortcutShortLabel="@string/sc_note" android:shortcutLongLabel="@string/sc_note">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.weblauncher.app" android:targetClass="com.weblauncher.app.MainActivity">
+            <extra android:name="widget_action" android:value="new_note" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="ask" android:enabled="true" android:icon="@drawable/ic_sc_ask"
+        android:shortcutShortLabel="@string/sc_ask" android:shortcutLongLabel="@string/sc_ask">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.weblauncher.app" android:targetClass="com.weblauncher.app.MainActivity">
+            <extra android:name="widget_action" android:value="ask" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="park" android:enabled="true" android:icon="@drawable/ic_sc_park"
+        android:shortcutShortLabel="@string/sc_park" android:shortcutLongLabel="@string/sc_park">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.weblauncher.app" android:targetClass="com.weblauncher.app.MainActivity">
+            <extra android:name="widget_action" android:value="park" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="scan" android:enabled="true" android:icon="@drawable/ic_sc_scan"
+        android:shortcutShortLabel="@string/sc_scan" android:shortcutLongLabel="@string/sc_scan">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.weblauncher.app" android:targetClass="com.weblauncher.app.MainActivity">
+            <extra android:name="widget_action" android:value="scan" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="record" android:enabled="true" android:icon="@drawable/ic_sc_record"
+        android:shortcutShortLabel="@string/sc_record" android:shortcutLongLabel="@string/sc_record">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.weblauncher.app" android:targetClass="com.weblauncher.app.MainActivity">
+            <extra android:name="widget_action" android:value="record" />
+        </intent>
+    </shortcut>
+</shortcuts>

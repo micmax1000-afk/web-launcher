@@ -4,9 +4,12 @@ import android.content.Context
 import androidx.appcompat.app.AppCompatDelegate
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import java.util.UUID
 
 data class RecentSite(val title: String, val url: String)
+
+data class HistoryEntry(val title: String, val url: String, val time: Long)
+
+data class SavedTab(val url: String, val title: String, val desktop: Boolean = false)
 
 class AppRepository(context: Context) {
     private val prefs = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
@@ -86,6 +89,54 @@ class AppRepository(context: Context) {
         prefs.edit().putString(KEY_RECENTS, gson.toJson(list.take(12))).apply()
     }
 
+    fun loadHistory(): MutableList<HistoryEntry> {
+        val json = prefs.getString(KEY_HISTORY, null) ?: return mutableListOf()
+        return try {
+            val type = object : TypeToken<MutableList<HistoryEntry>>() {}.type
+            gson.fromJson<MutableList<HistoryEntry>>(json, type)
+                ?.filter { it != null && !it.url.isNullOrBlank() }?.toMutableList() ?: mutableListOf()
+        } catch (_: Exception) { mutableListOf() }
+    }
+
+    fun addHistory(title: String, url: String) {
+        if (!url.startsWith("http")) return
+        val list = loadHistory()
+        val now = System.currentTimeMillis()
+        // same page reloaded within 30 minutes: update instead of duplicating
+        list.removeAll { it.url == url && now - it.time < 30 * 60 * 1000L }
+        list.add(0, HistoryEntry(title.ifBlank { url }, url, now))
+        prefs.edit().putString(KEY_HISTORY, gson.toJson(list.take(MAX_HISTORY))).apply()
+    }
+
+    fun removeHistory(url: String) {
+        val list = loadHistory()
+        list.removeAll { it.url == url }
+        prefs.edit().putString(KEY_HISTORY, gson.toJson(list)).apply()
+        removeRecent(url)
+    }
+
+    fun clearHistory() {
+        prefs.edit().remove(KEY_HISTORY).apply()
+    }
+
+    fun blockAds(): Boolean = prefs.getBoolean(KEY_BLOCK_ADS, true)
+    fun setBlockAds(on: Boolean) { prefs.edit().putBoolean(KEY_BLOCK_ADS, on).apply() }
+
+    fun hideBarsOnScroll(): Boolean = prefs.getBoolean(KEY_HIDE_BARS, false)
+    fun setHideBarsOnScroll(on: Boolean) { prefs.edit().putBoolean(KEY_HIDE_BARS, on).apply() }
+
+    fun showMostUsed(): Boolean = prefs.getBoolean(KEY_MOST_USED, true)
+    fun setShowMostUsed(on: Boolean) { prefs.edit().putBoolean(KEY_MOST_USED, on).apply() }
+
+    fun searchSuggestions(): Boolean = prefs.getBoolean(KEY_SUGGEST, true)
+    fun setSearchSuggestions(on: Boolean) { prefs.edit().putBoolean(KEY_SUGGEST, on).apply() }
+
+    fun aiVoice(): Boolean = prefs.getBoolean(KEY_AI_VOICE, true)
+    fun setAiVoice(on: Boolean) { prefs.edit().putBoolean(KEY_AI_VOICE, on).apply() }
+
+    fun textZoom(): Int = prefs.getInt(KEY_TEXT_ZOOM, 100)
+    fun setTextZoom(v: Int) { prefs.edit().putInt(KEY_TEXT_ZOOM, v).apply() }
+
     fun clearRecents() {
         prefs.edit().remove(KEY_RECENTS).apply()
     }
@@ -97,6 +148,32 @@ class AppRepository(context: Context) {
         else prefs.edit().putString(KEY_RECENTS, gson.toJson(list)).apply()
     }
 
+
+    fun blockThirdPartyCookies(): Boolean = prefs.getBoolean(KEY_BLOCK_3P, true)
+
+    fun setBlockThirdPartyCookies(block: Boolean) {
+        prefs.edit().putBoolean(KEY_BLOCK_3P, block).apply()
+    }
+
+    fun darkSites(): Boolean = prefs.getBoolean(KEY_DARK_SITES, false)
+
+    fun setDarkSites(on: Boolean) {
+        prefs.edit().putBoolean(KEY_DARK_SITES, on).apply()
+    }
+
+    fun loadTabs(): Pair<List<SavedTab>, Int> {
+        val json = prefs.getString(KEY_TABS, null) ?: return emptyList<SavedTab>() to 0
+        return try {
+            val type = object : TypeToken<List<SavedTab>>() {}.type
+            val list = gson.fromJson<List<SavedTab>>(json, type)
+                ?.filter { it != null && !it.url.isNullOrBlank() } ?: emptyList()
+            list to prefs.getInt(KEY_TAB_INDEX, 0).coerceIn(0, (list.size - 1).coerceAtLeast(0))
+        } catch (_: Exception) { emptyList<SavedTab>() to 0 }
+    }
+
+    fun saveTabs(tabs: List<SavedTab>, active: Int) {
+        prefs.edit().putString(KEY_TABS, gson.toJson(tabs)).putInt(KEY_TAB_INDEX, active).apply()
+    }
 
     fun getAccent(): String = prefs.getString(KEY_ACCENT, "blue") ?: "blue"
 
@@ -144,6 +221,18 @@ class AppRepository(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_ACCENT = "accent"
         private const val KEY_RECENTS = "recents"
+        private const val KEY_HISTORY = "history"
+        private const val MAX_HISTORY = 500
+        private const val KEY_BLOCK_ADS = "block_ads"
+        private const val KEY_HIDE_BARS = "hide_bars_on_scroll"
+        private const val KEY_MOST_USED = "show_most_used"
+        private const val KEY_SUGGEST = "search_suggestions"
+        private const val KEY_AI_VOICE = "ai_voice"
+        private const val KEY_TEXT_ZOOM = "text_zoom"
+        private const val KEY_DARK_SITES = "dark_sites"
+        private const val KEY_TABS = "open_tabs"
+        private const val KEY_TAB_INDEX = "open_tab_index"
+        private const val KEY_BLOCK_3P = "block_third_party_cookies"
 
         fun accentStyle(context: Context): Int {
             val accent = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)
@@ -229,21 +318,9 @@ class AppRepository(context: Context) {
             )
         }
 
-        fun defaultCategories() = listOf(
-            "AI Tools", "Viaggi", "Shopping", "Produttivita", "Intrattenimento", "Utility"
-        )
+        fun defaultCategories() = listOf("Utility")
 
-        fun defaultApps() = mutableListOf(
-            AppItem(UUID.randomUUID().toString(), "ChatGPT", "https://chatgpt.com", "AI Tools", true, 0),
-            AppItem(UUID.randomUUID().toString(), "Claude", "https://claude.ai", "AI Tools", false, 1),
-            AppItem(UUID.randomUUID().toString(), "Gemini", "https://gemini.google.com", "AI Tools", false, 2),
-            AppItem(UUID.randomUUID().toString(), "DeepSeek", "https://chat.deepseek.com", "AI Tools", false, 3),
-            AppItem(UUID.randomUUID().toString(), "Grok", "https://x.com/i/grok", "AI Tools", false, 4),
-            AppItem(UUID.randomUUID().toString(), "Booking", "https://booking.com", "Viaggi", false, 5),
-            AppItem(UUID.randomUUID().toString(), "YouTube", "https://youtube.com", "Intrattenimento", true, 6),
-            AppItem(UUID.randomUUID().toString(), "Wikipedia", "https://it.wikipedia.org", "Utility", false, 7),
-            AppItem(UUID.randomUUID().toString(), "GitHub", "https://github.com", "Produttivita", false, 8),
-            AppItem(UUID.randomUUID().toString(), "Gmail", "https://mail.google.com", "Produttivita", false, 9)
-        )
+        /** Home starts empty: the user decides what to save. */
+        fun defaultApps() = mutableListOf<AppItem>()
     }
 }
