@@ -36,6 +36,7 @@ class IsolatedBrowserActivity : AppCompatActivity() {
             finish(); return
         }
         web = WebView(this)
+        AppRepository.restoreUiMode(this)
         ProfileStore.getInstance().getOrCreateProfile(PROFILE)
         WebViewCompat.setProfile(web, PROFILE)
         val palette = AppRepository.palette(this)

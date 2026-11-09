@@ -38,6 +38,8 @@ class AiBridge(
     private fun ensure(): WebView {
         web?.let { return it }
         val w = WebView(host.context)
+        // creating a WebView switches the app back to the system light/dark mode: restore the chosen theme
+        AppRepository.restoreUiMode(host.context)
         w.settings.javaScriptEnabled = true
         w.settings.domStorageEnabled = true
         w.settings.allowFileAccess = false

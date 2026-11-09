@@ -189,3 +189,18 @@ object Deadlines {
         if (changed) save(c, list)
     }
 }
+
+// ======================= Recipes =======================
+
+data class Recipe(
+    val id: String, val title: String, val url: String, val image: String?, val servings: String,
+    val time: String, val ingredients: List<String>, val steps: List<String>, val saved: Long
+)
+
+object Recipes {
+    private fun file(c: Context) = File(c.filesDir, "recipes.json")
+    fun load(c: Context): MutableList<Recipe> = runCatching {
+        Gson().fromJson<MutableList<Recipe>>(file(c).readText(), object : TypeToken<MutableList<Recipe>>() {}.type)
+    }.getOrNull()?.filterNotNull()?.toMutableList() ?: mutableListOf()
+    fun save(c: Context, list: List<Recipe>) { runCatching { file(c).writeText(Gson().toJson(list)) } }
+}

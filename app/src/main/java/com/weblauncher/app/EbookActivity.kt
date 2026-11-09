@@ -80,6 +80,7 @@ class EbookActivity : AppCompatActivity() {
         listenBtn = btn("🔊", "Ascolta") { toggleListen() }
         btn("☰", "Capitoli") { showChapters() }
         web = WebView(this)
+        AppRepository.restoreUiMode(this)
         val bottom = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(2), dp(4), dp(6))

@@ -11,8 +11,8 @@ android {
         applicationId = "com.weblauncher.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 40
-        versionName = "6.9.0"
+        versionCode = 41
+        versionName = "7.0.0"
     }
 
     buildTypes {
@@ -52,5 +52,6 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.3.1")
     implementation("androidx.media3:media3-session:1.3.1")
     implementation("com.google.zxing:core:3.5.3")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
 }

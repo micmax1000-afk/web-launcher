@@ -314,6 +314,7 @@ class MainActivity : AppCompatActivity() {
         renderWeather()
         renderParkBar()
         io.execute { runCatching { Deadlines.advance(this) } }
+        runCatching { AlertsWorker.schedule(this) }
         uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
         CrashReporter.pending(this)?.let { report -> uiHandler.postDelayed({ showCrashReport(report) }, 600) }
         setupNav()
@@ -324,6 +325,7 @@ class MainActivity : AppCompatActivity() {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 updateWebHint(s?.toString().orEmpty())
                 updateCalcHint(s?.toString().orEmpty())
+                updateUnifiedSearch(s?.toString().orEmpty())
                 refreshList()
             }
             override fun afterTextChanged(s: Editable?) {}
@@ -770,6 +772,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showTab(tab: Int) {
+        AppRepository.restoreUiMode(this)
         currentTab = tab
         showBars()
         hideSuggestions()
@@ -783,7 +786,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.newsPanel).isVisible = tab == TAB_NEWS
         findViewById<View>(R.id.audioPanel).isVisible = tab == TAB_AUDIO
         if (tab == TAB_AUDIO) onAudioShown()
-        if (tab == TAB_HOME) { refreshWeather(); renderParkBar() }
+        if (tab == TAB_HOME) { refreshWeather(); renderParkBar(); renderWeather() }
         if (::webView.isInitialized) trackUsage()
         if (tab == TAB_SETTINGS) renderSettings()
         if (tab == TAB_NEWS) onNewsShown()
@@ -876,6 +879,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        AppRepository.restoreUiMode(this)
         hasWindowFocusOrResumed = true
         if (::webView.isInitialized) trackUsage()
         checkSyncFromOtherDevice()
@@ -915,6 +919,7 @@ class MainActivity : AppCompatActivity() {
             "news" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_NEWS); return }
             "reminders" -> { intent.removeExtra(EXTRA_WIDGET); showRemindersPage(); return }
             "recorder" -> { intent.removeExtra(EXTRA_WIDGET); showRecorderPage(); return }
+            "podcast" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "podcast"; showTab(TAB_AUDIO); return }
         }
         val data = intent?.data
         if (intent?.action == Intent.ACTION_VIEW && data != null && (data.scheme == "content" || data.scheme == "file") &&
@@ -1142,6 +1147,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showBrowserMenu(anchor: View) {
+        AppRepository.restoreUiMode(this)
         val tab = currentTab()
         val palette = AppRepository.palette(this)
         val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
@@ -1250,6 +1256,7 @@ class MainActivity : AppCompatActivity() {
         item("✨ Traduci con AI", hasPage) { translatePageWithAi() }
         item("✨ Scrivi con AI", hasPage) { writeWithAi() }
         item("🛒 Confronta prezzi", hasPage) { comparePrices() }
+        item("🍝 Salva ricetta", hasPage) { saveRecipeFromPage() }
         item("Cronologia") { showHistoryPage() }
         item("Download") { showDownloadsPage() }
         item("Trova nella pagina", hasPage) { showFindDialog() }
@@ -1643,6 +1650,7 @@ class MainActivity : AppCompatActivity() {
         onAction: ((androidx.appcompat.app.AppCompatDialog) -> Unit)? = null,
         build: (root: android.widget.LinearLayout, body: android.widget.LinearLayout, dialog: androidx.appcompat.app.AppCompatDialog) -> Unit
     ) {
+        AppRepository.restoreUiMode(this)
         val palette = AppRepository.palette(this)
         val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
         val d = resources.displayMetrics.density
@@ -3887,20 +3895,14 @@ class MainActivity : AppCompatActivity() {
         else -> "🌡" to ""
     }
 
-    private fun renderWeather() {
-        val card = findViewById<android.widget.LinearLayout>(R.id.weatherCard)
-        card.removeAllViews()
-        if (weatherPrefs.getBoolean("hidden", false)) { card.isVisible = false; return }
-        card.isVisible = true
+    /** Weather line of the «Oggi» card. */
+    private fun renderWeatherRow(card: android.widget.LinearLayout) {
         val palette = AppRepository.palette(this)
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
-        card.background = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = 20 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
-        }
         val city = weatherPrefs.getString("city", null)
         val data = weatherPrefs.getString("data", null)?.let { runCatching { org.json.JSONObject(it) }.getOrNull() }
-        card.setOnClickListener { if (city == null) setupWeather() else showWeatherDetail() }
+        card.setOnClickListener { if (city == null) setupWeather() else showTodayDetail() }
         if (city == null || data == null) {
             card.addView(TextView(this).apply {
                 text = if (city == null) "☀️  Aggiungi il meteo della tua città" else "⏳  Meteo di $city…"
@@ -3944,6 +3946,145 @@ class MainActivity : AppCompatActivity() {
                 setPadding(dp(6), 0, dp(6), 0)
             })
         }
+    }
+
+    // ======================= «Oggi» card: weather + calendar + reminders + deadlines =======================
+
+    data class TodayEntry(val time: Long, val allDay: Boolean, val text: String, val icon: String, val action: (() -> Unit)? = null)
+
+    private val calendarPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        homePrefs.edit().putBoolean("askedCal", true).apply()
+        if (ok) renderWeather() else toast("Calendario non collegato")
+    }
+
+    private fun calendarEvents(from: Long, to: Long): List<TodayEntry> {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) return emptyList()
+        return runCatching {
+            val uri = android.provider.CalendarContract.Instances.CONTENT_URI.buildUpon()
+                .appendPath(from.toString()).appendPath(to.toString()).build()
+            contentResolver.query(uri, arrayOf(
+                android.provider.CalendarContract.Instances.TITLE, android.provider.CalendarContract.Instances.BEGIN,
+                android.provider.CalendarContract.Instances.ALL_DAY, android.provider.CalendarContract.Instances.EVENT_ID
+            ), null, null, android.provider.CalendarContract.Instances.BEGIN + " ASC")?.use { c ->
+                val out = mutableListOf<TodayEntry>()
+                while (c.moveToNext()) {
+                    val title = c.getString(0)?.takeIf { it.isNotBlank() } ?: "(senza titolo)"
+                    val allDay = c.getInt(2) == 1
+                    var begin = c.getLong(1)
+                    if (allDay) begin = java.util.Calendar.getInstance().apply {
+                        val u = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = begin }
+                        clear(); set(u.get(java.util.Calendar.YEAR), u.get(java.util.Calendar.MONTH), u.get(java.util.Calendar.DAY_OF_MONTH))
+                    }.timeInMillis
+                    val id = c.getLong(3)
+                    out.add(TodayEntry(begin, allDay, title, "📅") {
+                        runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, id))) }
+                    })
+                }
+                out
+            }
+        }.getOrNull().orEmpty()
+    }
+
+    /** Today and tomorrow: calendar, reminders, deadlines and renewals. */
+    private fun todayEntries(): List<TodayEntry> {
+        val start = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val end = start + 2 * 86_400_000L
+        val now = System.currentTimeMillis()
+        val out = mutableListOf<TodayEntry>()
+        out += calendarEvents(start, end)
+        Reminders.load(this).filter { !it.done && it.at in now..end }.forEach { r ->
+            out += TodayEntry(r.at, false, r.text, if (r.repeat != null) "🔁" else "⏰") { showRemindersPage() }
+        }
+        Deadlines.load(this).forEach { d ->
+            val days = (d.date - now) / 86_400_000L
+            val near = when (d.kind) { Deadlines.SUBSCRIPTION -> days in 0..3; Deadlines.WARRANTY -> false; else -> d.date in now..(now + 7 * 86_400_000L) }
+            if (near) out += TodayEntry(minOf(maxOf(d.date, start), end - 1), true,
+                when (d.kind) { Deadlines.SUBSCRIPTION -> "${d.title} si rinnova ${daysLeft(d.date)}"; else -> "${d.title} scade ${daysLeft(d.date)}" },
+                "⚠️") { showDeadlinesPage(d.kind) }
+        }
+        Places.parking(this)?.takeIf { it.until > now }?.let { p ->
+            out += TodayEntry(p.until, false, "Scade il parcheggio", "🚗") { showPlacesPage() }
+        }
+        return out.filter { it.time < end }.sortedWith(compareBy<TodayEntry> { it.time >= start + 86_400_000L }.thenBy { !it.allDay }.thenBy { it.time })
+    }
+
+    private fun renderWeather() {
+        val card = findViewById<android.widget.LinearLayout>(R.id.weatherCard)
+        card.removeAllViews()
+        card.orientation = android.widget.LinearLayout.VERTICAL
+        val palette = AppRepository.palette(this)
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        card.background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 20 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+        }
+        val showWeather = !weatherPrefs.getBoolean("hidden", false)
+        val showToday = homePrefs.getBoolean("today", true)
+        if (showWeather) {
+            val row = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }
+            renderWeatherRow(row)
+            card.addView(row)
+        }
+        var lines = 0
+        if (showToday) {
+            val entries = runCatching { todayEntries() }.getOrDefault(emptyList())
+            val tomorrow = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); add(java.util.Calendar.DAY_OF_YEAR, 1)
+            }.timeInMillis
+            val tf = java.text.SimpleDateFormat("HH:mm", Locale.ITALIAN)
+            entries.take(3).forEach { e ->
+                card.addView(TextView(this).apply {
+                    val whenTxt = when {
+                        e.time >= tomorrow -> "domani"
+                        e.allDay -> "oggi"
+                        else -> tf.format(java.util.Date(e.time))
+                    }
+                    text = "${e.icon}  $whenTxt  ${e.text}"
+                    textSize = 14f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setTextColor(palette.text)
+                    setPadding(dp(2), dp(if (lines == 0 && showWeather) 10 else 4), 0, 0)
+                    setOnClickListener { e.action?.invoke() ?: showTodayDetail() }
+                })
+                lines++
+            }
+            if (entries.size > 3) card.addView(TextView(this).apply {
+                text = "+ altri ${entries.size - 3}"; textSize = 13f; setPadding(dp(2), dp(4), 0, 0)
+                setTextColor(com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt()))
+                setOnClickListener { showTodayDetail() }
+            })
+            val hasCal = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+            if (!hasCal && !homePrefs.getBoolean("askedCal", false)) card.addView(TextView(this).apply {
+                text = "📅  Collega il calendario per vedere gli appuntamenti  ›"; textSize = 13f; setPadding(dp(2), dp(8), 0, 0)
+                setTextColor(com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt()))
+                setOnClickListener { calendarPermission.launch(Manifest.permission.READ_CALENDAR) }
+                setOnLongClickListener { homePrefs.edit().putBoolean("askedCal", true).apply(); renderWeather(); true }
+            })
+        }
+        card.isVisible = card.childCount > 0
+        card.setOnClickListener { showTodayDetail() }
+    }
+
+    private fun showTodayDetail() {
+        val entries = runCatching { todayEntries() }.getOrDefault(emptyList())
+        val tomorrow = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); add(java.util.Calendar.DAY_OF_YEAR, 1)
+        }.timeInMillis
+        val tf = java.text.SimpleDateFormat("HH:mm", Locale.ITALIAN)
+        val today = java.text.SimpleDateFormat("EEEE d MMMM", Locale.ITALIAN).format(java.util.Date()).replaceFirstChar { it.uppercase() }
+        val labels = mutableListOf<String>(); val actions = mutableListOf<(() -> Unit)?>()
+        var tomorrowHeader = false
+        entries.forEach { e ->
+            if (e.time >= tomorrow && !tomorrowHeader) { labels += "— DOMANI —"; actions += null; tomorrowHeader = true }
+            labels += "${e.icon}  ${if (e.allDay) "" else tf.format(java.util.Date(e.time)) + "  "}${e.text}"; actions += e.action
+        }
+        if (labels.isEmpty()) labels += "Niente in programma: giornata libera 🙂".also { actions += null }
+        val b = MaterialAlertDialogBuilder(this).setTitle("Oggi · $today")
+            .setItems(labels.toTypedArray()) { _, w -> actions.getOrNull(w)?.invoke() }
+            .setNegativeButton("Chiudi", null)
+        if (weatherPrefs.getString("data", null) != null) b.setNeutralButton("🌦 Meteo") { _, _ -> showWeatherDetail() }
+        else b.setNeutralButton("🌦 Aggiungi meteo") { _, _ -> setupWeather() }
+        b.show()
     }
 
     private fun refreshWeather(force: Boolean = false) {
@@ -6152,6 +6293,10 @@ class MainActivity : AppCompatActivity() {
             },
             Triple("⏰", "Promemoria") { showRemindersPage() },
             Triple("🎙", "Registratore") { showRecorderPage() },
+            Triple("🗣", "Chiedi a voce") { listenForQuestion() },
+            Triple("🍝", "Ricette") { showRecipesPage() },
+            Triple("🚘", "Modalità auto") { showCarMode() },
+            Triple("🔔", "Avvisi") { showAlertsPage() },
             Triple("💰", "Spese") { showExpensesPage() },
             Triple("📆", "Scadenze") { showDeadlinesPage(Deadlines.DEADLINE) },
             Triple("🔁", "Abbonamenti") { showDeadlinesPage(Deadlines.SUBSCRIPTION) },
@@ -7082,6 +7227,529 @@ class MainActivity : AppCompatActivity() {
         return true
     }
 
+    // ======================= System voice commands =======================
+
+    private var pendingContactCommand: String? = null
+    private val contactsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        val cmd = pendingContactCommand; pendingContactCommand = null
+        if (ok && cmd != null) systemVoiceCommand(cmd) else if (!ok) toast("Serve il permesso contatti per chiamare per nome")
+    }
+    private var torchState = false
+
+    /** (name, number) of the best matching contact, or null. */
+    private fun findContact(name: String): Pair<String, String>? = runCatching {
+        contentResolver.query(
+            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER,
+                android.provider.ContactsContract.CommonDataKinds.Phone.TYPE),
+            android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " LIKE ?", arrayOf("%$name%"), null
+        )?.use { c ->
+            val all = mutableListOf<Triple<String, String, Int>>()
+            while (c.moveToNext()) all.add(Triple(c.getString(0) ?: "", c.getString(1) ?: "", c.getInt(2)))
+            all.sortedWith(compareBy<Triple<String, String, Int>> { !it.first.equals(name, true) }
+                .thenBy { !it.first.lowercase().startsWith(name.lowercase()) }
+                .thenBy { it.third != android.provider.ContactsContract.CommonDataKinds.Phone.TYPE_MOBILE })
+                .firstOrNull()?.let { it.first to it.second }
+        }
+    }.getOrNull()
+
+    private fun withContact(cmd: String, name: String, use: (String, String) -> Unit) {
+        val digits = name.replace(Regex("[^0-9+]"), "")
+        if (digits.length >= 6) { use(name, digits); return }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
+            pendingContactCommand = cmd; contactsPermission.launch(Manifest.permission.READ_CONTACTS); return
+        }
+        val c = findContact(name.trim()) ?: run { toast("Non trovo «$name» nei contatti"); return }
+        use(c.first, c.second)
+    }
+
+    private fun spokenNumber(w: String): Int? = when (w.lowercase(Locale.ITALIAN)) {
+        "un", "uno", "una" -> 1; "due" -> 2; "tre" -> 3; "quattro" -> 4; "cinque" -> 5; "sei" -> 6; "sette" -> 7; "otto" -> 8
+        "nove" -> 9; "dieci" -> 10; "quindici" -> 15; "venti" -> 20; "trenta" -> 30; "quaranta" -> 40; "mezz'ora", "mezzora" -> 30
+        else -> w.toIntOrNull()
+    }
+
+    /** Alarm, timer, torch, calls, WhatsApp and SMS by voice. Returns true if handled. */
+    private fun systemVoiceCommand(raw: String): Boolean {
+        val t = raw.trim().lowercase(Locale.ITALIAN)
+        Regex("^(?:metti|imposta|punta|crea)?\\s*(?:la|una)?\\s*sveglia\\s+(?:alle|per le|a|ore)?\\s*(\\d{1,2})(?:[:. ](\\d{2}))?(?:\\s+e\\s+(mezza|un quarto|\\d{1,2}))?").find(t)?.let { m ->
+            var h = m.groupValues[1].toInt()
+            val min = m.groupValues[2].toIntOrNull() ?: when (m.groupValues[3]) { "mezza" -> 30; "un quarto" -> 15; "" -> 0; else -> m.groupValues[3].toInt() }
+            if (t.contains("pomeriggio") || t.contains("sera")) { if (h < 12) h += 12 }
+            val i = Intent(android.provider.AlarmClock.ACTION_SET_ALARM)
+                .putExtra(android.provider.AlarmClock.EXTRA_HOUR, h).putExtra(android.provider.AlarmClock.EXTRA_MINUTES, min)
+                .putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, "Sveglia").putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
+            runCatching { startActivity(i); toast("⏰ Sveglia alle %d:%02d".format(h, min)) }.onFailure { toast("L'orologio del telefono non accetta sveglie") }
+            return true
+        }
+        Regex("^(?:metti|imposta|avvia|fai partire)?\\s*(?:un)?\\s*timer\\s+(?:di|da|per)?\\s*(\\S+)\\s*(minuti|minuto|secondi|secondo|ore|ora)?(?:\\s+e\\s+(\\S+)\\s*(secondi|minuti)?)?").find(t)?.let { m ->
+            val n = spokenNumber(m.groupValues[1]) ?: return@let
+            var secs = when { m.groupValues[2].startsWith("sec") -> n; m.groupValues[2].startsWith("or") -> n * 3600; m.groupValues[1].startsWith("mezz") -> 1800; else -> n * 60 }
+            spokenNumber(m.groupValues[3])?.let { extra -> secs += if (m.groupValues[4].startsWith("min")) extra * 60 else if (m.groupValues[2].startsWith("or")) extra * 60 else extra }
+            val i = Intent(android.provider.AlarmClock.ACTION_SET_TIMER)
+                .putExtra(android.provider.AlarmClock.EXTRA_LENGTH, secs).putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, "Timer")
+                .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
+            runCatching { startActivity(i); toast("⏱ Timer di ${fmtTime(secs * 1000L)}") }.onFailure { toast("L'orologio del telefono non accetta timer") }
+            return true
+        }
+        if (Regex("\\b(accendi|spegni|attiva|disattiva)\\b.*\\btorcia\\b|^torcia$").containsMatchIn(t)) {
+            val on = !Regex("\\b(spegni|disattiva)\\b").containsMatchIn(t) && !(t == "torcia" && torchState)
+            val cm = getSystemService(CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+            val id = runCatching { cm.cameraIdList.firstOrNull { cm.getCameraCharacteristics(it).get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE) == true } }.getOrNull()
+            if (id == null) toast("Torcia non disponibile") else runCatching { cm.setTorchMode(id, on); torchState = on; toast(if (on) "🔦 Torcia accesa" else "Torcia spenta") }
+            return true
+        }
+        Regex("^(?:manda|invia|scrivi)\\s+(?:un\\s+)?(?:messaggio\\s+)?(?:whatsapp|su whatsapp)\\s+(?:a|ad)\\s+(.+?)(?:\\s+(?:che|dicendo|dicendogli|dicendole|scrivendo)\\s+(.*))?$").find(t)?.let { m ->
+            val body = raw.trim().let { r -> m.groupValues[2].takeIf { it.isNotBlank() }?.let { g -> r.substring(r.lowercase(Locale.ITALIAN).lastIndexOf(g)).trim() } }.orEmpty()
+            withContact(raw, m.groupValues[1]) { name, number ->
+                var n = number.replace(Regex("[^0-9+]"), "")
+                n = when { n.startsWith("+") -> n.drop(1); n.startsWith("00") -> n.drop(2); n.startsWith("3") || n.startsWith("0") -> "39$n"; else -> n }
+                val i = Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$n" + if (body.isNotEmpty()) "?text=" + Uri.encode(body) else ""))
+                runCatching { startActivity(i.setPackage("com.whatsapp")) }.recoverCatching { startActivity(i.setPackage("com.whatsapp.w4b")) }
+                    .onFailure { toast("WhatsApp non installato") }
+                toast("💬 WhatsApp a $name")
+            }
+            return true
+        }
+        Regex("^(?:manda|invia|scrivi)\\s+(?:un\\s+)?(?:sms|messaggio)\\s+(?:a|ad)\\s+(.+?)(?:\\s+(?:che|dicendo|scrivendo)\\s+(.*))?$").find(t)?.let { m ->
+            val body = raw.trim().let { r -> m.groupValues[2].takeIf { it.isNotBlank() }?.let { g -> r.substring(r.lowercase(Locale.ITALIAN).lastIndexOf(g)).trim() } }.orEmpty()
+            withContact(raw, m.groupValues[1]) { name, number ->
+                runCatching { startActivity(Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$number")).putExtra("sms_body", body)) }
+                toast("✉️ Messaggio a $name")
+            }
+            return true
+        }
+        Regex("^(?:chiama|telefona a|telefona|fai una chiamata a)\\s+(.+)$").find(t)?.let { m ->
+            withContact(raw, m.groupValues[1]) { name, number ->
+                runCatching { startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(number)))) }
+                toast("📞 $name: tocca il tasto verde per chiamare")
+            }
+            return true
+        }
+        if (Regex("^(?:attiva |apri |avvia )?(?:la )?modalità auto|^modalità guida").containsMatchIn(t)) { showCarMode(); return true }
+        return false
+    }
+
+    // ======================= Ask by voice (spoken answer) =======================
+
+    private var voiceAskMode = false
+    private val askSpeechLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        val text = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim().orEmpty()
+        if (r.resultCode == RESULT_OK && text.isNotEmpty()) askByVoice(text)
+    }
+
+    private fun listenForQuestion() {
+        if (!aiReady()) return
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "it-IT")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Fai una domanda")
+        }
+        try { askSpeechLauncher.launch(intent) } catch (_: Exception) { toast(getString(R.string.no_speech)) }
+    }
+
+    private fun looksLikeQuestion(t: String): Boolean {
+        val s = t.trim().lowercase(Locale.ITALIAN)
+        return s.endsWith("?") || Regex("^(chi|cosa|che cosa|che|come|quando|dove|perché|perche|quanto|quanti|quante|quale|quali|qual|dimmi|spiegami|raccontami|sai)\\b").containsMatchIn(s)
+    }
+
+    private fun askByVoice(question: String) {
+        if (!aiReady()) return
+        val d = resources.displayMetrics.density
+        val palette = AppRepository.palette(this)
+        val answer = TextView(this).apply {
+            text = "…"; textSize = 17f; setTextColor(palette.text); setLineSpacing(0f, 1.2f)
+            setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); setTextIsSelectable(true)
+        }
+        var full = ""
+        val dlg = MaterialAlertDialogBuilder(this).setTitle("🗣 $question").setView(android.widget.ScrollView(this).apply { addView(answer) })
+            .setPositiveButton("Altra domanda") { _, _ -> tts?.stop(); listenForQuestion() }
+            .setNeutralButton("Continua in chat") { _, _ -> tts?.stop(); showAiSheet("Risposta AI", null, question) }
+            .setNegativeButton("Stop") { _, _ -> tts?.stop() }
+            .setOnCancelListener { tts?.stop() }
+            .show()
+        val id = ai.ask(listOf("user" to question),
+            "Sei un assistente vocale. Rispondi in italiano in massimo 3-4 frasi brevi e chiare, adatte a essere lette ad alta voce: " +
+                "niente elenchi, simboli, tabelle o link. Se servono dati aggiornati che non conosci, dillo.",
+            object : AiBridge.Listener {
+                override fun onPartial(text: String) { answer.text = text }
+                override fun onDone(text: String, model: String) { full = text; answer.text = text; if (dlg.isShowing) speak(text, 1f) }
+                override fun onError(message: String, noKey: Boolean) { answer.text = message }
+            })
+        dlg.setOnDismissListener { if (full.isEmpty()) ai.cancel(id) }
+    }
+
+    // ======================= Unified search =======================
+
+    private var searchToken = 0
+
+    private fun updateUnifiedSearch(q: String) {
+        val box = findViewById<android.widget.LinearLayout>(R.id.searchResults)
+        val query = q.trim().lowercase(Locale.ITALIAN)
+        val token = ++searchToken
+        if (query.length < 2) { box.removeAllViews(); box.isVisible = false; return }
+        Thread {
+            data class Hit(val icon: String, val title: String, val sub: String, val action: () -> Unit)
+            val hits = mutableListOf<Hit>()
+            fun has(s: String?) = s?.lowercase(Locale.ITALIAN)?.contains(query) == true
+            runCatching {
+                notes.load().filter { has(it.text) }.take(3).forEach { n ->
+                    val first = n.text.lines().firstOrNull { it.isNotBlank() }.orEmpty()
+                    hits += Hit(if (isChecklist(n.text)) "☑" else "📝", first.take(60), "Nota", {
+                        if (isChecklist(n.text)) showChecklist(n.id) else editNote(n)
+                    })
+                }
+                Ebooks.load(this).filter { has(it.title) || has(it.author) }.take(2).forEach { b -> hits += Hit("📖", b.title, "Libro · ${b.author}", { openBook(b) }) }
+                wallet.load().filter { has(it.title) }.take(2).forEach { w -> hits += Hit("🎫", w.title, "Biglietti e documenti", { openWalletItem(w) }) }
+                cards.load().filter { has(it.name) }.take(2).forEach { c -> hits += Hit("💳", c.name, "Carta fedeltà", { showCodeFullscreen(c.name, c.code, c.format, c.color) }) }
+                Deadlines.load(this).filter { has(it.title) }.take(2).forEach { x -> hits += Hit("📆", x.title, "Scadenza · ${daysLeft(x.date)}", { showDeadlinesPage(x.kind) }) }
+                Places.load(this).filter { has(it.name) || has(it.note) }.take(2).forEach { p -> hits += Hit("📍", p.name, "Luogo · tocca per andarci", { navigateTo(p.lat, p.lon, false) }) }
+                Expenses.load(this).filter { has(it.desc) }.sortedByDescending { it.time }.take(2).forEach { e ->
+                    hits += Hit("💰", "${Expenses.fmt(e.amount)} · ${e.desc}", "Spesa", { showExpensesPage() })
+                }
+                readLater.load().filter { has(it.title) }.take(2).forEach { r ->
+                    hits += Hit("🔖", r.title, "Leggi dopo", { showReader(ReaderDoc(r.title, r.site, r.url, r.image, r.text), r) })
+                }
+                repo.loadHistory().filter { has(it.title) || has(it.url) }.distinctBy { it.url }.take(3).forEach { h ->
+                    hits += Hit("🕘", recentLabel(RecentSite(h.title, h.url)), displayUrl(h.url), { openInBrowser(h.url) })
+                }
+                if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED) {
+                    contentResolver.query(android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                        arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME, android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER),
+                        android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME + " LIKE ?", arrayOf("%$query%"), null)?.use { c ->
+                        var n = 0
+                        while (c.moveToNext() && n < 3) {
+                            val name = c.getString(0) ?: continue; val num = c.getString(1) ?: continue; n++
+                            hits += Hit("👤", name, num, { runCatching { startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + Uri.encode(num)))) } })
+                        }
+                    }
+                }
+            }
+            runOnUiThread {
+                if (token != searchToken) return@runOnUiThread
+                box.removeAllViews()
+                if (hits.isEmpty()) { box.isVisible = false; return@runOnUiThread }
+                val palette = AppRepository.palette(this)
+                val d = resources.displayMetrics.density
+                box.background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 18 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
+                }
+                hits.take(8).forEach { h ->
+                    box.addView(android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+                        setPadding((14 * d).toInt(), (9 * d).toInt(), (14 * d).toInt(), (9 * d).toInt())
+                        addView(TextView(this@MainActivity).apply { text = h.icon; textSize = 18f; setPadding(0, 0, (12 * d).toInt(), 0) })
+                        addView(android.widget.LinearLayout(this@MainActivity).apply {
+                            orientation = android.widget.LinearLayout.VERTICAL
+                            layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                            addView(TextView(this@MainActivity).apply { text = h.title; textSize = 15f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setTextColor(palette.text) })
+                            addView(TextView(this@MainActivity).apply { text = h.sub; textSize = 12f; maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setTextColor(palette.textMuted) })
+                        })
+                        setOnClickListener { searchInput.setText(""); h.action() }
+                    })
+                }
+                box.isVisible = true
+            }
+        }.start()
+    }
+
+    // ======================= Recipes =======================
+
+    private fun addItemsToShoppingList(items: List<String>) {
+        val name = "Lista della spesa"
+        val list = notes.load()
+        var n = list.firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals(name, true) }
+        if (n == null) { n = Note(UUID.randomUUID().toString(), name, System.currentTimeMillis()); list.add(n) }
+        n.text = (n.text.trimEnd() + "\n" + items.filter { it.isNotBlank() }.joinToString("\n") { "☐ " + it.trim().replaceFirstChar { c -> c.uppercase() } }).trim()
+        n.time = System.currentTimeMillis()
+        notes.save(list)
+        toast("🛒 ${items.size} ingredienti nella lista della spesa")
+    }
+
+    private fun saveRecipeFromPage() {
+        if (!aiReady()) return
+        val url = webView.url ?: return
+        webView.evaluateJavascript("(function(){var m=document.querySelector('meta[property=\"og:image\"]');return m?m.content:''})()") { rawImg ->
+            val img = jsString(rawImg).takeIf { it.startsWith("http") }
+            readPage { title, _, text ->
+                toast("✨ Preparo la scheda della ricetta…")
+                ai.ask(listOf("user" to "Dalla pagina estrai la ricetta e rispondi SOLO con JSON: {\"titolo\":\"...\",\"porzioni\":\"...\"," +
+                    "\"tempo\":\"...\",\"ingredienti\":[\"200 g di farina\",...],\"passaggi\":[\"...\",...]}. Passaggi brevi e chiari, in italiano. " +
+                    "Se non c'è una ricetta rispondi {\"errore\":\"nessuna ricetta\"}.\n\n--- PAGINA «$title» ---\n${text.take(20000)}"),
+                    "Rispondi solo con JSON valido.", object : AiBridge.Listener {
+                        override fun onDone(text: String, model: String) {
+                            val o = runCatching { org.json.JSONObject(Regex("\\{[\\s\\S]*\\}").find(text)!!.value) }.getOrNull()
+                            val ing = o?.optJSONArray("ingredienti")
+                            val steps = o?.optJSONArray("passaggi")
+                            if (o == null || ing == null || ing.length() == 0) { toast("In questa pagina non trovo una ricetta"); return }
+                            val r = Recipe(UUID.randomUUID().toString(), o.optString("titolo").ifBlank { title }, url, img,
+                                o.optString("porzioni"), o.optString("tempo"),
+                                (0 until ing.length()).map { ing.optString(it) }, (0 until (steps?.length() ?: 0)).map { steps!!.optString(it) },
+                                System.currentTimeMillis())
+                            Recipes.save(this@MainActivity, listOf(r) + Recipes.load(this@MainActivity).filter { it.url != url })
+                            showRecipe(r)
+                        }
+                        override fun onError(message: String, noKey: Boolean) { toast(message) }
+                    })
+            }
+        }
+    }
+
+    private fun showRecipesPage() {
+        openPage("Ricette") { _, body, dialog ->
+            fun render() {
+                body.removeAllViews()
+                val list = Recipes.load(this)
+                if (list.isEmpty()) { emptyLabel(body, "Nessuna ricetta.\nApri una ricetta in un sito → menu ⋮ → «🍝 Salva ricetta»."); return }
+                list.forEach { r ->
+                    mediaRow(body, r.image, r.title, listOf(r.time, r.servings.takeIf { it.isNotBlank() }?.let { "$it porzioni" }).filterNotNull().filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "${r.ingredients.size} ingredienti" },
+                        null, trailing = listOf(R.drawable.ic_web_close to {
+                            confirmClear("Eliminare «${r.title}»?") { Recipes.save(this, Recipes.load(this).filter { it.id != r.id }); render() }
+                        })) { showRecipe(r) }
+                }
+            }
+            render()
+        }
+    }
+
+    private fun showRecipe(r: Recipe) {
+        openPage(r.title.take(30)) { _, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            r.image?.let { img -> body.addView(ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                layoutParams = android.widget.LinearLayout.LayoutParams(-1, dp(190)).apply { setMargins(dp(6), 0, dp(6), dp(8)) }
+                load(img) { transformations(coil.transform.RoundedCornersTransformation(32f)) }
+            }) }
+            body.addView(TextView(this).apply {
+                text = r.title; textSize = 22f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); setPadding(dp(8), 0, dp(8), dp(4))
+            })
+            body.addView(TextView(this).apply {
+                text = listOf(r.time, r.servings.takeIf { it.isNotBlank() }?.let { "$it porzioni" } ?: "").filter { it.isNotBlank() }.joinToString(" · ")
+                textSize = 14f; setTextColor(palette.textMuted); setPadding(dp(8), 0, dp(8), dp(8))
+            })
+            val btns = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding(dp(6), 0, dp(6), 0) }
+            btns.addView(com.google.android.material.button.MaterialButton(this).apply {
+                text = "👨‍🍳 Modalità cucina"; isAllCaps = false; layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) }
+                setOnClickListener { cookingMode(r) }
+            })
+            btns.addView(com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = "🛒 Alla lista"; isAllCaps = false; layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                setOnClickListener {
+                    val checked = BooleanArray(r.ingredients.size) { true }
+                    MaterialAlertDialogBuilder(this@MainActivity).setTitle("Cosa ti manca?")
+                        .setMultiChoiceItems(r.ingredients.toTypedArray(), checked) { _, i, c -> checked[i] = c }
+                        .setPositiveButton("Aggiungi") { _, _ -> addItemsToShoppingList(r.ingredients.filterIndexed { i, _ -> checked[i] }) }
+                        .setNegativeButton("Annulla", null).show()
+                }
+            })
+            body.addView(btns)
+            sectionLabel(body, "INGREDIENTI · ${r.ingredients.size}")
+            r.ingredients.forEach { ing ->
+                body.addView(android.widget.CheckBox(this).apply { text = ing; textSize = 16f; setTextColor(palette.text); setPadding(dp(4), dp(2), 0, dp(2)) })
+            }
+            sectionLabel(body, "PROCEDIMENTO")
+            r.steps.forEachIndexed { i, st ->
+                body.addView(TextView(this).apply {
+                    text = "${i + 1}.  $st"; textSize = 16f; setTextColor(palette.text); setLineSpacing(0f, 1.2f); setPadding(dp(10), dp(6), dp(8), dp(6))
+                })
+            }
+            body.addView(TextView(this).apply {
+                text = "Fonte: ${displayUrl(r.url)} ›"; textSize = 13f; setPadding(dp(10), dp(14), 0, 0)
+                setTextColor(com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt()))
+                setOnClickListener { dialog.dismiss(); openInBrowser(r.url) }
+            })
+        }
+    }
+
+    private fun cookingMode(r: Recipe) {
+        if (r.steps.isEmpty()) { toast("Questa ricetta non ha passaggi"); return }
+        var step = 0
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val dialog = androidx.appcompat.app.AppCompatDialog(this, AppRepository.accentStyle(this))
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL; setBackgroundColor(0xFF111317.toInt()); setPadding(dp(22), dp(20), dp(22), dp(20))
+        }
+        val counter = TextView(this).apply { textSize = 16f; setTextColor(0xFF9AA0A8.toInt()) }
+        val text = TextView(this).apply { textSize = 28f; setTextColor(android.graphics.Color.WHITE); setLineSpacing(0f, 1.25f) }
+        val scroll = android.widget.ScrollView(this).apply { layoutParams = android.widget.LinearLayout.LayoutParams(-1, 0, 1f); addView(text) }
+        fun show() {
+            counter.text = "Passaggio ${step + 1} di ${r.steps.size} · ${r.title}"
+            text.text = r.steps[step]
+            speak(r.steps[step], 1f)
+        }
+        val nav = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
+        fun big(label: String, on: () -> Unit) = nav.addView(com.google.android.material.button.MaterialButton(this).apply {
+            text = label; textSize = 20f; isAllCaps = false
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, dp(72), 1f).apply { setMargins(dp(4), 0, dp(4), 0) }
+            setOnClickListener { on() }
+        })
+        big("‹ Indietro") { if (step > 0) { step--; show() } }
+        big("🔊") { speak(r.steps[step], 1f) }
+        big("Avanti ›") { if (step < r.steps.lastIndex) { step++; show() } else { tts?.stop(); dialog.dismiss(); toast("Buon appetito! 🍽") } }
+        root.addView(counter); root.addView(scroll); root.addView(nav)
+        dialog.setContentView(root)
+        dialog.window?.apply {
+            setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        dialog.setOnDismissListener { tts?.stop() }
+        dialog.show()
+        show()
+    }
+
+    // ======================= Background alerts =======================
+
+    private fun showAlertsPage() {
+        val p = getSharedPreferences("wl_alerts", MODE_PRIVATE)
+        openPage("Avvisi", "Controlla ora", { _ -> AlertsWorker.runNow(this); toast("Controllo in corso…") }) { _, body, _ ->
+            val palette = AppRepository.palette(this)
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            fun render() {
+                body.removeAllViews()
+                fun sw(label: String, sub: String, key: String) = body.addView(com.google.android.material.materialswitch.MaterialSwitch(this).apply {
+                    text = "$label\n$sub"; textSize = 15f; setTextColor(palette.text); isChecked = p.getBoolean(key, true)
+                    setPadding(dp(10), dp(10), dp(6), dp(10))
+                    setOnCheckedChangeListener { _, c -> p.edit().putBoolean(key, c).apply(); AlertsWorker.schedule(this@MainActivity) }
+                })
+                sw("Avvisi attivi", "Controllo ogni 2 ore circa, con internet", "enabled")
+                sw("🎧 Nuovi episodi", "Dei podcast che segui (${audio.subscriptions().size})", "podcasts")
+                sw("▶ Nuovi video", "Dei canali YouTube che segui (${ytChannels().size})", "youtube")
+                sectionLabel(body, "📰 NOTIZIE SU…")
+                val words = p.getStringSet("keywords", emptySet()).orEmpty().sorted()
+                if (words.isEmpty()) body.addView(TextView(this).apply {
+                    text = "Nessun argomento. Es. «sciopero treni», «nome del tuo paese», «bonus»."; textSize = 14f; setTextColor(palette.textMuted); setPadding(dp(10), dp(4), 0, dp(4))
+                })
+                words.forEach { w ->
+                    listRow(body, w, "Notifica quando escono notizie", onClick = {}, onRemove = {
+                        p.edit().putStringSet("keywords", words.toSet() - w).apply(); AlertsWorker.schedule(this); render()
+                    })
+                }
+                body.addView(com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = "➕ Aggiungi argomento"; isAllCaps = false
+                    setOnClickListener {
+                        val et = TextInputEditText(this@MainActivity).apply { hint = "Argomento o parola"; setSingleLine() }
+                        val box = android.widget.FrameLayout(this@MainActivity).apply { setPadding(dp(22), dp(8), dp(22), 0); addView(et) }
+                        MaterialAlertDialogBuilder(this@MainActivity).setTitle("Avvisami di notizie su…").setView(box)
+                            .setPositiveButton("Aggiungi") { _, _ ->
+                                val w = et.text?.toString()?.trim().orEmpty()
+                                if (w.isNotEmpty()) {
+                                    p.edit().putStringSet("keywords", p.getStringSet("keywords", emptySet()).orEmpty() + w).apply()
+                                    ensureNotificationPermission(); AlertsWorker.schedule(this@MainActivity); render()
+                                }
+                            }.setNegativeButton("Annulla", null).show()
+                    }
+                })
+                val last = p.getLong("lastRun", 0L)
+                body.addView(TextView(this).apply {
+                    text = (if (last > 0) "Ultimo controllo: ${NewsAdapter.ago(last)}. " else "") +
+                        "Android decide l'orario preciso per risparmiare batteria: un avviso può arrivare anche un'ora dopo."
+                    textSize = 12f; setTextColor(palette.textMuted); setPadding(dp(10), dp(16), dp(10), 0)
+                })
+            }
+            render()
+        }
+        ensureNotificationPermission()
+        AlertsWorker.schedule(this)
+    }
+
+    // ======================= Car mode =======================
+
+    private val carPrefs by lazy { getSharedPreferences("wl_car", MODE_PRIVATE) }
+
+    private fun goHome() {
+        val addr = carPrefs.getString("home", null)
+        if (addr.isNullOrBlank()) { setHomeAddress { goHome() }; return }
+        val app = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + Uri.encode(addr))).setPackage("com.google.android.apps.maps")
+        try { startActivity(app) } catch (_: Exception) { showTab(TAB_BROWSER); openInBrowser("https://www.google.com/maps/dir/?api=1&destination=" + Uri.encode(addr)) }
+    }
+
+    private fun setHomeAddress(then: (() -> Unit)? = null) {
+        val d = resources.displayMetrics.density
+        val et = TextInputEditText(this).apply { hint = "Via, numero, città"; setSingleLine(); setText(carPrefs.getString("home", "")) }
+        val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
+        MaterialAlertDialogBuilder(this).setTitle("🏠 Indirizzo di casa").setView(box)
+            .setPositiveButton("Salva") { _, _ ->
+                val a = et.text?.toString()?.trim().orEmpty()
+                if (a.isNotEmpty()) { carPrefs.edit().putString("home", a).apply(); then?.invoke() }
+            }.setNegativeButton("Annulla", null).show()
+    }
+
+    private fun showCarMode() {
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val dialog = androidx.appcompat.app.AppCompatDialog(this, AppRepository.accentStyle(this))
+        val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+        val root = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL; setBackgroundColor(0xFF0B0D10.toInt()); setPadding(dp(14), dp(18), dp(14), dp(14))
+        }
+        val head = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }
+        val clock = TextView(this).apply { textSize = 34f; setTextColor(android.graphics.Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD); layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f) }
+        head.addView(clock)
+        head.addView(com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+            text = "Esci"; textSize = 18f; isAllCaps = false; setTextColor(android.graphics.Color.WHITE); setOnClickListener { dialog.dismiss() }
+        })
+        root.addView(head)
+        val now = TextView(this).apply { textSize = 18f; setTextColor(0xFFB8C0CC.toInt()); maxLines = 2; setPadding(dp(4), dp(8), dp(4), dp(10)) }
+        root.addView(now)
+        val grid = android.widget.GridLayout(this).apply { columnCount = 2; layoutParams = android.widget.LinearLayout.LayoutParams(-1, 0, 1f) }
+        fun tile(emoji: String, label: String, color: Int, onClick: () -> Unit) = grid.addView(android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 24 * d; setColor(color) }
+            layoutParams = android.widget.GridLayout.LayoutParams().apply {
+                width = 0; height = 0
+                columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+                rowSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+                setMargins(dp(6), dp(6), dp(6), dp(6))
+            }
+            addView(TextView(this@MainActivity).apply { text = emoji; textSize = 40f; gravity = android.view.Gravity.CENTER })
+            addView(TextView(this@MainActivity).apply { text = label; textSize = 19f; setTextColor(android.graphics.Color.WHITE); gravity = android.view.Gravity.CENTER; setPadding(0, dp(6), 0, 0) })
+            setOnClickListener { onClick() }
+        })
+        val dark = 0xFF1C2230.toInt()
+        tile("🎤", "Comando vocale", accent) { requestMicAndListen() }
+        tile("⏯", "Play / Pausa", dark) {
+            val c = controller
+            if (c?.currentMediaItem != null) { if (c.isPlaying) c.pause() else c.play() }
+            else audio.favoriteStations().firstOrNull()?.let { playRadio(it) } ?: toast("Scegli una radio preferita in Ascolta")
+        }
+        tile("📻", "Radio preferita", dark) {
+            val favs = audio.favoriteStations()
+            if (favs.isEmpty()) toast("Aggiungi una radio preferita (⭐) in Ascolta → Radio")
+            else MaterialAlertDialogBuilder(this).setItems(favs.map { it.name }.toTypedArray()) { _, w -> playRadio(favs[w]) }.show()
+        }
+        tile("🎧", "Riprendi podcast", dark) {
+            val eps = if (episodes.isEmpty()) audio.cachedEpisodes() else episodes
+            val e = eps.filter { AudioStore.position(this, it.id) > 0 && !AudioStore.isFinished(this, it.id) }.maxByOrNull { it.time }
+                ?: eps.firstOrNull { !AudioStore.isFinished(this, it.id) }
+            if (e != null) playEpisode(e) else toast("Nessun episodio: segui un podcast in Ascolta")
+        }
+        tile("🏠", "Portami a casa", dark) { goHome() }
+        tile("🚗", "Ho parcheggiato", dark) { parkHere() }
+        root.addView(grid)
+        val tick = object : Runnable {
+            override fun run() {
+                clock.text = java.text.SimpleDateFormat("HH:mm", Locale.ITALIAN).format(java.util.Date())
+                val md = controller?.currentMediaItem?.mediaMetadata
+                now.text = if (md != null) (if (controller?.isPlaying == true) "▶ " else "⏸ ") + (md.title ?: "") + (md.artist?.let { " · $it" } ?: "") else "Niente in riproduzione"
+                uiHandler.postDelayed(this, 1000)
+            }
+        }
+        dialog.setContentView(root)
+        dialog.window?.apply {
+            setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+            addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            statusBarColor = 0xFF0B0D10.toInt(); navigationBarColor = 0xFF0B0D10.toInt()
+        }
+        dialog.setOnDismissListener { uiHandler.removeCallbacks(tick) }
+        dialog.show()
+        uiHandler.post(tick)
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -7402,6 +8070,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleVoiceText(text: String) {
         toast("Hai detto: $text")
+        if (systemVoiceCommand(text)) return
         if (Regex("^(ho\\s+)?(speso|pagato)\\b", RegexOption.IGNORE_CASE).containsMatchIn(text.trim())) {
             Expenses.parseVoice(text)?.let { (amount, desc) -> addExpenseDialog(amount, desc); return }
         }
@@ -7425,6 +8094,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val words = text.trim().split(Regex("\\s+")).size
+        if (looksLikeQuestion(text) && ai.supported() && findAppByName(text) == null) { askByVoice(text); return }
         val simple = findAppByName(text) != null || looksLikeUrl(text) || words <= 3
         if (repo.aiVoice() && !simple) interpretVoice(text, fallback) else fallback()
     }
@@ -7794,6 +8464,10 @@ class MainActivity : AppCompatActivity() {
         section("HOME")
         row("🌦 Meteo in home", if (weatherPrefs.getBoolean("hidden", false)) "Nascosto" else weatherPrefs.getString("city", null) ?: "Scegli la città") {
             weatherPrefs.edit().putBoolean("hidden", false).apply(); renderWeather(); setupWeather()
+        }
+        row("🏠 Indirizzo di casa", carPrefs.getString("home", null) ?: "Per «Portami a casa» in modalità auto") { setHomeAddress { renderSettings() } }
+        row("📅 Riquadro «Oggi»", "Appuntamenti, promemoria e scadenze sotto la ricerca", switch = homePrefs.getBoolean("today", true)) {
+            homePrefs.edit().putBoolean("today", !homePrefs.getBoolean("today", true)).apply(); renderWeather(); renderSettings()
         }
         row("🧩 Widget", "Ricerca e Notizie sulla schermata del telefono") {
             MaterialAlertDialogBuilder(this).setTitle("Widget")
