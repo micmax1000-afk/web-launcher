@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity() {
     private var suggestToken = 0
     private val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var relockPending = false
+    private var webPaused = false
     /** Disk work (history, backup) off the UI thread: keeps scrolling and page loads smooth. */
     private val io = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var lastRecorded = ""
@@ -865,6 +866,14 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        // battery: pages (scripts, ads, feeds) must not keep running in the background,
+        // except a YouTube video playing with «audio a schermo spento» or picture-in-picture
+        val keepAudio = YouTube.isYouTube(webView.url) && ytPlaying && ytPrefs.getBoolean("background", true)
+        if (!keepAudio && !inPip && !isChangingConfigurations) {
+            webView.onPause()
+            webView.pauseTimers()
+            webPaused = true
+        }
         vaultDialog?.dismiss()
         if (lockEnabled() && !isChangingConfigurations) lockedSince = System.currentTimeMillis()
         if (::webView.isInitialized && isLockedUrl(webView.url)) relockPending = true
@@ -872,6 +881,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        if (webPaused && ::webView.isInitialized) { webView.onResume(); webView.resumeTimers(); webPaused = false }
         if (lockEnabled() && !inPip) {
             val delay = lockPrefs.getInt("delayMin", 1) * 60_000L
             if (lockedSince == 0L || System.currentTimeMillis() - lockedSince >= delay) { showLockOverlay(); unlockApp() }
