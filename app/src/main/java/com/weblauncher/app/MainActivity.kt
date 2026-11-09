@@ -312,6 +312,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.homeToolsScroll).isVisible = false
         applyHomeLook()
         renderWeather()
+        renderParkBar()
         uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
         CrashReporter.pending(this)?.let { report -> uiHandler.postDelayed({ showCrashReport(report) }, 600) }
         setupNav()
@@ -779,7 +780,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.newsPanel).isVisible = tab == TAB_NEWS
         findViewById<View>(R.id.audioPanel).isVisible = tab == TAB_AUDIO
         if (tab == TAB_AUDIO) onAudioShown()
-        if (tab == TAB_HOME) refreshWeather()
+        if (tab == TAB_HOME) { refreshWeather(); renderParkBar() }
         if (::webView.isInitialized) trackUsage()
         if (tab == TAB_SETTINGS) renderSettings()
         if (tab == TAB_NEWS) onNewsShown()
@@ -853,6 +854,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        vaultDialog?.dismiss()
         if (::webView.isInitialized && isLockedUrl(webView.url)) relockPending = true
     }
 
@@ -5679,7 +5681,10 @@ class MainActivity : AppCompatActivity() {
                     f
                 }.getOrNull()
             }
-            runOnUiThread { scanDone(pdf, images, res.pages?.size ?: images.size) }
+            runOnUiThread {
+                if (scanPurpose == "expense") { scanPurpose = null; readReceipt(images, pdf) }
+                else scanDone(pdf, images, res.pages?.size ?: images.size)
+            }
         }
     }
 
@@ -5703,7 +5708,7 @@ class MainActivity : AppCompatActivity() {
     private fun scanDone(pdf: java.io.File, images: List<java.io.File>, pageCount: Int) {
         if (!pdf.exists()) { toast("Scansione non salvata"); return }
         val title = "Documento " + java.text.SimpleDateFormat("d MMM HH:mm", Locale.ITALIAN).format(java.util.Date())
-        val opts = arrayOf("📄 Apri", "🎫 Salva nei biglietti e documenti", "⬇ Salva nei Download", "Condividi", "✨ Leggi e riassumi con AI")
+        val opts = arrayOf("📄 Apri", "🎫 Salva nei biglietti e documenti", "⬇ Salva nei Download", "Condividi", "✨ Leggi e riassumi con AI", "💰 È uno scontrino o una bolletta")
         MaterialAlertDialogBuilder(this).setTitle("Scansione pronta · $pageCount ${if (pageCount == 1) "pagina" else "pagine"}")
             .setItems(opts) { _, w ->
                 when (w) {
@@ -5731,6 +5736,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     4 -> readScanWithAi(images)
+                    5 -> readReceipt(images, pdf)
                 }
             }.show()
     }
@@ -6120,7 +6126,9 @@ class MainActivity : AppCompatActivity() {
                 showChecklist(n?.id, "Lista della spesa")
             },
             Triple("⏰", "Promemoria") { showRemindersPage() },
-            Triple("🎙", "Registratore") { showRecorderPage() }
+            Triple("🎙", "Registratore") { showRecorderPage() },
+            Triple("💰", "Spese") { showExpensesPage() },
+            Triple("🚗", "Parcheggio e luoghi") { showPlacesPage() }
         ))
         group("DOCUMENTI", listOf(
             Triple("📄", "Scanner") { scanDocument() },
@@ -6128,7 +6136,8 @@ class MainActivity : AppCompatActivity() {
             Triple("🎫", "Biglietti") { showWalletPage() },
             Triple("💳", "Carte fedeltà") { showCardsPage() },
             Triple("📖", "Libri") { showBooksPage() },
-            Triple("🔖", "Leggi dopo") { showReadLaterPage() }
+            Triple("🔖", "Leggi dopo") { showReadLaterPage() },
+            Triple("🔐", "Cassaforte") { showVault() }
         ))
         group("UTILITÀ", listOf(
             Triple("📷", "QR code") { scanQr() },
@@ -6260,6 +6269,522 @@ class MainActivity : AppCompatActivity() {
         })
         sheet.setContentView(root)
         sheet.show()
+    }
+
+    // ======================= Camera capture (FileProvider) =======================
+
+    private var captureTarget: java.io.File? = null
+    private var captureDone: ((java.io.File?) -> Unit)? = null
+
+    private val takePicture = registerForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = captureTarget
+        val cb = captureDone
+        captureTarget = null; captureDone = null
+        cb?.invoke(if (ok && f != null && f.exists() && f.length() > 0) f else null)
+    }
+
+    private val cameraPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) captureTarget?.let { launchCamera(it) } else { toast("Serve il permesso fotocamera"); captureDone?.invoke(null) }
+    }
+
+    private fun launchCamera(f: java.io.File) {
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", f)
+        try { takePicture.launch(uri) } catch (_: Exception) { toast("Fotocamera non disponibile"); captureDone?.invoke(null) }
+    }
+
+    private fun capturePhoto(target: java.io.File, done: (java.io.File?) -> Unit) {
+        target.parentFile?.mkdirs()
+        captureTarget = target; captureDone = done
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchCamera(target)
+        else cameraPermission.launch(Manifest.permission.CAMERA)
+    }
+
+    // ======================= Expenses & bills =======================
+
+    private var expenseMonth = java.util.Calendar.getInstance()
+    private var expensesRefresh: (() -> Unit)? = null
+    private var scanPurpose: String? = null
+
+    private fun addExpenseDialog(amount: Double? = null, desc: String = "", cat: String? = null, time: Long = System.currentTimeMillis(), replaceId: String? = null) {
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val amountEt = TextInputEditText(this).apply {
+            hint = "Importo (€)"; setSingleLine()
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            amount?.let { setText(String.format(Locale.ROOT, "%.2f", it)) }
+        }
+        val descEt = TextInputEditText(this).apply { hint = "Per cosa? (es. pizza, benzina)"; setSingleLine(); setText(desc) }
+        val chips = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true; setPadding(0, dp(10), 0, 0) }
+        var chosen = cat ?: Expenses.guess(desc)
+        val chipViews = Expenses.CATS.map { c ->
+            com.google.android.material.chip.Chip(this).apply {
+                text = c; isCheckable = true; isChecked = c == chosen
+                setOnClickListener { chosen = c }
+            }.also { chips.addView(it) }
+        }
+        descEt.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(e: Editable?) {
+                if (cat != null) return
+                chosen = Expenses.guess(e?.toString().orEmpty())
+                chipViews.forEach { it.isChecked = it.text.toString() == chosen }
+            }
+        })
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(8), dp(22), 0)
+            addView(amountEt); addView(descEt); addView(chips)
+        }
+        MaterialAlertDialogBuilder(this).setTitle("Nuova spesa").setView(android.widget.ScrollView(this).apply { addView(box) })
+            .setPositiveButton("Salva") { _, _ ->
+                val v = Calc.num(amountEt.text?.toString().orEmpty())
+                if (v == null || v <= 0) { toast("Importo non valido"); return@setPositiveButton }
+                Expenses.save(this, Expenses.load(this).filter { it.id != replaceId } +
+                    Expense(UUID.randomUUID().toString(), v, descEt.text?.toString()?.trim().orEmpty().ifBlank { "Spesa" }, chosen, time))
+                toast("💰 ${Expenses.fmt(v)} · ${chosen.substringAfter(' ')}")
+                expensesRefresh?.invoke()
+            }
+            .setNegativeButton("Annulla", null).show()
+        if (amount == null) amountEt.requestFocus()
+    }
+
+    private fun showExpensesPage() {
+        openPage("Spese", "Aggiungi", { _ -> addExpenseDialog() }) { _, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            fun render() {
+                body.removeAllViews()
+                val m = expenseMonth
+                val monthName = java.text.SimpleDateFormat("MMMM yyyy", Locale.ITALIAN).format(m.time).replaceFirstChar { it.uppercase() }
+                val nav = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }
+                fun navBtn(t: String, delta: Int) = TextView(this).apply {
+                    text = t; textSize = 24f; setTextColor(accent); setPadding(dp(16), dp(4), dp(16), dp(4))
+                    setOnClickListener { expenseMonth = (expenseMonth.clone() as java.util.Calendar).apply { add(java.util.Calendar.MONTH, delta) }; render() }
+                }
+                nav.addView(navBtn("‹", -1))
+                nav.addView(TextView(this).apply {
+                    text = monthName; textSize = 17f; gravity = android.view.Gravity.CENTER; setTextColor(palette.text)
+                    layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                })
+                nav.addView(navBtn("›", 1))
+                body.addView(nav)
+                val all = Expenses.load(this)
+                val list = all.filter {
+                    val c = java.util.Calendar.getInstance().apply { timeInMillis = it.time }
+                    c.get(java.util.Calendar.YEAR) == m.get(java.util.Calendar.YEAR) && c.get(java.util.Calendar.MONTH) == m.get(java.util.Calendar.MONTH)
+                }.sortedByDescending { it.time }
+                val total = list.sumOf { it.amount }
+                body.addView(TextView(this).apply {
+                    text = Expenses.fmt(total); textSize = 34f; setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    gravity = android.view.Gravity.CENTER; setTextColor(palette.text); setPadding(0, dp(6), 0, dp(2))
+                })
+                body.addView(TextView(this).apply {
+                    text = "${list.size} spese"; textSize = 13f; gravity = android.view.Gravity.CENTER; setTextColor(palette.textMuted)
+                })
+                val actions = android.widget.LinearLayout(this).apply {
+                    orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER; setPadding(0, dp(12), 0, dp(4))
+                }
+                fun act(label: String, onClick: () -> Unit) = actions.addView(com.google.android.material.button.MaterialButton(
+                    this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = label; isAllCaps = false
+                    layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(4), 0, dp(4), 0) }
+                    setOnClickListener { onClick() }
+                })
+                act("🧾 Scontrino o bolletta") { scanPurpose = "expense"; scanDocument() }
+                act("Esporta") {
+                    val csv = "Data;Importo;Categoria;Descrizione\n" + all.sortedBy { it.time }.joinToString("\n") {
+                        java.text.SimpleDateFormat("dd/MM/yyyy", Locale.ITALIAN).format(java.util.Date(it.time)) + ";" +
+                            String.format(Locale.ITALIAN, "%.2f", it.amount) + ";" + it.cat.substringAfter(' ') + ";" + it.desc.replace(";", ",")
+                    }
+                    startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"; putExtra(Intent.EXTRA_TEXT, csv); putExtra(Intent.EXTRA_SUBJECT, "Spese.csv")
+                    }, "Esporta spese"))
+                }
+                body.addView(actions)
+                if (list.isEmpty()) { emptyLabel(body, "Nessuna spesa in questo mese.\nA voce: «speso 12 euro pizza»."); return }
+                sectionLabel(body, "PER CATEGORIA")
+                val byCat = list.groupBy { it.cat }.mapValues { it.value.sumOf { e -> e.amount } }.entries.sortedByDescending { it.value }
+                val max = byCat.first().value
+                byCat.forEach { (cat, sum) ->
+                    val row = android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(10), dp(4), dp(10), dp(6))
+                    }
+                    val top = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
+                    top.addView(TextView(this).apply { text = cat; textSize = 14f; setTextColor(palette.text); layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f) })
+                    top.addView(TextView(this).apply { text = Expenses.fmt(sum); textSize = 14f; setTextColor(palette.text); setTypeface(typeface, android.graphics.Typeface.BOLD) })
+                    row.addView(top)
+                    row.addView(View(this).apply {
+                        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 4 * d; setColor(accent) }
+                        layoutParams = android.widget.LinearLayout.LayoutParams(0, dp(8)).apply { topMargin = dp(4) }
+                        post { layoutParams = (layoutParams as android.widget.LinearLayout.LayoutParams).apply {
+                            width = ((row.width - dp(20)) * (sum / max)).toInt().coerceAtLeast(dp(6)) }; requestLayout() }
+                    })
+                    body.addView(row)
+                }
+                sectionLabel(body, "MOVIMENTI")
+                val fmt = java.text.SimpleDateFormat("EEE d", Locale.ITALIAN)
+                list.forEach { e ->
+                    listRow(body, "${Expenses.fmt(e.amount)} · ${e.desc}", "${fmt.format(java.util.Date(e.time))} · ${e.cat}",
+                        onClick = { addExpenseDialog(e.amount, e.desc, e.cat, e.time, replaceId = e.id) },
+                        onRemove = { Expenses.save(this, Expenses.load(this).filter { it.id != e.id }); render() })
+                }
+            }
+            render()
+            expensesRefresh = { render() }
+            dialog.setOnDismissListener { expensesRefresh = null }
+        }
+    }
+
+    /** Scanned receipt or bill: the AI reads amount, date and due date; adds the expense and a payment reminder. */
+    private fun readReceipt(images: List<java.io.File>, pdf: java.io.File?) {
+        if (!aiReady()) return
+        if (images.isEmpty()) { toast("Immagini non disponibili"); return }
+        toast("✨ Leggo lo scontrino…")
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(java.util.Date())
+        ai.ask(listOf("user" to "Oggi è $today. Leggi il documento nelle immagini (scontrino, ricevuta o bolletta) e rispondi SOLO con JSON: " +
+            "{\"tipo\":\"scontrino|bolletta|altro\",\"fornitore\":\"...\",\"importo\":12.34,\"data\":\"yyyy-MM-dd\",\"scadenza\":\"yyyy-MM-dd o vuoto\",\"descrizione\":\"breve\"}"),
+            "Rispondi solo con JSON valido.", object : AiBridge.Listener {
+                override fun onDone(text: String, model: String) {
+                    val o = runCatching { org.json.JSONObject(Regex("\\{[\\s\\S]*\\}").find(text)!!.value) }.getOrNull()
+                    if (o == null) { toast("Non sono riuscito a leggerlo: inseriscilo a mano"); addExpenseDialog(); return }
+                    val amount = o.optDouble("importo", Double.NaN).takeIf { !it.isNaN() } ?: Calc.num(o.optString("importo"))
+                    val who = o.optString("fornitore").trim()
+                    val desc = listOf(who, o.optString("descrizione").trim()).filter { it.isNotEmpty() && it != "null" }.distinct().joinToString(" · ").ifBlank { "Spesa" }
+                    val p = java.text.SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
+                    val date = runCatching { p.parse(o.optString("data"))!!.time }.getOrNull() ?: System.currentTimeMillis()
+                    val due = runCatching { p.parse(o.optString("scadenza"))!!.time }.getOrNull()?.takeIf { it > System.currentTimeMillis() - 86_400_000L }
+                    val bill = o.optString("tipo").startsWith("boll")
+                    val msg = buildString {
+                        append(if (bill) "🏠 Bolletta" else "🧾 Scontrino"); if (who.isNotEmpty()) append(" · $who")
+                        append("\n\nImporto: ${amount?.let { Expenses.fmt(it) } ?: "?"}")
+                        append("\nData: ${java.text.SimpleDateFormat("d MMMM yyyy", Locale.ITALIAN).format(java.util.Date(date))}")
+                        due?.let { append("\nScadenza: ${java.text.SimpleDateFormat("d MMMM yyyy", Locale.ITALIAN).format(java.util.Date(it))}") }
+                    }
+                    val b = MaterialAlertDialogBuilder(this@MainActivity).setTitle("Ho letto").setMessage(msg)
+                        .setPositiveButton(if (due != null) "Aggiungi spesa e promemoria" else "Aggiungi spesa") { _, _ ->
+                            addExpenseDialog(amount, desc, if (bill) "🏠 Casa e bollette" else null, if (due != null) due else date)
+                            if (due != null) {
+                                val at = java.util.Calendar.getInstance().apply { timeInMillis = due; add(java.util.Calendar.DAY_OF_YEAR, -1); set(java.util.Calendar.HOUR_OF_DAY, 9); set(java.util.Calendar.MINUTE, 0) }.timeInMillis
+                                    .let { if (it < System.currentTimeMillis()) System.currentTimeMillis() + 3600_000L else it }
+                                Reminders.add(this@MainActivity, "Pagare ${if (bill) "la bolletta" else ""} $who ${amount?.let { Expenses.fmt(it) } ?: ""} (scade domani)".replace(Regex("\\s+"), " "), at)
+                                toast("⏰ Promemoria il giorno prima della scadenza")
+                            }
+                        }
+                        .setNegativeButton("Annulla", null)
+                    if (pdf != null) b.setNeutralButton("🎫 Salva il documento") { _, _ -> addToWallet(desc, "pdf", pdf) }
+                    b.show()
+                }
+                override fun onError(message: String, noKey: Boolean) { toast(message); addExpenseDialog() }
+            }, images.take(4).map { Triple("image", "image/jpeg", "/files/scan/" + it.name) })
+    }
+
+    // ======================= Parking & saved places =======================
+
+    private var placesRefresh: (() -> Unit)? = null
+    private var pendingLocation: ((android.location.Location?) -> Unit)? = null
+
+    private val placeLocationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
+        val cb = pendingLocation; pendingLocation = null
+        if (r.values.any { it }) currentLocation(cb ?: return@registerForActivityResult) else { toast("Serve il permesso posizione"); cb?.invoke(null) }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun currentLocation(cb: (android.location.Location?) -> Unit) {
+        val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            pendingLocation = cb
+            placeLocationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            return
+        }
+        val lm = getSystemService(LOCATION_SERVICE) as android.location.LocationManager
+        val provider = when {
+            lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER) -> android.location.LocationManager.GPS_PROVIDER
+            lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER) -> android.location.LocationManager.NETWORK_PROVIDER
+            else -> null
+        }
+        if (provider == null) { toast("Attiva la posizione (GPS) del telefono"); cb(null); return }
+        toast("📍 Cerco la posizione…")
+        var done = false
+        val finish = { l: android.location.Location? ->
+            if (!done) {
+                done = true
+                cb(l ?: listOf(android.location.LocationManager.GPS_PROVIDER, android.location.LocationManager.NETWORK_PROVIDER)
+                    .mapNotNull { runCatching { lm.getLastKnownLocation(it) }.getOrNull() }.maxByOrNull { it.time })
+            }
+        }
+        val listener = object : android.location.LocationListener {
+            override fun onLocationChanged(l: android.location.Location) { finish(l) }
+            @Deprecated("Deprecated in Java") override fun onStatusChanged(p: String?, s: Int, e: Bundle?) {}
+            override fun onProviderEnabled(p: String) {}
+            override fun onProviderDisabled(p: String) {}
+        }
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 30) lm.getCurrentLocation(provider, null, ContextCompat.getMainExecutor(this)) { l -> finish(l) }
+            else @Suppress("DEPRECATION") lm.requestSingleUpdate(provider, listener, android.os.Looper.getMainLooper())
+        } catch (_: Exception) { finish(null) }
+        uiHandler.postDelayed({ if (!done) { runCatching { lm.removeUpdates(listener) }; finish(null) } }, 20_000)
+    }
+
+    private fun navigateTo(lat: Double, lon: Double, walk: Boolean) {
+        val app = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=$lat,$lon&mode=${if (walk) "w" else "d"}")).setPackage("com.google.android.apps.maps")
+        try { startActivity(app) } catch (_: Exception) {
+            showTab(TAB_BROWSER)
+            openInBrowser("https://www.google.com/maps/dir/?api=1&destination=$lat,$lon&travelmode=${if (walk) "walking" else "driving"}")
+        }
+    }
+
+    private fun parkHere() {
+        currentLocation { loc ->
+            if (loc == null) { toast("Posizione non trovata, riprova all'aperto"); return@currentLocation }
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            val id = UUID.randomUUID().toString()
+            var photo: String? = null
+            val note = TextInputEditText(this).apply { hint = "Nota (es. piano -2, colonna B)"; setSingleLine() }
+            val photoBtn = com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = "📷 Foto del posto"; isAllCaps = false
+            }
+            photoBtn.setOnClickListener {
+                capturePhoto(java.io.File(Places.dir(this), "$id.jpg")) { f -> if (f != null) { photo = f.absolutePath; photoBtn.text = "✓ Foto salvata" } }
+            }
+            val timers = intArrayOf(0, 30, 60, 90, 120, 180)
+            var timer = 0
+            val chips = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true }
+            listOf("Nessuna scadenza", "30 min", "1 ora", "1 h 30", "2 ore", "3 ore").forEachIndexed { i, t ->
+                chips.addView(com.google.android.material.chip.Chip(this).apply { text = t; isCheckable = true; isChecked = i == 0; setOnClickListener { timer = timers[i] } })
+            }
+            val box = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(8), dp(22), 0)
+                addView(note); addView(photoBtn); addView(TextView(this@MainActivity).apply { text = "Il parcheggio scade tra:"; setPadding(0, dp(12), 0, 0) }); addView(chips)
+            }
+            MaterialAlertDialogBuilder(this).setTitle("🚗 Parcheggio salvato (±${loc.accuracy.toInt()} m)").setView(android.widget.ScrollView(this).apply { addView(box) })
+                .setPositiveButton("Salva") { _, _ ->
+                    val until = if (timer > 0) System.currentTimeMillis() + timer * 60_000L else 0L
+                    val list = Places.load(this).filter { !it.parking }.toMutableList()
+                    list.add(0, Place(id, "Parcheggio", loc.latitude, loc.longitude, System.currentTimeMillis(), note.text?.toString()?.trim().orEmpty(), photo, true, until))
+                    Places.save(this, list)
+                    if (until > 0) Reminders.add(this, "🚗 Il parcheggio scade tra 10 minuti", until - 10 * 60_000L)
+                    toast("🚗 Parcheggio salvato"); placesRefresh?.invoke(); renderParkBar()
+                }
+                .setNegativeButton("Annulla", null).show()
+        }
+    }
+
+    private fun saveCurrentPlace() {
+        currentLocation { loc ->
+            if (loc == null) { toast("Posizione non trovata"); return@currentLocation }
+            val d = resources.displayMetrics.density
+            val et = TextInputEditText(this).apply { hint = "Nome (es. Casa dei nonni, Medico)"; setSingleLine() }
+            val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
+            MaterialAlertDialogBuilder(this).setTitle("📍 Salva questo posto").setView(box)
+                .setPositiveButton("Salva") { _, _ ->
+                    val n = et.text?.toString()?.trim().orEmpty().ifBlank { "Luogo" }
+                    Places.save(this, Places.load(this) + Place(UUID.randomUUID().toString(), n, loc.latitude, loc.longitude, System.currentTimeMillis()))
+                    toast("📍 $n salvato"); placesRefresh?.invoke()
+                }.setNegativeButton("Annulla", null).show()
+        }
+    }
+
+    private fun renderParkBar() {
+        val bar = findViewById<TextView>(R.id.parkBar)
+        val p = Places.parking(this)
+        if (p == null) { bar.isVisible = false; return }
+        val left = if (p.until > 0) {
+            val m = (p.until - System.currentTimeMillis()) / 60_000
+            if (m > 0) " · scade tra $m min" else " · scaduto"
+        } else ""
+        bar.text = "🚗 Parcheggiato ${NewsAdapter.ago(p.time)}$left   ·   Portami lì ›"
+        bar.isVisible = true
+        bar.setOnClickListener { navigateTo(p.lat, p.lon, true) }
+        bar.setOnLongClickListener { showPlacesPage(); true }
+    }
+
+    private fun showPlacesPage() {
+        openPage("Parcheggio e luoghi") { _, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            fun render() {
+                body.removeAllViews()
+                val park = Places.parking(this)
+                if (park != null) {
+                    sectionLabel(body, "🚗 IL TUO PARCHEGGIO")
+                    val card = android.widget.LinearLayout(this).apply {
+                        orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(16), dp(14), dp(16), dp(14))
+                        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 18 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
+                    }
+                    card.addView(TextView(this).apply {
+                        text = "Salvato ${NewsAdapter.ago(park.time)}" + (if (park.until > 0) " · scade alle " +
+                            java.text.SimpleDateFormat("HH:mm", Locale.ITALIAN).format(java.util.Date(park.until)) else "")
+                        textSize = 16f; setTextColor(palette.text); setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    })
+                    if (park.note.isNotBlank()) card.addView(TextView(this).apply { text = park.note; textSize = 15f; setTextColor(palette.text); setPadding(0, dp(4), 0, 0) })
+                    park.photo?.let { p -> card.addView(ImageView(this).apply {
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        layoutParams = android.widget.LinearLayout.LayoutParams(-1, dp(160)).apply { topMargin = dp(10) }
+                        load(java.io.File(p)) { transformations(coil.transform.RoundedCornersTransformation(24f)) }
+                        setOnClickListener { showImageFullscreen(p) }
+                    }) }
+                    val btns = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, 0) }
+                    btns.addView(com.google.android.material.button.MaterialButton(this).apply {
+                        text = "🚶 Portami lì"; isAllCaps = false; layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(8) }
+                        setOnClickListener { navigateTo(park.lat, park.lon, true) }
+                    })
+                    btns.addView(com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                        text = "Ho ripreso l'auto"; isAllCaps = false; layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                        setOnClickListener {
+                            park.photo?.let { java.io.File(it).delete() }
+                            Places.save(this@MainActivity, Places.load(this@MainActivity).filter { !it.parking }); render(); renderParkBar()
+                        }
+                    })
+                    card.addView(btns)
+                    body.addView(card)
+                }
+                val actions = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding(dp(4), dp(14), dp(4), dp(4)) }
+                actions.addView(com.google.android.material.button.MaterialButton(this).apply {
+                    text = if (park == null) "🚗 Ho parcheggiato qui" else "🚗 Nuovo parcheggio"; isAllCaps = false
+                    layoutParams = android.widget.LinearLayout.LayoutParams(0, dp(56), 1f).apply { marginEnd = dp(8) }
+                    setOnClickListener { parkHere() }
+                })
+                actions.addView(com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                    text = "📍 Salva questo posto"; isAllCaps = false
+                    layoutParams = android.widget.LinearLayout.LayoutParams(0, dp(56), 1f)
+                    setOnClickListener { saveCurrentPlace() }
+                })
+                body.addView(actions)
+                val places = Places.load(this).filter { !it.parking }
+                if (places.isNotEmpty()) sectionLabel(body, "📍 LUOGHI SALVATI")
+                places.forEach { pl ->
+                    listRow(body, pl.name, "Salvato ${NewsAdapter.ago(pl.time)} · tocca per andarci",
+                        onClick = { navigateTo(pl.lat, pl.lon, false) },
+                        onLong = {
+                            MaterialAlertDialogBuilder(this).setTitle(pl.name).setItems(arrayOf("🚗 In auto", "🚶 A piedi", "Condividi posizione")) { _, w ->
+                                when (w) {
+                                    0 -> navigateTo(pl.lat, pl.lon, false)
+                                    1 -> navigateTo(pl.lat, pl.lon, true)
+                                    2 -> startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "${pl.name}: https://maps.google.com/?q=${pl.lat},${pl.lon}")
+                                    }, "Condividi"))
+                                }
+                            }.show()
+                        },
+                        onRemove = { Places.save(this, Places.load(this).filter { it.id != pl.id }); render() })
+                }
+            }
+            render()
+            placesRefresh = { render() }
+            dialog.setOnDismissListener { placesRefresh = null }
+        }
+    }
+
+    // ======================= Vault =======================
+
+    private var vaultDialog: androidx.appcompat.app.AppCompatDialog? = null
+    private var vaultRefresh: (() -> Unit)? = null
+
+    private val vaultPicker = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        io.execute {
+            val bytes = runCatching { contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
+            runOnUiThread { if (bytes == null) toast("Immagine non leggibile") else askVaultTitle { t -> saveVault(t, "photo", bytes) } }
+        }
+    }
+
+    private fun askVaultTitle(onOk: (String) -> Unit) {
+        val d = resources.displayMetrics.density
+        val et = TextInputEditText(this).apply { hint = "Es. Carta d'identità fronte, Tessera sanitaria"; setSingleLine() }
+        val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
+        MaterialAlertDialogBuilder(this).setTitle("Nome").setView(box)
+            .setPositiveButton("Salva") { _, _ -> onOk(et.text?.toString()?.trim().orEmpty().ifBlank { "Documento" }) }
+            .setNegativeButton("Annulla", null).show()
+    }
+
+    private fun saveVault(title: String, kind: String, data: ByteArray) {
+        io.execute {
+            val ok = runCatching { Vault.put(this, VaultItem(UUID.randomUUID().toString(), title, kind, System.currentTimeMillis()), data) }.isSuccess
+            runOnUiThread { toast(if (ok) "🔐 Salvato nella cassaforte" else "Errore di cifratura"); vaultRefresh?.invoke() }
+        }
+    }
+
+    private fun secure(w: android.view.Window?) { w?.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
+
+    private fun showVault() {
+        authenticate("Apri la cassaforte", strict = true) {
+            openPage("Cassaforte", "Aggiungi", { _ ->
+                MaterialAlertDialogBuilder(this).setItems(arrayOf("📷 Scatta una foto", "🖼 Dalla galleria", "🔢 Testo (codici, numeri)")) { _, w ->
+                    when (w) {
+                        0 -> {
+                            val tmp = java.io.File(cacheDir, "capture/vault_tmp.jpg")
+                            capturePhoto(tmp) { f ->
+                                if (f != null) {
+                                    val bytes = f.readBytes(); f.delete()
+                                    askVaultTitle { t -> saveVault(t, "photo", bytes) }
+                                }
+                            }
+                        }
+                        1 -> vaultPicker.launch("image/*")
+                        2 -> {
+                            val d = resources.displayMetrics.density
+                            val title = TextInputEditText(this).apply { hint = "Nome (es. PIN SIM, IBAN)"; setSingleLine() }
+                            val body = TextInputEditText(this).apply { hint = "Contenuto"; minLines = 3 }
+                            val box = android.widget.LinearLayout(this).apply {
+                                orientation = android.widget.LinearLayout.VERTICAL; setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0)
+                                addView(title); addView(body)
+                            }
+                            val dlg = MaterialAlertDialogBuilder(this).setTitle("Testo protetto").setView(box)
+                                .setPositiveButton("Salva") { _, _ ->
+                                    val t = body.text?.toString().orEmpty()
+                                    if (t.isNotBlank()) saveVault(title.text?.toString()?.trim().orEmpty().ifBlank { "Nota" }, "text", t.toByteArray(Charsets.UTF_8))
+                                }.setNegativeButton("Annulla", null).create()
+                            secure(dlg.window); dlg.show()
+                        }
+                    }
+                }.show()
+            }) { _, body, dialog ->
+                secure(dialog.window)
+                vaultDialog = dialog
+                fun render() {
+                    body.removeAllViews()
+                    val list = runCatching { Vault.load(this) }.getOrDefault(mutableListOf())
+                    if (list.isEmpty()) {
+                        emptyLabel(body, "La cassaforte è vuota.\nFoto di documenti e codici, cifrati sul telefono\ne visibili solo con impronta o PIN.\n\nNon finiscono nel backup: restano solo su questo telefono.")
+                        return
+                    }
+                    list.forEach { v ->
+                        listRow(body, (if (v.kind == "photo") "🪪  " else "🔢  ") + v.title, "Aggiunto ${NewsAdapter.ago(v.time)}",
+                            onClick = {
+                                val data = runCatching { Vault.read(this, v.id) }.getOrNull() ?: run { toast("Impossibile aprire"); return@listRow }
+                                if (v.kind == "photo") {
+                                    val bmp = android.graphics.BitmapFactory.decodeByteArray(data, 0, data.size)
+                                    val dlg = androidx.appcompat.app.AppCompatDialog(this, AppRepository.accentStyle(this))
+                                    dlg.setContentView(ImageView(this).apply {
+                                        setImageBitmap(bmp); setBackgroundColor(android.graphics.Color.BLACK); scaleType = ImageView.ScaleType.FIT_CENTER
+                                        setOnClickListener { dlg.dismiss() }
+                                    })
+                                    dlg.window?.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+                                    secure(dlg.window); dlg.show()
+                                } else {
+                                    val t = String(data, Charsets.UTF_8)
+                                    val dlg = MaterialAlertDialogBuilder(this).setTitle(v.title).setMessage(t)
+                                        .setPositiveButton("Copia") { _, _ -> copyText(v.title, t) }.setNegativeButton("Chiudi", null).create()
+                                    secure(dlg.window); dlg.show()
+                                }
+                            },
+                            onRemove = { confirmClear("Eliminare «${v.title}» dalla cassaforte?") { Vault.delete(this, v.id); render() } })
+                    }
+                    body.addView(TextView(this).apply {
+                        text = "🔐 Cifrato sul telefono. Non va nel backup: se cambi telefono, rimetti i documenti a mano."
+                        textSize = 12f; setTextColor(AppRepository.palette(this@MainActivity).textMuted); setPadding((10 * resources.displayMetrics.density).toInt(), 24, 0, 0)
+                    })
+                }
+                render()
+                vaultRefresh = { render() }
+                dialog.setOnDismissListener { vaultRefresh = null; vaultDialog = null }
+            }
+        }
     }
 
     private fun openExternally() {
@@ -6582,6 +7107,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleVoiceText(text: String) {
         toast("Hai detto: $text")
+        if (Regex("^(ho\\s+)?(speso|pagato)\\b", RegexOption.IGNORE_CASE).containsMatchIn(text.trim())) {
+            Expenses.parseVoice(text)?.let { (amount, desc) -> addExpenseDialog(amount, desc); return }
+        }
+        if (Regex("(ho parcheggiato|parcheggiato qui|salva (il )?parcheggio)", RegexOption.IGNORE_CASE).containsMatchIn(text)) { parkHere(); return }
+        if (Regex("(dove ho parcheggiato|portami alla macchina|portami all'auto)", RegexOption.IGNORE_CASE).containsMatchIn(text)) {
+            Places.parking(this)?.let { navigateTo(it.lat, it.lon, true) } ?: toast("Nessun parcheggio salvato"); return
+        }
         Regex("^aggiungi\\s+(.+?)\\s+(?:alla|nella|in)\\s+(lista[\\w\\s]*)$", RegexOption.IGNORE_CASE).find(text.trim())?.let { m ->
             val listName = m.groupValues[2].trim().let { if (it.equals("lista", true)) "Lista della spesa" else it }
             addToShoppingList(m.groupValues[1], listName); return
