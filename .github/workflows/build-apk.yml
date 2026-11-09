@@ -105,28 +105,68 @@ jobs:
           name: web-launcher-native-apk
           path: app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Pubblica la versione (solo ramo principale)
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && env.WL_KEYSTORE_FILE != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
+  ui-test:
+    name: Prova su telefono virtuale
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-launcher-native-apk
+      - name: Abilita KVM
         run: |
-          NAME=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
-          TAG="v${NAME}-b${WL_VERSION_CODE}"
-          cp app/build/outputs/apk/debug/app-debug.apk web-launcher.apk
-          git log -1 --pretty=%B | grep -v -i '^co-authored-by\|^claude-session' > notes.txt
-          gh release create "$TAG" web-launcher.apk --title "Web Launcher $NAME (build $WL_VERSION_CODE)" --notes-file notes.txt --target "$GITHUB_SHA"
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Avvia l'emulatore e prova l'app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          profile: pixel_4
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
+          script: bash scripts/ui-smoke.sh app-debug.apk
+      - name: Schermate e log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-schermate
+          path: ui-shots/
+          if-no-files-found: ignore
 
-      - name: Pubblica versione di prova (altri rami)
-        if: github.ref != 'refs/heads/main' && github.event_name == 'push' && env.WL_KEYSTORE_FILE != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
+  publish:
+    name: Pubblica la versione
+    needs: [build, ui-test]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.WL_KEYSTORE_BASE64 != '' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-launcher-native-apk
+      - name: Crea la release
+        if: env.HAS_KEY == 'true'
         run: |
+          CODE=$((1000 + ${{ github.run_number }}))
           NAME=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
-          TAG="v${NAME}-prova-b${WL_VERSION_CODE}"
-          cp app/build/outputs/apk/debug/app-debug.apk web-launcher.apk
+          cp app-debug.apk web-launcher.apk
           git log -1 --pretty=%B | grep -v -i '^co-authored-by\|^claude-session' > notes.txt
-          gh release create "$TAG" web-launcher.apk --prerelease --title "Prova $NAME (build $WL_VERSION_CODE)" --notes-file notes.txt --target "$GITHUB_SHA"
-          # tiene solo le ultime 3 versioni di prova
-          gh release list --limit 100 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease) | .tagName' | tail -n +4 | while read t; do
-            gh release delete "$t" --yes --cleanup-tag || true
-          done
+          if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+            gh release create "v${NAME}-b${CODE}" web-launcher.apk --title "Web Launcher $NAME (build $CODE)" --notes-file notes.txt --target "$GITHUB_SHA"
+          else
+            gh release create "v${NAME}-prova-b${CODE}" web-launcher.apk --prerelease --title "Prova $NAME (build $CODE)" --notes-file notes.txt --target "$GITHUB_SHA"
+            # tiene solo le ultime 3 versioni di prova
+            gh release list --limit 100 --json tagName,isPrerelease --jq '.[] | select(.isPrerelease) | .tagName' | tail -n +4 | while read t; do
+              gh release delete "$t" --yes --cleanup-tag || true
+            done
+          fi
+      - name: Avviso firma mancante
+        if: env.HAS_KEY != 'true'
+        run: echo "::warning::Aggiungi i secret WL_KEYSTORE_BASE64 e WL_KEYSTORE_PASSWORD per pubblicare le versioni"
