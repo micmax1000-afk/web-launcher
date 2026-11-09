@@ -130,3 +130,62 @@ object Vault {
         save(c, load(c).filter { it.id != id })
     }
 }
+
+// ======================= Deadlines, subscriptions, warranties =======================
+
+data class Deadline(
+    val id: String, val kind: String, val title: String, val date: Long,
+    val amount: Double = 0.0, val period: String? = null, val photo: String? = null,
+    val note: String = "", val reminders: List<Int> = emptyList()
+)
+
+object Deadlines {
+    const val DEADLINE = "scadenza"; const val SUBSCRIPTION = "abbonamento"; const val WARRANTY = "garanzia"
+    private fun file(c: Context) = File(c.filesDir, "deadlines.json")
+    fun dir(c: Context) = File(c.filesDir, "deadlines").apply { mkdirs() }
+    fun load(c: Context): MutableList<Deadline> = runCatching {
+        Gson().fromJson<MutableList<Deadline>>(file(c).readText(), object : TypeToken<MutableList<Deadline>>() {}.type)
+    }.getOrNull()?.filterNotNull()?.map { it.copy(reminders = (it.reminders as List<Int>?) ?: emptyList(), note = (it.note as String?) ?: "") }
+        ?.toMutableList() ?: mutableListOf()
+    fun save(c: Context, list: List<Deadline>) { runCatching { file(c).writeText(Gson().toJson(list)) } }
+
+    fun monthly(d: Deadline): Double = when (d.period) { "anno" -> d.amount / 12; "settimana" -> d.amount * 52 / 12; else -> d.amount }
+
+    private fun at9(day: Long, minusDays: Int): Long = java.util.Calendar.getInstance().apply {
+        timeInMillis = day; add(java.util.Calendar.DAY_OF_YEAR, -minusDays)
+        set(java.util.Calendar.HOUR_OF_DAY, 9); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0)
+    }.timeInMillis
+
+    /** (Re)creates the reminders of an item; returns the item with the new reminder ids. */
+    fun schedule(c: Context, d: Deadline): Deadline {
+        d.reminders.forEach { Reminders.remove(c, it) }
+        val f = java.text.SimpleDateFormat("d MMMM yyyy", Locale.ITALIAN).format(java.util.Date(d.date))
+        val now = System.currentTimeMillis()
+        val plan: List<Pair<Long, String>> = when (d.kind) {
+            SUBSCRIPTION -> listOf(at9(d.date, 3) to "🔁 ${d.title} si rinnova il $f (${Expenses.fmt(d.amount)}): disdici se non lo usi")
+            WARRANTY -> listOf(at9(d.date, 30) to "🧾 La garanzia di ${d.title} scade il $f")
+            else -> listOf(30, 7, 1).map { at9(d.date, it) to "📆 ${d.title} scade il $f" }
+        }
+        val ids = plan.filter { it.first > now }.map { (at, text) -> Reminders.add(c, text, at).id }
+        return d.copy(reminders = ids)
+    }
+
+    /** Subscriptions whose renewal has passed move to the next period. */
+    fun advance(c: Context) {
+        val now = System.currentTimeMillis()
+        var changed = false
+        val list = load(c).map { d ->
+            if (d.kind != SUBSCRIPTION || d.date > now) d else {
+                val cal = java.util.Calendar.getInstance().apply { timeInMillis = d.date }
+                while (cal.timeInMillis <= now) when (d.period) {
+                    "anno" -> cal.add(java.util.Calendar.YEAR, 1)
+                    "settimana" -> cal.add(java.util.Calendar.DAY_OF_YEAR, 7)
+                    else -> cal.add(java.util.Calendar.MONTH, 1)
+                }
+                changed = true
+                schedule(c, d.copy(date = cal.timeInMillis))
+            }
+        }
+        if (changed) save(c, list)
+    }
+}

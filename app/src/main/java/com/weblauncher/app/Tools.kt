@@ -224,7 +224,9 @@ object PhishingGuard {
 
 // ======================= Reminders =======================
 
-data class Reminder(val id: Int, val text: String, val at: Long, var done: Boolean = false)
+data class Reminder(val id: Int, val text: String, val at: Long, var done: Boolean = false, val repeat: String? = null)
+
+data class ReminderParse(val text: String, val at: Long, val repeat: String?)
 
 object Reminders {
     private const val CHANNEL = "promemoria"
@@ -236,8 +238,24 @@ object Reminders {
 
     fun save(c: Context, list: List<Reminder>) { prefs(c).edit().putString("reminders", Gson().toJson(list)).apply() }
 
-    fun add(c: Context, text: String, at: Long): Reminder {
-        val r = Reminder((System.currentTimeMillis() % Int.MAX_VALUE).toInt(), text, at)
+    val REPEAT_LABELS = mapOf("day" to "ogni giorno", "weekdays" to "dal lunedì al venerdì", "week" to "ogni settimana", "month" to "ogni mese")
+
+    /** Next occurrence after now for a recurring reminder. */
+    fun next(at: Long, repeat: String, now: Long = System.currentTimeMillis()): Long {
+        val c = Calendar.getInstance().apply { timeInMillis = at }
+        var guard = 0
+        while ((c.timeInMillis <= now || (repeat == "weekdays" && c.get(Calendar.DAY_OF_WEEK) in listOf(Calendar.SATURDAY, Calendar.SUNDAY))) && guard++ < 1000) {
+            when (repeat) {
+                "week" -> c.add(Calendar.DAY_OF_YEAR, 7)
+                "month" -> c.add(Calendar.MONTH, 1)
+                else -> c.add(Calendar.DAY_OF_YEAR, 1)
+            }
+        }
+        return c.timeInMillis
+    }
+
+    fun add(c: Context, text: String, at: Long, repeat: String? = null): Reminder {
+        val r = Reminder((System.nanoTime() % Int.MAX_VALUE).toInt().let { if (it < 0) -it else it }, text, at, false, repeat)
         save(c, load(c) + r)
         schedule(c, r)
         return r
@@ -280,15 +298,39 @@ object Reminders {
             .setContentIntent(open)
             .build()
         runCatching { nm.notify(id, n) }
-        save(c, load(c).map { if (it.id == id) it.copy(done = true) else it })
+        val list = load(c)
+        val r = list.firstOrNull { it.id == id }
+        if (r?.repeat != null) {
+            val again = r.copy(at = next(r.at, r.repeat), done = false)
+            save(c, list.map { if (it.id == id) again else it })
+            schedule(c, again)
+        } else save(c, list.map { if (it.id == id) it.copy(done = true) else it })
     }
 
     /**
      * Italian phrases: "ricordami domani alle 9 di chiamare Marco", "tra 20 minuti spegnere il forno",
      * "venerdì alle 18:30 palestra", "il 12/11 alle 10 dentista". Returns (text, time) or null.
      */
-    fun parse(raw: String, now: Calendar = Calendar.getInstance()): Pair<String, Long>? {
+    fun parse(raw: String, now: Calendar = Calendar.getInstance()): ReminderParse? {
         var s = " " + raw.trim().lowercase(Locale.ITALIAN) + " "
+        var repeat: String? = null
+        var monthDay = 0
+        var defaultHour = 9
+        Regex("\\b(?:il|ogni)\\s+(\\d{1,2})\\s+(?:di ogni|del|di)\\s+mese\\b").find(s)?.let { m ->
+            repeat = "month"; monthDay = m.groupValues[1].toInt(); s = s.replace(m.value, " ")
+        }
+        Regex("\\b(dal lunedì al venerdì|dal lunedi al venerdi|nei giorni feriali|giorni feriali|ogni giorno feriale)\\b").find(s)?.let { m ->
+            repeat = "weekdays"; s = s.replace(m.value, " ")
+        }
+        Regex("\\b(ogni giorno|tutti i giorni|ogni mattina|tutte le mattine|ogni sera|tutte le sere)\\b").find(s)?.let { m ->
+            repeat = "day"; if (m.value.contains("sera")) defaultHour = 20 else if (m.value.contains("mattin")) defaultHour = 8
+            s = s.replace(m.value, " ")
+        }
+        Regex("\\bogni settimana\\b").find(s)?.let { m -> repeat = "week"; s = s.replace(m.value, " ") }
+        Regex("\\bogni\\s+(?=(lunedi|lunedì|martedi|martedì|mercoledi|mercoledì|giovedi|giovedì|venerdi|venerdì|sabato|domenica)\\b)").find(s)?.let { m ->
+            repeat = "week"; s = s.replaceFirst(m.value, " ")
+        }
+        Regex("\\bogni mese\\b").find(s)?.let { m -> repeat = "month"; s = s.replace(m.value, " ") }
         s = s.replace(Regex("^\\s*(ricordami|ricorda(mi)?|promemoria|avvisami)\\s+(di\\s+|che\\s+)?"), " ")
         val cal = now.clone() as Calendar
         cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
@@ -305,7 +347,10 @@ object Reminders {
             s = s.replace(m.value, " "); found = true
         }
         if (!found) {
-            var dayChosen = false
+            var dayChosen = monthDay > 0
+            if (monthDay > 0) {
+                cal.set(Calendar.DAY_OF_MONTH, monthDay.coerceAtMost(cal.getActualMaximum(Calendar.DAY_OF_MONTH)))
+            }
             Regex("\\b(oggi|stasera|domani|dopodomani)\\b").find(s)?.let { m ->
                 when (m.groupValues[1]) { "domani" -> cal.add(Calendar.DAY_OF_YEAR, 1); "dopodomani" -> cal.add(Calendar.DAY_OF_YEAR, 2) }
                 if (m.groupValues[1] == "stasera") { cal.set(Calendar.HOUR_OF_DAY, 20); cal.set(Calendar.MINUTE, 0) }
@@ -333,14 +378,18 @@ object Reminders {
                 if (!dayChosen && cal.timeInMillis <= now.timeInMillis) cal.add(Calendar.DAY_OF_YEAR, 1)
                 s = s.replace(m.value, " "); found = true
             }
-            if (dayChosen && !found) { cal.set(Calendar.HOUR_OF_DAY, 9); cal.set(Calendar.MINUTE, 0); found = true }
+            if (dayChosen && !found) { cal.set(Calendar.HOUR_OF_DAY, defaultHour); cal.set(Calendar.MINUTE, 0); found = true }
+            if (!found && repeat != null) { cal.set(Calendar.HOUR_OF_DAY, defaultHour); cal.set(Calendar.MINUTE, 0); found = true }
         }
         if (!found) return null
         val text = s.replace(Regex("\\b(di mattina|del mattino|di sera|mattina|pomeriggio)\\b"), " ")
             .replace(Regex("^\\s*(di|che|a|per)\\s+"), " ").replace(Regex("\\s+"), " ").trim()
             .replaceFirstChar { it.uppercase() }
-        if (text.isEmpty() || cal.timeInMillis < now.timeInMillis - 60_000) return null
-        return text to cal.timeInMillis
+        if (text.isEmpty()) return null
+        val r = repeat
+        val at = if (r != null) next(cal.timeInMillis, r, now.timeInMillis) else cal.timeInMillis
+        if (at < now.timeInMillis - 60_000) return null
+        return ReminderParse(text, at, r)
     }
 }
 

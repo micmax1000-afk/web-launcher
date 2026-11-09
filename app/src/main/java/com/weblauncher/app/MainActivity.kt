@@ -313,6 +313,7 @@ class MainActivity : AppCompatActivity() {
         applyHomeLook()
         renderWeather()
         renderParkBar()
+        io.execute { runCatching { Deadlines.advance(this) } }
         uiHandler.postDelayed({ runCatching { autoCleanup() } }, 8000)
         CrashReporter.pending(this)?.let { report -> uiHandler.postDelayed({ showCrashReport(report) }, 600) }
         setupNav()
@@ -489,6 +490,8 @@ class MainActivity : AppCompatActivity() {
                 }
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     if (request?.isForMainFrame == true && !guardUrl(url) { view?.loadUrl(url) }) return true
+                    if (request?.isForMainFrame == true && request?.hasGesture() == true && request?.isRedirect == false &&
+                        hostOf(url) != hostOf(view?.url) && maybeOpenInApp(url) { view?.loadUrl(url) }) return true
                     return false
                 }
                 return try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))); true } catch (_: Exception) { true }
@@ -921,6 +924,10 @@ class MainActivity : AppCompatActivity() {
             ?.takeIf { it.scheme == "http" || it.scheme == "https" }?.toString()
         val url = intent?.getStringExtra("shortcut_url") ?: external ?: return
         if (url.isBlank()) return
+        if (external != null && intent?.getStringExtra("shortcut_url") == null && maybeOpenInApp(url) {
+                if (webTabs.getOrNull(webTabIndex)?.url?.startsWith("http") == true) openNewTab(false)
+                openInBrowser(normalizeUrl(url))
+            }) return
         if (webTabs.getOrNull(webTabIndex)?.url?.startsWith("http") == true) openNewTab(false)
         openInBrowser(normalizeUrl(url))
     }
@@ -4815,7 +4822,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun createReminderFromText(raw: String, fromVoice: Boolean = false) {
         val parsed = Reminders.parse(raw)
-        if (parsed != null) { confirmReminder(parsed.first, parsed.second); return }
+        if (parsed != null) { confirmReminder(parsed.text, parsed.at, parsed.repeat); return }
         if (!ai.supported()) { toast("Non ho capito quando: es. «domani alle 9 chiamare Marco»"); return }
         toast("✨ Capisco il promemoria…")
         val now = java.text.SimpleDateFormat("EEEE d MMMM yyyy HH:mm", Locale.ITALIAN).format(java.util.Date())
@@ -4834,11 +4841,11 @@ class MainActivity : AppCompatActivity() {
             })
     }
 
-    private fun confirmReminder(text: String, at: Long) {
+    private fun confirmReminder(text: String, at: Long, repeat: String? = null) {
         ensureNotificationPermission()
-        Reminders.add(this, text, at)
+        Reminders.add(this, text, at, repeat)
         val fmt = java.text.SimpleDateFormat("EEEE d MMMM 'alle' HH:mm", Locale.ITALIAN).format(java.util.Date(at))
-        toast("⏰ $fmt: $text")
+        toast("⏰ ${repeat?.let { Reminders.REPEAT_LABELS[it] + ", dal " } ?: ""}$fmt: $text")
         val am = getSystemService(ALARM_SERVICE) as android.app.AlarmManager
         if (android.os.Build.VERSION.SDK_INT >= 31 && !am.canScheduleExactAlarms() && !toolsPrefs.getBoolean("askedExact", false)) {
             toolsPrefs.edit().putBoolean("askedExact", true).apply()
@@ -4853,10 +4860,26 @@ class MainActivity : AppCompatActivity() {
     private fun showRemindersPage() {
         openPage("Promemoria", "Nuovo", { _ ->
             val d = resources.displayMetrics.density
-            val et = TextInputEditText(this).apply { hint = "Es. domani alle 9 chiamare il dentista" }
-            val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
+            val et = TextInputEditText(this).apply { hint = "Es. domani alle 9 chiamare il dentista\noppure: ogni giorno alle 8 la pastiglia" }
+            var rep: String? = null
+            val chips = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true; setPadding(0, (10 * d).toInt(), 0, 0) }
+            listOf(null to "Una volta", "day" to "Ogni giorno", "weekdays" to "Lun–ven", "week" to "Ogni settimana", "month" to "Ogni mese").forEach { (k, l) ->
+                chips.addView(com.google.android.material.chip.Chip(this).apply { text = l; isCheckable = true; isChecked = k == null; setOnClickListener { rep = k } })
+            }
+            val box = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL; setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0)
+                addView(et); addView(chips)
+            }
             MaterialAlertDialogBuilder(this).setTitle("Nuovo promemoria").setView(box)
-                .setPositiveButton("Crea") { _, _ -> et.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { createReminderFromText(it) } }
+                .setPositiveButton("Crea") { _, _ ->
+                    val t = et.text?.toString()?.trim().orEmpty()
+                    if (t.isEmpty()) return@setPositiveButton
+                    val p = Reminders.parse(t)
+                    val r = rep
+                    if (r != null && p != null) confirmReminder(p.text, Reminders.next(p.at, r, System.currentTimeMillis() - 1), r)
+                    else if (r != null) toast("Scrivi anche l'ora, es. «alle 8 la pastiglia»")
+                    else createReminderFromText(t)
+                }
                 .setNegativeButton("Annulla", null).show()
         }) { _, body, _ ->
             val fmt = java.text.SimpleDateFormat("EEE d MMM, HH:mm", Locale.ITALIAN)
@@ -4865,12 +4888,14 @@ class MainActivity : AppCompatActivity() {
                 val list = Reminders.load(this).sortedBy { it.at }
                 if (list.isEmpty()) { emptyLabel(body, "Nessun promemoria.\nDi' o scrivi «ricordami domani alle 9 di…»"); return }
                 val now = System.currentTimeMillis()
-                listOf("IN ARRIVO" to list.filter { it.at > now && !it.done }, "PASSATI" to list.filter { it.at <= now || it.done }.reversed())
+                listOf("RICORRENTI" to list.filter { it.repeat != null }, "IN ARRIVO" to list.filter { it.repeat == null && it.at > now && !it.done },
+                    "PASSATI" to list.filter { it.repeat == null && (it.at <= now || it.done) }.reversed())
                     .forEach { (label, group) ->
                         if (group.isEmpty()) return@forEach
                         sectionLabel(body, label)
                         group.forEach { r ->
-                            listRow(body, r.text, fmt.format(java.util.Date(r.at)).replaceFirstChar { it.uppercase() },
+                            listRow(body, r.text, (r.repeat?.let { "🔁 " + Reminders.REPEAT_LABELS[it] + " · prossimo " } ?: "") +
+                                fmt.format(java.util.Date(r.at)).replaceFirstChar { it.uppercase() },
                                 onClick = {}, onRemove = { Reminders.remove(this, r.id); render() })
                         }
                     }
@@ -6128,6 +6153,9 @@ class MainActivity : AppCompatActivity() {
             Triple("⏰", "Promemoria") { showRemindersPage() },
             Triple("🎙", "Registratore") { showRecorderPage() },
             Triple("💰", "Spese") { showExpensesPage() },
+            Triple("📆", "Scadenze") { showDeadlinesPage(Deadlines.DEADLINE) },
+            Triple("🔁", "Abbonamenti") { showDeadlinesPage(Deadlines.SUBSCRIPTION) },
+            Triple("🧾", "Garanzie") { showDeadlinesPage(Deadlines.WARRANTY) },
             Triple("🚗", "Parcheggio e luoghi") { showPlacesPage() }
         ))
         group("DOCUMENTI", listOf(
@@ -6787,6 +6815,273 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // ======================= Deadlines, subscriptions, warranties =======================
+
+    private var deadlineTab = Deadlines.DEADLINE
+    private var deadlinesRefresh: (() -> Unit)? = null
+
+    private fun pickDate(title: String, initial: Long, onPick: (Long) -> Unit) {
+        val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply {
+            val l = java.util.Calendar.getInstance().apply { timeInMillis = initial }
+            clear(); set(l.get(java.util.Calendar.YEAR), l.get(java.util.Calendar.MONTH), l.get(java.util.Calendar.DAY_OF_MONTH))
+        }.timeInMillis
+        val picker = com.google.android.material.datepicker.MaterialDatePicker.Builder.datePicker()
+            .setTitleText(title).setSelection(utc).build()
+        picker.addOnPositiveButtonClickListener { sel ->
+            val u = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = sel }
+            onPick(java.util.Calendar.getInstance().apply {
+                clear(); set(u.get(java.util.Calendar.YEAR), u.get(java.util.Calendar.MONTH), u.get(java.util.Calendar.DAY_OF_MONTH), 9, 0)
+            }.timeInMillis)
+        }
+        picker.show(supportFragmentManager, "date")
+    }
+
+    private val dayFmt get() = java.text.SimpleDateFormat("d MMM yyyy", Locale.ITALIAN)
+
+    private fun daysLeft(t: Long): String {
+        val days = ((t - System.currentTimeMillis()) / 86_400_000L).toInt()
+        return when {
+            days < 0 -> "scaduta"
+            days == 0 -> "oggi"
+            days == 1 -> "domani"
+            days < 60 -> "tra $days giorni"
+            else -> "tra ${days / 30} mesi"
+        }
+    }
+
+    private fun saveDeadline(d: Deadline, replaceId: String? = null) {
+        val list = Deadlines.load(this)
+        list.firstOrNull { it.id == replaceId }?.reminders?.forEach { Reminders.remove(this, it) }
+        Deadlines.save(this, list.filter { it.id != replaceId } + Deadlines.schedule(this, d))
+        ensureNotificationPermission()
+        deadlinesRefresh?.invoke()
+    }
+
+    private fun editDeadline(kind: String, existing: Deadline? = null, presetTitle: String? = null, presetDate: Long? = null, photo: String? = null) {
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        val title = TextInputEditText(this).apply {
+            setSingleLine(); setText(existing?.title ?: presetTitle.orEmpty())
+            hint = when (kind) { Deadlines.SUBSCRIPTION -> "Nome (es. Netflix, palestra)"; Deadlines.WARRANTY -> "Prodotto (es. lavatrice, telefono)"; else -> "Cosa scade" }
+        }
+        var date = existing?.date ?: presetDate ?: when (kind) {
+            Deadlines.WARRANTY -> java.util.Calendar.getInstance().apply { add(java.util.Calendar.YEAR, 2) }.timeInMillis
+            Deadlines.SUBSCRIPTION -> java.util.Calendar.getInstance().apply { add(java.util.Calendar.MONTH, 1) }.timeInMillis
+            else -> System.currentTimeMillis() + 30 * 86_400_000L
+        }
+        var period = existing?.period ?: "mese"
+        var photoPath = existing?.photo ?: photo
+        val box = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(8), dp(22), 0) }
+        if (kind == Deadlines.DEADLINE && existing == null) {
+            val presets = com.google.android.material.chip.ChipGroup(this)
+            listOf("Revisione auto", "Bollo auto", "Assicurazione auto", "Carta d'identità", "Passaporto", "Patente", "Tessera sanitaria").forEach { p ->
+                presets.addView(com.google.android.material.chip.Chip(this).apply { text = p; setOnClickListener { title.setText(p) } })
+            }
+            box.addView(presets)
+        }
+        box.addView(title)
+        val amount = TextInputEditText(this).apply {
+            hint = "Costo (€)"; setSingleLine()
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+            existing?.amount?.takeIf { it > 0 }?.let { setText(String.format(Locale.ROOT, "%.2f", it)) }
+        }
+        if (kind == Deadlines.SUBSCRIPTION) {
+            box.addView(amount)
+            val chips = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true }
+            listOf("mese" to "Mensile", "anno" to "Annuale", "settimana" to "Settimanale").forEach { (k, l) ->
+                chips.addView(com.google.android.material.chip.Chip(this).apply { text = l; isCheckable = true; isChecked = k == period; setOnClickListener { period = k } })
+            }
+            box.addView(chips)
+        }
+        val dateBtn = com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply { isAllCaps = false }
+        fun dateLabel() {
+            dateBtn.text = when (kind) { Deadlines.SUBSCRIPTION -> "Prossimo rinnovo: "; Deadlines.WARRANTY -> "Garanzia fino al: "; else -> "Scade il: " } + dayFmt.format(java.util.Date(date))
+        }
+        dateLabel()
+        dateBtn.setOnClickListener { pickDate("Data", date) { date = it; dateLabel() } }
+        box.addView(dateBtn)
+        if (kind == Deadlines.WARRANTY && existing == null) {
+            val yrs = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true }
+            listOf(1, 2, 3, 5).forEach { y ->
+                yrs.addView(com.google.android.material.chip.Chip(this).apply {
+                    text = "$y ${if (y == 1) "anno" else "anni"} da oggi"; isCheckable = true; isChecked = y == 2
+                    setOnClickListener { date = java.util.Calendar.getInstance().apply { add(java.util.Calendar.YEAR, y) }.timeInMillis; dateLabel() }
+                })
+            }
+            box.addView(yrs)
+        }
+        if (kind != Deadlines.SUBSCRIPTION) {
+            val photoBtn = com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                isAllCaps = false; text = if (photoPath != null) "✓ Foto allegata" else if (kind == Deadlines.WARRANTY) "📷 Foto dello scontrino" else "📷 Foto del documento"
+            }
+            photoBtn.setOnClickListener {
+                capturePhoto(java.io.File(Deadlines.dir(this), UUID.randomUUID().toString() + ".jpg")) { f -> if (f != null) { photoPath = f.absolutePath; photoBtn.text = "✓ Foto allegata" } }
+            }
+            box.addView(photoBtn)
+        }
+        MaterialAlertDialogBuilder(this).setTitle(when (kind) { Deadlines.SUBSCRIPTION -> "Abbonamento"; Deadlines.WARRANTY -> "Garanzia"; else -> "Scadenza" })
+            .setView(android.widget.ScrollView(this).apply { addView(box) })
+            .setPositiveButton("Salva") { _, _ ->
+                val t = title.text?.toString()?.trim().orEmpty()
+                if (t.isEmpty()) { toast("Manca il nome"); return@setPositiveButton }
+                saveDeadline(Deadline(existing?.id ?: UUID.randomUUID().toString(), kind, t, date,
+                    Calc.num(amount.text?.toString().orEmpty()) ?: 0.0, if (kind == Deadlines.SUBSCRIPTION) period else null, photoPath), existing?.id)
+                toast("Salvato: ti avviso prima della scadenza")
+            }
+            .setNegativeButton("Annulla", null).show()
+    }
+
+    /** Photo of a document: the AI reads what it is and when it expires. */
+    private fun deadlineFromPhoto() {
+        if (!aiReady()) return
+        val f = java.io.File(scanDir, "doc_${System.currentTimeMillis()}.jpg")
+        capturePhoto(f) { shot ->
+            if (shot == null) return@capturePhoto
+            io.execute {
+                runCatching {
+                    val bmp = android.graphics.BitmapFactory.decodeFile(shot.absolutePath)
+                    val sc = minOf(1f, 1600f / maxOf(bmp.width, bmp.height))
+                    val small = Bitmap.createScaledBitmap(bmp, (bmp.width * sc).toInt(), (bmp.height * sc).toInt(), true)
+                    shot.outputStream().use { small.compress(Bitmap.CompressFormat.JPEG, 85, it) }
+                }
+                runOnUiThread {
+                    toast("✨ Leggo la scadenza…")
+                    ai.ask(listOf("user" to "Che documento è e quando scade? Rispondi SOLO con JSON {\"documento\":\"nome breve in italiano\",\"scadenza\":\"yyyy-MM-dd\"}."),
+                        "Rispondi solo con JSON valido.", object : AiBridge.Listener {
+                            override fun onDone(text: String, model: String) {
+                                val o = runCatching { org.json.JSONObject(Regex("\\{[\\s\\S]*\\}").find(text)!!.value) }.getOrNull()
+                                val date = runCatching {
+                                    java.text.SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).parse(o!!.getString("scadenza"))!!.time + 9 * 3600_000L
+                                }.getOrNull()
+                                val keep = java.io.File(Deadlines.dir(this@MainActivity), shot.name)
+                                runCatching { shot.copyTo(keep, true) }
+                                if (date == null) toast("Data non trovata: inseriscila a mano")
+                                editDeadline(Deadlines.DEADLINE, null, o?.optString("documento")?.takeIf { it.isNotBlank() && it != "null" }, date, keep.absolutePath)
+                            }
+                            override fun onError(message: String, noKey: Boolean) { toast(message) }
+                        }, listOf(Triple("image", "image/jpeg", "/files/scan/" + shot.name)))
+                }
+            }
+        }
+    }
+
+    private fun showDeadlinesPage(tab: String = deadlineTab) {
+        deadlineTab = tab
+        Deadlines.advance(this)
+        openPage("Scadenze", "Aggiungi", { _ ->
+            if (deadlineTab == Deadlines.DEADLINE) {
+                MaterialAlertDialogBuilder(this).setItems(arrayOf("✏️ Inserisci a mano", "📷 Fotografa il documento (l'AI legge la data)")) { _, w ->
+                    if (w == 0) editDeadline(Deadlines.DEADLINE) else deadlineFromPhoto()
+                }.show()
+            } else editDeadline(deadlineTab)
+        }) { root, body, dialog ->
+            val palette = AppRepository.palette(this)
+            val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+            val d = resources.displayMetrics.density
+            fun dp(v: Int) = (v * d).toInt()
+            val tabs = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding(dp(16), 0, dp(16), dp(8)) }
+            root.addView(tabs, 1)
+            fun render() {
+                tabs.removeAllViews()
+                listOf(Deadlines.DEADLINE to "📆 Scadenze", Deadlines.SUBSCRIPTION to "🔁 Abbonamenti", Deadlines.WARRANTY to "🧾 Garanzie").forEach { (k, l) ->
+                    val active = k == deadlineTab
+                    tabs.addView(TextView(this).apply {
+                        text = l; textSize = 13f; setTextColor(if (active) android.graphics.Color.WHITE else palette.text)
+                        setPadding(dp(12), dp(7), dp(12), dp(7))
+                        background = android.graphics.drawable.GradientDrawable().apply {
+                            cornerRadius = 16 * d; setColor(if (active) accent else palette.card); setStroke(d.toInt().coerceAtLeast(1), if (active) accent else palette.stroke)
+                        }
+                        layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }
+                        setOnClickListener { deadlineTab = k; render() }
+                    })
+                }
+                body.removeAllViews()
+                val list = Deadlines.load(this).filter { it.kind == deadlineTab }.sortedBy { it.date }
+                if (deadlineTab == Deadlines.SUBSCRIPTION && list.isNotEmpty()) {
+                    val month = list.sumOf { Deadlines.monthly(it) }
+                    body.addView(TextView(this).apply {
+                        text = "${Expenses.fmt(month)} al mese · ${Expenses.fmt(month * 12)} all'anno"
+                        textSize = 18f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text)
+                        gravity = android.view.Gravity.CENTER; setPadding(0, dp(6), 0, dp(10))
+                    })
+                }
+                if (list.isEmpty()) {
+                    emptyLabel(body, when (deadlineTab) {
+                        Deadlines.SUBSCRIPTION -> "Nessun abbonamento.\nTi avviso 3 giorni prima di ogni rinnovo."
+                        Deadlines.WARRANTY -> "Nessuna garanzia.\nFotografa lo scontrino: ti avviso un mese prima della scadenza."
+                        else -> "Nessuna scadenza.\nRevisione, bollo, documenti: ti avviso 30 e 7 giorni prima."
+                    })
+                    return
+                }
+                list.forEach { x ->
+                    val left = daysLeft(x.date)
+                    val sub = when (x.kind) {
+                        Deadlines.SUBSCRIPTION -> "${Expenses.fmt(x.amount)} ${when (x.period) { "anno" -> "all'anno"; "settimana" -> "a settimana"; else -> "al mese" }} · rinnovo ${dayFmt.format(java.util.Date(x.date))} ($left)"
+                        Deadlines.WARRANTY -> "Garanzia fino al ${dayFmt.format(java.util.Date(x.date))} ($left)"
+                        else -> "${dayFmt.format(java.util.Date(x.date))} · $left"
+                    }
+                    val urgent = x.date - System.currentTimeMillis() < 7 * 86_400_000L
+                    listRow(body, (if (urgent) "⚠️ " else "") + x.title, sub,
+                        onClick = { editDeadline(x.kind, x) },
+                        onLong = { x.photo?.let { showImageFullscreen(it) } ?: toast("Nessuna foto") },
+                        onRemove = {
+                            confirmClear("Eliminare «${x.title}»?") {
+                                x.reminders.forEach { Reminders.remove(this, it) }
+                                x.photo?.let { java.io.File(it).delete() }
+                                Deadlines.save(this, Deadlines.load(this).filter { it.id != x.id }); render()
+                            }
+                        })
+                }
+                body.addView(TextView(this).apply {
+                    text = "Tocca per modificare" + if (deadlineTab != Deadlines.SUBSCRIPTION) ", tieni premuto per vedere la foto." else "."
+                    textSize = 12f; setTextColor(palette.textMuted); setPadding(dp(10), dp(12), 0, 0)
+                })
+            }
+            render()
+            deadlinesRefresh = { render() }
+            dialog.setOnDismissListener { deadlinesRefresh = null }
+        }
+    }
+
+    // ======================= Links that have an app on the phone =======================
+
+    private val openInPrefs by lazy { getSharedPreferences("wl_openin", MODE_PRIVATE) }
+
+    /** A non-browser app installed for this link (e.g. Drive, Maps, Amazon), if any. */
+    private fun nativeAppFor(url: String): android.content.pm.ResolveInfo? = runCatching {
+        val pm = packageManager
+        val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+        val browsers = pm.queryIntentActivities(Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com/x")).addCategory(Intent.CATEGORY_BROWSABLE), 0)
+            .map { it.activityInfo.packageName }.toSet()
+        pm.queryIntentActivities(i, 0).firstOrNull { it.activityInfo.packageName != packageName && it.activityInfo.packageName !in browsers }
+    }.getOrNull()
+
+    /** True if the link was handed to an app (or a question is shown); false = open it here. */
+    private fun maybeOpenInApp(url: String, onHere: () -> Unit): Boolean {
+        val host = hostOf(url) ?: return false
+        if (apps.any { hostOf(normalizeUrl(it.url)) == host }) return false
+        val pref = openInPrefs.getString(host, null)
+        if (pref == "web") return false
+        val app = nativeAppFor(url) ?: return false
+        val pkg = app.activityInfo.packageName
+        val launch = {
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage(pkg).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                .onFailure { onHere() }
+        }
+        if (pref == "app") { launch(); return true }
+        val name = app.loadLabel(packageManager).toString()
+        val remember = android.widget.CheckBox(this).apply { text = "Ricorda per $host"; isChecked = true }
+        val box = android.widget.FrameLayout(this).apply {
+            val d = resources.displayMetrics.density
+            setPadding((20 * d).toInt(), (6 * d).toInt(), (20 * d).toInt(), 0); addView(remember)
+        }
+        MaterialAlertDialogBuilder(this).setTitle("Aprire con $name?").setMessage(host).setView(box)
+            .setPositiveButton("App $name") { _, _ -> if (remember.isChecked) openInPrefs.edit().putString(host, "app").apply(); launch() }
+            .setNegativeButton("Qui") { _, _ -> if (remember.isChecked) openInPrefs.edit().putString(host, "web").apply(); onHere() }
+            .show()
+        return true
+    }
+
     private fun openExternally() {
         val url = webView.url?.takeIf { it.startsWith("http") } ?: run { toast("Nessuna pagina aperta"); return }
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
@@ -7380,6 +7675,14 @@ class MainActivity : AppCompatActivity() {
             repo.setHideBarsOnScroll(!repo.hideBarsOnScroll()); hideBarsOn = repo.hideBarsOnScroll(); renderSettings()
         }
         row("Dimensione testo", value = "${repo.textZoom()}%") { showTextZoomDialog() }
+        row("Link e app", "Scelte «apri nell'app o qui»: ${openInPrefs.all.size}") {
+            val entries = openInPrefs.all.entries.sortedBy { it.key }
+            if (entries.isEmpty()) { toast("Nessuna scelta salvata"); return@row }
+            MaterialAlertDialogBuilder(this).setTitle("Tocca per dimenticare la scelta")
+                .setItems(entries.map { "${it.key} → ${if (it.value == "app") "app" else "qui"}" }.toTypedArray()) { _, w ->
+                    openInPrefs.edit().remove(entries[w].key).apply(); renderSettings()
+                }.setNeutralButton("Dimentica tutte") { _, _ -> openInPrefs.edit().clear().apply(); renderSettings() }.show()
+        }
         val themeLabel = when (repo.getThemeMode()) {
             "light" -> "Chiaro"
             "system" -> "Sistema"
@@ -7548,7 +7851,7 @@ class MainActivity : AppCompatActivity() {
         val options = arrayOf(
             "Salva su file o Drive",
             "Condividi",
-            "☁️ Drive dal sito (se non hai l'app Drive)",
+            if (runCatching { packageManager.getPackageInfo("com.google.android.apps.docs", 0) }.isSuccess) "☁️ Salva su Google Drive" else "☁️ Drive dal sito (non hai l'app Drive)",
             if (autoOn) "Backup automatico: attivo" else "Attiva backup automatico"
         )
         MaterialAlertDialogBuilder(this)
@@ -7567,6 +7870,12 @@ class MainActivity : AppCompatActivity() {
 
     /** Without the Drive app: save the backup in Downloads, then open Drive web to upload it. */
     private fun backupViaDriveWeb() {
+        val hasDrive = runCatching { packageManager.getPackageInfo("com.google.android.apps.docs", 0) }.isSuccess
+        if (hasDrive) {
+            toast("Nella finestra tocca ☰ → Drive e salva")
+            exportLauncher.launch("web-launcher-backup.json")
+            return
+        }
         val json = backupJson()
         io.execute {
             val ok = runCatching {

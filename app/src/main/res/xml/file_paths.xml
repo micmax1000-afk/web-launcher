@@ -2,4 +2,6 @@
 <paths>
     <files-path name="places" path="places/" />
     <cache-path name="capture" path="capture/" />
+    <cache-path name="scan" path="scan/" />
+    <files-path name="deadlines" path="deadlines/" />
 </paths>
