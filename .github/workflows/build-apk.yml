@@ -42,8 +42,10 @@ jobs:
 
       - name: Gradle wrapper + build
         run: |
-          gradle wrapper --gradle-version 8.2
-          ./gradlew assembleDebug --stacktrace
+          # validation of the distribution URL can fail on the runner: skip it, the download itself is checked
+          gradle wrapper --gradle-version 8.2 --no-validate-url || gradle wrapper --gradle-version 8.2
+          for i in 1 2 3; do ./gradlew assembleDebug --stacktrace && break; echo "Nuovo tentativo $i"; sleep 20; done
+          test -f app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
