@@ -224,6 +224,12 @@ object PhishingGuard {
 
 // ======================= Reminders =======================
 
+/**
+ * Word boundary that also treats accented letters (lunedì, perché) as letters, on both Android (ICU)
+ * and the JVM. Android does not support the inline Unicode flag "U": it crashes when the pattern is compiled.
+ */
+internal const val WB = "(?:(?<=[\\p{L}\\p{N}_])(?![\\p{L}\\p{N}_])|(?<![\\p{L}\\p{N}_])(?=[\\p{L}\\p{N}_]))"
+
 data class Reminder(val id: Int, val text: String, val at: Long, var done: Boolean = false, val repeat: String? = null)
 
 data class ReminderParse(val text: String, val at: Long, val repeat: String?)
@@ -319,7 +325,7 @@ object Reminders {
         Regex("\\b(?:il|ogni)\\s+(\\d{1,2})\\s+(?:di ogni|del|di)\\s+mese\\b").find(s)?.let { m ->
             repeat = "month"; monthDay = m.groupValues[1].toInt(); s = s.replace(m.value, " ")
         }
-        Regex("(?U)\\b(dal lunedì al venerdì|dal lunedi al venerdi|nei giorni feriali|giorni feriali|ogni giorno feriale)\\b").find(s)?.let { m ->
+        Regex("${WB}(dal lunedì al venerdì|dal lunedi al venerdi|nei giorni feriali|giorni feriali|ogni giorno feriale)${WB}").find(s)?.let { m ->
             repeat = "weekdays"; s = s.replace(m.value, " ")
         }
         Regex("\\b(ogni giorno|tutti i giorni|ogni mattina|tutte le mattine|ogni sera|tutte le sere)\\b").find(s)?.let { m ->
@@ -327,7 +333,7 @@ object Reminders {
             s = s.replace(m.value, " ")
         }
         Regex("\\bogni settimana\\b").find(s)?.let { m -> repeat = "week"; s = s.replace(m.value, " ") }
-        Regex("(?U)\\bogni\\s+(?=(lunedi|lunedì|martedi|martedì|mercoledi|mercoledì|giovedi|giovedì|venerdi|venerdì|sabato|domenica)\\b)").find(s)?.let { m ->
+        Regex("${WB}ogni\\s+(?=(lunedi|lunedì|martedi|martedì|mercoledi|mercoledì|giovedi|giovedì|venerdi|venerdì|sabato|domenica)${WB})").find(s)?.let { m ->
             repeat = "week"; s = s.replaceFirst(m.value, " ")
         }
         Regex("\\bogni mese\\b").find(s)?.let { m -> repeat = "month"; s = s.replace(m.value, " ") }
@@ -357,7 +363,7 @@ object Reminders {
                 s = s.replace(m.value, " "); dayChosen = true; found = m.groupValues[1] == "stasera"
             }
             val dayIndex = mapOf("dom" to 1, "lun" to 2, "mar" to 3, "mer" to 4, "gio" to 5, "ven" to 6, "sab" to 7)
-            Regex("(?U)\\b(lunedi|lunedì|martedi|martedì|mercoledi|mercoledì|giovedi|giovedì|venerdi|venerdì|sabato|domenica)\\b").find(s)?.let { m ->
+            Regex("${WB}(lunedi|lunedì|martedi|martedì|mercoledi|mercoledì|giovedi|giovedì|venerdi|venerdì|sabato|domenica)${WB}").find(s)?.let { m ->
                 val target = dayIndex[m.groupValues[1].take(3)] ?: return@let
                 var diff = (target - cal.get(Calendar.DAY_OF_WEEK) + 7) % 7
                 if (diff == 0) diff = 7

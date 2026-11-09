@@ -29,6 +29,15 @@ adb shell input keyevent KEYCODE_BACK
 adb shell am start -W -a android.intent.action.VIEW -d "https://example.com" -n $PKG/.MainActivity >/dev/null
 shot 05-browser 8
 
+# riconoscitori di testo sul motore regex di Android (diverso da quello dei test JVM)
+adb shell am start -W -n $PKG/.MainActivity --ez wl_selftest true >/dev/null
+sleep 5
+adb logcat -d -s WL_SELFTEST:* > "$OUT/selftest.txt"
+cat "$OUT/selftest.txt"
+if ! grep -q "SELFTEST OK" "$OUT/selftest.txt"; then
+  echo "::error::Autotest fallito sul telefono virtuale"; adb logcat -d | grep -A15 "WL_SELFTEST" | head -60; exit 1
+fi
+
 # tocchi casuali solo dentro l'app (niente barra di sistema / altre app)
 adb shell monkey -p $PKG --pct-syskeys 0 --pct-appswitch 0 --throttle 150 -s 4242 --ignore-security-exceptions 600 > "$OUT/monkey.txt" 2>&1 || true
 shot 06-dopo-tocchi 3
