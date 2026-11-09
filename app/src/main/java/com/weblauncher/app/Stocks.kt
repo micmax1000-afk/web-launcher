@@ -31,6 +31,25 @@ object Stocks {
         val changePct get() = if (previous != 0.0) (price - previous) / previous * 100 else 0.0
     }
     data class Alert(val id: String, val symbol: String, val name: String, val above: Boolean, val price: Double, var done: Boolean = false)
+    /** Shares owned: quantity and average purchase price (in the asset's currency). */
+    data class Holding(val symbol: String, val name: String, val qty: Double, val cost: Double)
+    data class Quote(val price: Double, val pct: Double, val currency: String, val time: Long)
+    /** Portfolio totals for one currency. */
+    data class Total(val currency: String, val value: Double, val invested: Double) {
+        val gain get() = value - invested
+        val gainPct get() = if (invested > 0) gain / invested * 100 else 0.0
+    }
+
+    /** Groups by currency (no exchange-rate guesswork): value at current prices vs money invested. */
+    fun portfolio(holdings: List<Holding>, quotes: Map<String, Quote>): List<Total> =
+        holdings.mapNotNull { h -> quotes[h.symbol]?.let { q -> Triple(q.currency, h.qty * q.price, h.qty * h.cost) } }
+            .groupBy { it.first }
+            .map { (cur, l) -> Total(cur, l.sumOf { it.second }, l.sumOf { it.third }) }
+            .sortedByDescending { it.value }
+
+    /** One line for the morning brief: FTSE MIB and the first symbols of the watchlist. */
+    fun briefLine(items: List<Pair<String, Double>>): String? =
+        items.takeIf { it.isNotEmpty() }?.joinToString(" · ", prefix = "📈 ") { (n, p) -> "$n ${fmtPct(p)}" }
 
     /** Quick picks shown when the list is empty or when adding. */
     val PRESETS = listOf(
@@ -86,6 +105,7 @@ object Stocks {
         val sym = when (currency) { "EUR" -> " €"; "USD" -> " $"; "GBP" -> " £"; "" -> ""; else -> " $currency" }
         return s + sym
     }
+    fun fmtNum(v: Double): String = Calc.fmt(v)
     fun fmtPct(p: Double) = String.format(Locale.ITALIAN, "%+.2f%%", p)
 
     private fun JsonObject.str(k: String) = get(k)?.takeIf { !it.isJsonNull }?.asString?.takeIf { it.isNotBlank() }
@@ -129,10 +149,37 @@ object Stocks {
         Gson().fromJson<MutableList<Alert>>(prefs(c).getString("alerts", null), object : TypeToken<MutableList<Alert>>() {}.type)
     }.getOrNull()?.filterNotNull()?.toMutableList() ?: mutableListOf()
     fun saveAlerts(c: Context, l: List<Alert>) { prefs(c).edit().putString("alerts", Gson().toJson(l)).apply(); schedule(c) }
+    fun holdings(c: Context): MutableList<Holding> = runCatching {
+        Gson().fromJson<MutableList<Holding>>(prefs(c).getString("holdings", null), object : TypeToken<MutableList<Holding>>() {}.type)
+    }.getOrNull()?.filterNotNull()?.toMutableList() ?: mutableListOf()
+    fun saveHoldings(c: Context, l: List<Holding>) = prefs(c).edit().putString("holdings", Gson().toJson(l)).apply()
+
+    /** Last known quotes, for the widget and the portfolio without waiting for the network. */
+    fun quotes(c: Context): MutableMap<String, Quote> = runCatching {
+        Gson().fromJson<MutableMap<String, Quote>>(prefs(c).getString("quotes", null), object : TypeToken<MutableMap<String, Quote>>() {}.type)
+    }.getOrNull() ?: mutableMapOf()
+    fun remember(c: Context, symbol: String, ch: Chart) {
+        val q = quotes(c); q[symbol] = Quote(ch.price, ch.changePct, ch.currency, System.currentTimeMillis())
+        prefs(c).edit().putString("quotes", Gson().toJson(q)).apply()
+    }
+
+    /** Refreshes the quotes of the watchlist (network). */
+    fun refreshAll(c: Context) {
+        watch(c).forEach { a -> runCatching { chart(a.symbol) }.getOrNull()?.let { remember(c, a.symbol, it) } }
+        StocksWidget.update(c)
+    }
+
+    /** For the morning brief (network, background thread). */
+    fun briefText(c: Context): String? {
+        val list = (listOf(Asset("FTSEMIB.MI", "FTSE MIB")) + watch(c).filter { it.symbol != "FTSEMIB.MI" }).take(5)
+        if (watch(c).isEmpty()) return null
+        val items = list.mapNotNull { a -> runCatching { chart(a.symbol) }.getOrNull()?.let { remember(c, a.symbol, it); a.name.substringBefore(" (").take(18) to it.changePct } }
+        return briefLine(items)
+    }
 
     fun schedule(c: Context) {
         val wm = WorkManager.getInstance(c)
-        if (alerts(c).none { !it.done }) { wm.cancelUniqueWork("wl_stocks"); return }
+        if (alerts(c).none { !it.done } && !StocksWidget.present(c)) { wm.cancelUniqueWork("wl_stocks"); return }
         wm.enqueueUniquePeriodicWork("wl_stocks", ExistingPeriodicWorkPolicy.KEEP,
             PeriodicWorkRequestBuilder<StocksWorker>(30, TimeUnit.MINUTES)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build())
@@ -163,6 +210,7 @@ class StocksWorker(context: Context, params: WorkerParameters) : Worker(context,
             alerts.forEach { a -> if (Stocks.triggered(a, ch.price)) { Stocks.notify(c, a, ch.price, ch.currency); a.done = true; changed = true } }
         }
         if (changed) Stocks.saveAlerts(c, list)
+        if (StocksWidget.present(c)) Stocks.refreshAll(c)
         return Result.success()
     }
 }

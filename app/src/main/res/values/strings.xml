@@ -11,6 +11,7 @@
     <string name="mic_denied">Permesso microfono negato</string>
     <string name="favorites">Preferiti</string>
     <string name="widget_search_desc">Barra di ricerca con voce e notizie</string>
+    <string name="widget_stocks_desc">I titoli della tua watchlist con prezzo e variazione</string>
     <string name="widget_news_desc">Le ultime notizie delle tue fonti</string>
     <string name="sc_note">Nuova nota</string>
     <string name="sc_ask">Chiedi a voce</string>

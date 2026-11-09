@@ -178,6 +178,9 @@ internal fun MainActivity.todayEntries(): List<TodayEntry> {
             when (d.kind) { Deadlines.SUBSCRIPTION -> "${d.title} si rinnova ${daysLeft(d.date)}"; else -> "${d.title} scade ${daysLeft(d.date)}" },
             "⚠️") { showDeadlinesPage(d.kind) }
     }
+    runCatching { Birthdays.upcoming(this, 1) }.getOrDefault(emptyList()).forEach { (p, days) ->
+        out += TodayEntry(start + days * 86_400_000L, true, "Compleanno di ${p.name}" + (p.turning(java.util.Calendar.getInstance())?.let { " ($it)" } ?: ""), "🎂") { showBirthdaysPage() }
+    }
     Places.parking(this)?.takeIf { it.until > now }?.let { p ->
         out += TodayEntry(p.until, false, "Scade il parcheggio", "🚗") { showPlacesPage() }
     }

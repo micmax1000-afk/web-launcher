@@ -513,7 +513,6 @@ internal fun MainActivity.renderHomeTools() {
     chip("🎙 Registra") { showRecorderPage() }
     chip("💳 Carte") { showCardsPage() }
     chip("🎫 Biglietti") { showWalletPage() }
-    chip("⏰ Promemoria") { showRemindersPage() }
     chip("📦 Pacchi") { showParcelsPage() }
     chip("⏱ Tempo") { showUsagePage() }
     chip("📄 PDF") { pdfPicker.launch(arrayOf("application/pdf")) }

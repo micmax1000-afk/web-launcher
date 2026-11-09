@@ -150,7 +150,8 @@ internal fun MainActivity.showExpensesPage() {
                 layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(4), 0, dp(4), 0) }
                 setOnClickListener { onClick() }
             })
-            act("🧾 Scontrino o bolletta") { scanPurpose = "expense"; scanDocument() }
+            act("🧾 Scontrino") { scanPurpose = "expense"; scanDocument() }
+            act("💼 Finanze") { showFinancePage() }
             act("Esporta") {
                 val csv = "Data;Importo;Categoria;Descrizione\n" + all.sortedBy { it.time }.joinToString("\n") {
                     java.text.SimpleDateFormat("dd/MM/yyyy", Locale.ITALIAN).format(java.util.Date(it.time)) + ";" +
