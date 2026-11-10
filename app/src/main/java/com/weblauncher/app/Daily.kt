@@ -191,7 +191,10 @@ object Health {
         "glicemia" to Triple("🩸 Glicemia", "mg/dL", false),
         "battito" to Triple("💓 Battito", "bpm", false),
         "temperatura" to Triple("🌡 Temperatura", "°C", false),
-        "saturazione" to Triple("🫁 Saturazione", "%", false)
+        "saturazione" to Triple("🫁 Saturazione", "%", false),
+        "vita" to Triple("📏 Vita", "cm", false),
+        "fianchi" to Triple("📏 Fianchi", "cm", false),
+        "sonno" to Triple("😴 Sonno", "h", false)
     )
     private fun file(c: Context) = File(c.filesDir, "health.json")
     fun load(c: Context): MutableList<Measure> = runCatching {

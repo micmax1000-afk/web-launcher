@@ -192,6 +192,7 @@ internal fun MainActivity.renderTools() {
         Triple("📈", "Borsa") { showStocksPage() }
     ))
     group("SALUTE E SPORT", listOf(
+        Triple("💚", "Benessere") { showWellnessHub() },
         Triple("👟", "Passi") { showStepsPage() },
         Triple("❤️", "Salute") { showHealthPage() },
         Triple("⏱", "Tabata") { showTabata() },
@@ -386,6 +387,7 @@ private fun toolIcon(label: String): Int = when (label) {
     "Livella" -> R.drawable.ic_tool_level
     "Altimetro" -> R.drawable.ic_tool_altitude
     "Tabata" -> R.drawable.ic_tool_dumbbell
+    "Benessere" -> R.drawable.ic_tool_spark
     "Raccolta rifiuti" -> R.drawable.ic_tool_trash
     "La mia settimana" -> R.drawable.ic_tool_chart
     "Misure e sensori" -> R.drawable.ic_tool_ruler

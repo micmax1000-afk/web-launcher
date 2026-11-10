@@ -152,6 +152,11 @@ class MainActivity : AppCompatActivity() {
         if (spoken.isNotEmpty()) handleVoiceText(spoken)
     }
 
+    var locationDone: ((Boolean) -> Unit)? = null
+    val workoutLocationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
+        locationDone?.invoke(r[android.Manifest.permission.ACCESS_FINE_LOCATION] == true || r[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true)
+    }
+
     val micPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -1044,6 +1049,19 @@ class MainActivity : AppCompatActivity() {
             "stocks" -> { intent.removeExtra(EXTRA_WIDGET); showStocksPage(); return }
             "waste" -> { intent.removeExtra(EXTRA_WIDGET); showWastePage(); return }
             "birthdays" -> { intent.removeExtra(EXTRA_WIDGET); showBirthdaysPage(); return }
+            "wellness" -> { intent.removeExtra(EXTRA_WIDGET); showWellnessHub(); return }
+            "hc" -> { intent.removeExtra(EXTRA_WIDGET); showHealthConnectPage(); return }
+            "food" -> { intent.removeExtra(EXTRA_WIDGET); showFoodDiary(); return }
+            "water" -> { intent.removeExtra(EXTRA_WIDGET); showWaterPage(); return }
+            "calc" -> { intent.removeExtra(EXTRA_WIDGET); showCalorieCalculator(); return }
+            "workout" -> { intent.removeExtra(EXTRA_WIDGET); showWorkoutRecorder(); return }
+            "plans" -> { intent.removeExtra(EXTRA_WIDGET); showPlansPage(); return }
+            "history" -> { intent.removeExtra(EXTRA_WIDGET); showWorkoutHistory(); return }
+            "sleep" -> { intent.removeExtra(EXTRA_WIDGET); showSleepPage(); return }
+            "meds" -> { intent.removeExtra(EXTRA_WIDGET); showMedsPage(); return }
+            "visits" -> { intent.removeExtra(EXTRA_WIDGET); showVisitsPage(); return }
+            "emergency" -> { intent.removeExtra(EXTRA_WIDGET); showEmergencyPage(); return }
+            "report" -> { intent.removeExtra(EXTRA_WIDGET); showReportPage(); return }
             "pdftext" -> {          // automatic test: text extraction of a PDF made on the spot (the AI reads this text)
                 intent.removeExtra(EXTRA_WIDGET)
                 val f = java.io.File(cacheDir, "prova-testo.pdf")
@@ -1877,6 +1895,13 @@ class MainActivity : AppCompatActivity() {
     var expensesRefresh: (() -> Unit)? = null
     var financeRefresh: (() -> Unit)? = null
     var birthdaysRefresh: (() -> Unit)? = null
+    var wellnessRefresh: (() -> Unit)? = null
+    var foodRefresh: (() -> Unit)? = null
+    var hcRefresh: (() -> Unit)? = null
+    /** Health Connect permission request: runs [hcRefresh] and a new reading when the user answers. */
+    val hcPermission = registerForActivityResult(androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()) { _ ->
+        syncHealthConnect { hcRefresh?.invoke(); wellnessRefresh?.invoke() }
+    }
     var scanPurpose: String? = null
 
     // ======================= Parking & saved places =======================
