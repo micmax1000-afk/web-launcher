@@ -69,9 +69,9 @@ internal fun MainActivity.newsAudioBulletin() {
                 if (isFinishing) return
                 val rate = getSharedPreferences("wl_prefs", MODE_PRIVATE).getFloat("reader_rate", 1f)
                 MaterialAlertDialogBuilder(this@newsAudioBulletin).setTitle("🎧 Notiziario di oggi").setMessage(text)
-                    .setPositiveButton("⏹ Stop") { _, _ -> tts?.stop() }
+                    .setPositiveButton("⏹ Stop") { _, _ -> stopSpeaking() }
                     .setNeutralButton("🔁 Da capo") { _, _ -> speak(text, rate) }
-                    .setOnCancelListener { tts?.stop() }.show()
+                    .setOnCancelListener { stopSpeaking() }.show()
                 speak(text, rate)
             }
             override fun onError(message: String, noKey: Boolean) { runCatching { waiting.dismiss() }; toast(message) }
@@ -108,4 +108,22 @@ internal fun MainActivity.weeklyMenu() {
                 })
         }
         .setNegativeButton("Annulla", null).show()
+}
+
+/** Renders the first [max] pages of [pdf] to JPEGs in the scan folder (readable by the AI bridge). Background thread. */
+internal fun MainActivity.renderPdfPages(pdf: File, max: Int, side: Int): List<File> {
+    val images = mutableListOf<File>()
+    android.os.ParcelFileDescriptor.open(pdf, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+        android.graphics.pdf.PdfRenderer(fd).use { r ->
+            for (i in 0 until minOf(r.pageCount, max)) r.openPage(i).use { page ->
+                val scale = side.toFloat() / maxOf(page.width, page.height)
+                val bmp = Bitmap.createBitmap((page.width * scale).toInt().coerceAtLeast(1), (page.height * scale).toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+                bmp.eraseColor(android.graphics.Color.WHITE)
+                page.render(bmp, null, null, android.graphics.pdf.PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                images += File(scanDir, "pdfpage_${System.currentTimeMillis()}_$i.jpg").also { f -> f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 85, it) } }
+                bmp.recycle()
+            }
+        }
+    }
+    return images
 }

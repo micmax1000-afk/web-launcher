@@ -1,5 +1,7 @@
 package com.weblauncher.app
 
+import android.content.Context.AUDIO_SERVICE
+
 import android.content.Context.DOWNLOAD_SERVICE
 import android.Manifest
 import android.annotation.SuppressLint
@@ -437,39 +439,112 @@ internal fun MainActivity.setupMiaBridge() {
                     runCatching { reply.postMessage("{\"t\":\"error\",\"error\":\"not-allowed\"}") }
                 }
             }
-            "speak" -> speak(m.optString("text"), m.optDouble("rate", 1.0).toFloat())
-            "stop" -> tts?.stop()
+            "speak" -> {
+                val id = m.optInt("id")
+                speakFromWeb = true
+                speakReply = reply
+                speak(m.optString("text"), m.optDouble("rate", 1.0).toFloat()) { speaking ->
+                    // tell the page when the voice really starts and ends (ignored by the page if a newer reading exists)
+                    runCatching { speakReply?.postMessage(org.json.JSONObject().put("t", if (speaking) "speakstart" else "speakend").put("id", id).toString()) }
+                }
+            }
+            "stop" -> stopSpeaking()
         }
     }
     if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) {
-        androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, MiaAi.SPEECH_SHIM, origins)
+        androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, MiaAi.script(AppRepository.isLightUi(this)), origins)
     }
 }
 
-internal fun MainActivity.speak(text: String, rate: Float) {
-    if (text.isBlank()) return
-    val clean = text.replace(Regex("[*_#`>|]"), " ").replace(Regex("\\s+"), " ").trim()
-    if (tts == null) {
-        pendingSpeech = clean to rate
-        tts = android.speech.tts.TextToSpeech(this) { status ->
-            ttsReady = status == android.speech.tts.TextToSpeech.SUCCESS
-            if (ttsReady) {
-                tts?.language = Locale.ITALIAN
-                pendingSpeech?.let { (t, r) -> speakNow(t, r) }
-            } else toast("Sintesi vocale non disponibile")
-            pendingSpeech = null
+/**
+ * Reads [text] aloud. [onState] is told `true` when the voice starts and `false` when it ends, is stopped or fails
+ * (only for the latest reading: starting a new one supersedes the previous).
+ */
+internal fun MainActivity.speak(text: String, rate: Float, onState: ((Boolean) -> Unit)? = null) {
+    val clean = SpeechText.clean(text)
+    if (clean.isBlank()) { onState?.invoke(false); return }
+    speakGen++                       // anything still speaking or queued is superseded
+    speakState = onState
+    pendingSpeech = clean to rate
+    if (tts == null) { initTts(); return }
+    if (ttsReady) { pendingSpeech = null; speakNow(clean, rate) }
+}
+
+/** Stops the voice now and tells whoever was listening. Safe to call at any time. */
+internal fun MainActivity.stopSpeaking() {
+    speakGen++
+    pendingSpeech = null
+    speakFromWeb = false
+    runCatching { tts?.stop() }
+    val s = speakState; speakState = null
+    s?.invoke(false)
+}
+
+private fun MainActivity.speakFailed(message: String) {
+    val s = speakState; speakState = null
+    s?.invoke(false)
+    toast(message)
+}
+
+private fun MainActivity.initTts() {
+    var engineRef: android.speech.tts.TextToSpeech? = null
+    engineRef = android.speech.tts.TextToSpeech(this) { status ->
+        val engine = engineRef
+        if (status != android.speech.tts.TextToSpeech.SUCCESS || engine == null) {
+            ttsReady = false; tts = null; pendingSpeech = null
+            runCatching { engine?.shutdown() }
+            speakFailed("La sintesi vocale del telefono non è disponibile (Impostazioni → Sintesi vocale)")
+            return@TextToSpeech
         }
-        return
+        runCatching {
+            engine.setAudioAttributes(android.media.AudioAttributes.Builder()
+                .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH).build())
+        }
+        val lang = engine.setLanguage(Locale.ITALIAN)
+        if (lang == android.speech.tts.TextToSpeech.LANG_MISSING_DATA || lang == android.speech.tts.TextToSpeech.LANG_NOT_SUPPORTED) offerItalianVoice()
+        engine.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+            private fun mine(id: String?) = id != null && id.startsWith("g${speakGen}_")
+            override fun onStart(id: String?) { if (mine(id)) runOnUiThread { speakState?.invoke(true) } }
+            override fun onDone(id: String?) { if (mine(id) && id!!.endsWith("_last")) runOnUiThread { val s = speakState; speakState = null; s?.invoke(false) } }
+            @Deprecated("Deprecated in Java") override fun onError(id: String?) {
+                if (mine(id)) runOnUiThread { speakFailed("Non riesco a leggere ad alta voce: controlla il volume e la voce di sintesi del telefono") }
+            }
+            override fun onStop(id: String?, interrupted: Boolean) {
+                if (mine(id) && id!!.endsWith("_last")) runOnUiThread { val s = speakState; speakState = null; s?.invoke(false) }
+            }
+        })
+        ttsReady = true
+        pendingSpeech?.let { (t, r) -> pendingSpeech = null; speakNow(t, r) }
     }
-    if (ttsReady) speakNow(clean, rate) else pendingSpeech = clean to rate
+    tts = engineRef
+}
+
+private fun MainActivity.offerItalianVoice() {
+    if (ttsWarned) return
+    ttsWarned = true
+    runOnUiThread {
+        MaterialAlertDialogBuilder(this).setTitle("Voce italiana mancante")
+            .setMessage("Il telefono non ha la voce italiana per la lettura: senza, l'audio può non partire o suonare male. Puoi installarla dalle impostazioni di sintesi vocale.")
+            .setPositiveButton("Installa") { _, _ ->
+                runCatching { startActivity(Intent(android.speech.tts.TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA)) }
+                    .onFailure { runCatching { startActivity(Intent("com.android.settings.TTS_SETTINGS")) } }
+            }
+            .setNegativeButton("Più tardi", null).show()
+    }
 }
 
 internal fun MainActivity.speakNow(text: String, rate: Float) {
     val engine = tts ?: return
+    val gen = speakGen
+    val am = getSystemService(AUDIO_SERVICE) as android.media.AudioManager
+    if (am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) == 0) toast("Il volume dei contenuti multimediali è a zero: alzalo con i tasti del volume")
     engine.setSpeechRate(rate.coerceIn(0.5f, 2f))
-    // TTS has a per-utterance length limit: speak long answers in chunks
-    val max = android.speech.tts.TextToSpeech.getMaxSpeechInputLength() - 1
-    text.chunked(max).forEachIndexed { i, part ->
-        engine.speak(part, if (i == 0) android.speech.tts.TextToSpeech.QUEUE_FLUSH else android.speech.tts.TextToSpeech.QUEUE_ADD, null, "wl_$i")
+    // the engine limits the length of one utterance: speak long answers in pieces cut at the end of a sentence
+    val parts = SpeechText.chunks(text, android.speech.tts.TextToSpeech.getMaxSpeechInputLength() - 1)
+    parts.forEachIndexed { i, part ->
+        val id = "g${gen}_" + if (i == parts.lastIndex) "last" else i.toString()
+        val rc = engine.speak(part, if (i == 0) android.speech.tts.TextToSpeech.QUEUE_FLUSH else android.speech.tts.TextToSpeech.QUEUE_ADD, null, id)
+        if (rc == android.speech.tts.TextToSpeech.ERROR) { speakFailed("Non riesco a leggere ad alta voce: controlla la sintesi vocale del telefono"); return }
     }
 }

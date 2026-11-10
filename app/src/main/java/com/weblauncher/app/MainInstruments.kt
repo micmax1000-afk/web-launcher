@@ -594,15 +594,41 @@ internal fun MainActivity.showSplitBill() {
 // ======================= Rubbish collection =======================
 
 internal fun MainActivity.showWastePage() {
-    openPage("Raccolta rifiuti") { _, body, _ ->
+    openPage("Raccolta rifiuti") { _, body, dialog ->
         fun render() {
             body.removeAllViews()
             val m = Evening.waste(this)
-            emptyLabel(body, "Scegli cosa passa in ogni giorno: la sera prima alle 19 ricevi un avviso su cosa mettere fuori.")
+            val dates = Evening.wasteDates(this)
+            val pdf = Evening.wastePdf(this)
+            sectionLabel(body, "CALENDARIO IN PDF")
+            if (pdf.exists()) {
+                listRow(body, "📄 Apri il calendario", "Salvato ${NewsAdapter.ago(pdf.lastModified())}", onClick = { openWastePdf() })
+                listRow(body, "✨ Leggi con l'AI e crea gli avvisi", if (dates.isEmpty()) "Ricava date e tipi di rifiuto dal PDF" else "${dates.size} giorni già letti · tocca per rileggere", onClick = { readWastePdf() })
+                listRow(body, "🔄 Sostituisci il PDF", null, onClick = { wastePdfPicker.launch(arrayOf("application/pdf")) })
+                listRow(body, "🗑 Togli il PDF e le date lette", null, onClick = {
+                    confirmClear("Togliere il PDF e le date lette? I giorni fissi della settimana restano.") {
+                        pdf.delete(); Evening.setWasteDates(this, emptyMap()); render()
+                    }
+                })
+            } else {
+                listRow(body, "➕ Aggiungi il PDF del calendario", "Quello del tuo comune o del gestore dei rifiuti", onClick = { wastePdfPicker.launch(arrayOf("application/pdf")) })
+            }
+            val next = Waste.upcoming(dates, Calendar.getInstance(), 8)
+            if (next.isNotEmpty()) {
+                sectionLabel(body, "PROSSIME RACCOLTE")
+                val df = SimpleDateFormat("EEE d MMM", Locale.ITALIAN)
+                next.forEach { (day, kinds) ->
+                    val d = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).parse(day)
+                    listRow(body, df.format(d!!).replaceFirstChar { it.uppercase() }, kinds.joinToString(" · "), onClick = {})
+                }
+                emptyLabel(body, "La sera prima alle 19 ricevi un avviso con cosa mettere fuori. Se il PDF finisce, valgono i giorni fissi qui sotto.")
+            }
+            sectionLabel(body, "GIORNI FISSI DELLA SETTIMANA")
+            if (dates.isEmpty()) emptyLabel(body, "Scegli cosa passa in ogni giorno: la sera prima alle 19 ricevi un avviso su cosa mettere fuori.")
             val today = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
             Waste.DAYS.forEach { (day, name) ->
                 val kinds = m[day].orEmpty()
-                listRow(body, name, if (kinds.isEmpty()) { if (day == today) "Oggi · nessuna raccolta" else "Nessuna raccolta" } else { (if (day == today) "Oggi · " else "") + kinds.joinToString(" · ") }, onClick = {
+                listRow(body, (if (day == today) "▸ " else "") + name, if (kinds.isEmpty()) "Nessuna raccolta" else kinds.joinToString(" · "), onClick = {
                     val checked = BooleanArray(Waste.KINDS.size) { Waste.KINDS[it] in kinds }
                     MaterialAlertDialogBuilder(this).setTitle(name)
                         .setMultiChoiceItems(Waste.KINDS.toTypedArray(), checked) { _, i, on -> checked[i] = on }
@@ -612,10 +638,89 @@ internal fun MainActivity.showWastePage() {
                         }.setNegativeButton("Annulla", null).show()
                 })
             }
-            val out = Waste.tomorrow(m, Calendar.getInstance())
+            val out = Waste.tomorrow(m, Calendar.getInstance(), dates)
             if (out.isNotEmpty()) emptyLabel(body, "Stasera metti fuori: " + out.joinToString(", "))
         }
         render()
+        wasteRefresh = { render() }
+        dialog.setOnDismissListener { wasteRefresh = null }
+    }
+}
+
+/** Copies the chosen PDF into the app (it stays in the backup) and offers to read it with the AI. */
+internal fun MainActivity.importWastePdf(uri: android.net.Uri) {
+    io.execute {
+        val ok = runCatching {
+            val dest = Evening.wastePdf(this)
+            contentResolver.openInputStream(uri)!!.use { input -> dest.outputStream().use { input.copyTo(it) } }
+            // a quick check that it really is a PDF the phone can open
+            android.os.ParcelFileDescriptor.open(dest, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { fd -> android.graphics.pdf.PdfRenderer(fd).use { it.pageCount } }
+        }.getOrNull()
+        runOnUiThread {
+            if (ok == null || ok <= 0) { Evening.wastePdf(this).delete(); toast("Questo file non si apre come PDF (o è protetto da password)"); return@runOnUiThread }
+            wasteRefresh?.invoke()
+            MaterialAlertDialogBuilder(this).setTitle("📄 Calendario salvato")
+                .setMessage("Vuoi che l'AI lo legga? Ricava le date esatte e i tipi di rifiuto e ti avvisa la sera prima. Puoi sempre aprire il PDF da questa pagina.")
+                .setPositiveButton("✨ Leggi con l'AI") { _, _ -> readWastePdf() }
+                .setNegativeButton("Solo salva", null).show()
+        }
+    }
+}
+
+internal fun MainActivity.openWastePdf() {
+    val src = Evening.wastePdf(this)
+    if (!src.exists()) { toast("Nessun PDF salvato"); return }
+    runCatching { src.copyTo(java.io.File(pdfDir, "rifiuti-calendario.pdf"), true) }
+    showPdf(java.io.File(pdfDir, "rifiuti-calendario.pdf"), "Calendario rifiuti", null)
+}
+
+/** The AI reads the PDF pages and answers with exact dates (and/or fixed weekdays). */
+internal fun MainActivity.readWastePdf() {
+    if (!aiReady()) return
+    val pdf = Evening.wastePdf(this)
+    if (!pdf.exists()) { toast("Nessun PDF salvato"); return }
+    toast("✨ Leggo il calendario… può richiedere un minuto")
+    io.execute {
+        val images = runCatching { renderPdfPages(pdf, 8, 1500) }.getOrDefault(emptyList())
+        runOnUiThread {
+            if (images.isEmpty()) { toast("Non riesco a leggere il PDF (protetto da password?)"); return@runOnUiThread }
+            val year = Calendar.getInstance().get(Calendar.YEAR)
+            ai.ask(listOf("user" to "Questo è il calendario della raccolta differenziata di un comune italiano (anno $year). " +
+                "Leggi TUTTE le date di raccolta e i tipi di rifiuto che trovi nelle immagini, mese per mese. " +
+                "Rispondi SOLO con un oggetto JSON: {\"giorni\": {\"$year-01-05\": [\"Umido\", \"Carta\"], ...}} con le date nel formato aaaa-mm-gg " +
+                "e SOLO questi tipi: Umido, Indifferenziato, Plastica, Carta, Vetro, Verde, Metalli " +
+                "(organico = Umido; secco o residuo = Indifferenziato; multimateriale o imballaggi = Plastica; lattine = Metalli). " +
+                "Se il calendario indica solo giorni fissi della settimana senza date, rispondi invece con " +
+                "{\"settimana\": {\"martedì\": [\"Umido\"], \"venerdì\": [\"Plastica\"]}}. Non inventare date che non sono scritte."),
+                "Rispondi solo con JSON valido.", object : AiBridge.Listener {
+                    override fun onDone(text: String, model: String) {
+                        val p = Waste.parseCalendar(text)
+                        if (p.dates.isEmpty() && p.weekly.isEmpty()) { toast("Non sono riuscito a leggere il calendario: riprova o scegli i giorni a mano"); return }
+                        val df = SimpleDateFormat("d MMM yyyy", Locale.ITALIAN)
+                        val iso = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT)
+                        val msg = buildString {
+                            if (p.dates.isNotEmpty()) {
+                                append("Ho trovato ${p.dates.size} giorni di raccolta, dal ${df.format(iso.parse(p.dates.keys.first())!!)} al ${df.format(iso.parse(p.dates.keys.last())!!)}.\n\nEsempi:\n")
+                                p.dates.entries.take(4).forEach { append("• ${df.format(iso.parse(it.key)!!)}: ${it.value.joinToString(", ")}\n") }
+                            }
+                            if (p.weekly.isNotEmpty()) {
+                                append("\nGiorni fissi:\n")
+                                Waste.DAYS.forEach { (d, n) -> p.weekly[d]?.let { append("• $n: ${it.joinToString(", ")}\n") } }
+                            }
+                            append("\nControlla con il PDF: l'AI può sbagliare.")
+                        }
+                        MaterialAlertDialogBuilder(this@readWastePdf).setTitle("📄 Calendario letto").setMessage(msg)
+                            .setPositiveButton("Salva e avvisami") { _, _ ->
+                                if (p.dates.isNotEmpty()) Evening.setWasteDates(this@readWastePdf, p.dates)
+                                if (p.weekly.isNotEmpty()) Evening.setWaste(this@readWastePdf, p.weekly)
+                                ensureNotificationPermission(); wasteRefresh?.invoke(); toast("🗑 Avvisi attivi: la sera prima alle 19")
+                            }
+                            .setNeutralButton("Apri il PDF") { _, _ -> openWastePdf() }
+                            .setNegativeButton("Annulla", null).show()
+                    }
+                    override fun onError(message: String, noKey: Boolean) { toast(message) }
+                }, images.map { Triple("image", "image/jpeg", "/files/scan/" + it.name) })
+        }
     }
 }
 

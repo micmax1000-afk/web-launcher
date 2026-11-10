@@ -1,5 +1,11 @@
 package com.weblauncher.app
 
+import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.google.gson.reflect.TypeToken
 import java.util.Calendar
 import java.util.Locale
 import java.util.TimeZone
@@ -143,7 +149,7 @@ object Instruments {
     fun tiltDegrees(x: Float, y: Float): Double = Math.toDegrees(atan2(x.toDouble(), y.toDouble()))
 }
 
-/** Rubbish collection calendar: which kinds are collected on each weekday (Calendar.MONDAY…). */
+/** Rubbish collection: a fixed weekly pattern and/or exact dates read from the town's PDF calendar. */
 object Waste {
     val KINDS = listOf("🟤 Umido", "⚪ Indifferenziato", "🟡 Plastica", "🔵 Carta", "🟢 Vetro", "🌿 Verde", "🥫 Metalli")
     val DAYS = listOf(Calendar.MONDAY to "Lunedì", Calendar.TUESDAY to "Martedì", Calendar.WEDNESDAY to "Mercoledì", Calendar.THURSDAY to "Giovedì",
@@ -156,9 +162,98 @@ object Waste {
     }.filter { it.second.isNotEmpty() }.toMap()
     fun encode(m: Map<Int, List<String>>) = m.filter { it.value.isNotEmpty() }.entries.joinToString(";") { "${it.key}:${it.value.joinToString(",")}" }
 
-    /** What to put out for the day after [now]. */
-    fun tomorrow(m: Map<Int, List<String>>, now: Calendar): List<String> {
-        val t = (now.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) }
-        return m[t.get(Calendar.DAY_OF_WEEK)].orEmpty()
+    // ---------- exact dates (from the PDF) ----------
+
+    private val kindWords = listOf(
+        "🟤 Umido" to Regex("umid|organic"),
+        "⚪ Indifferenziato" to Regex("indifferenziat|secco|residu|non riciclabil"),
+        "🟡 Plastica" to Regex("plastic|imballagg|multimateri|multimat|contenitori"),
+        "🔵 Carta" to Regex("cart[ao]|cartone|giornali"),
+        "🟢 Vetro" to Regex("vetro|bottigli"),
+        "🌿 Verde" to Regex("verde|sfalci|potature|giardin|ramagli"),
+        "🥫 Metalli" to Regex("metall|alluminio|lattin|barattol")
+    )
+    /** Every kind named in [raw] ("Vetro e lattine" → Vetro + Metalli), in the app's standard order. */
+    fun normalizeKinds(raw: String): List<String> {
+        val t = raw.lowercase(Locale.ITALIAN)
+        return kindWords.filter { it.second.containsMatchIn(t) }.map { it.first }
     }
+
+    /** "2026-11-10", "10/11/2026", "10-11-2026" → "2026-11-10"; null if not a real date. */
+    fun parseDay(raw: String): String? {
+        val t = raw.trim()
+        val (y, m, d) = (Regex("^(\\d{4})[-/](\\d{1,2})[-/](\\d{1,2})").find(t)?.destructured?.let { Triple(it.component1(), it.component2(), it.component3()) }
+            ?: Regex("^(\\d{1,2})[-/.](\\d{1,2})[-/.](\\d{4})").find(t)?.destructured?.let { Triple(it.component3(), it.component2(), it.component1()) }
+            ?: return null)
+        val c = Calendar.getInstance().apply { isLenient = false; clear() }
+        return runCatching {
+            c.set(y.toInt(), m.toInt() - 1, d.toInt()); c.timeInMillis
+            "%04d-%02d-%02d".format(y.toInt(), m.toInt(), d.toInt())
+        }.getOrNull()
+    }
+
+    private val dayNames = mapOf("lun" to Calendar.MONDAY, "mar" to Calendar.TUESDAY, "mer" to Calendar.WEDNESDAY, "gio" to Calendar.THURSDAY,
+        "ven" to Calendar.FRIDAY, "sab" to Calendar.SATURDAY, "dom" to Calendar.SUNDAY)
+
+    data class Parsed(val dates: Map<String, List<String>>, val weekly: Map<Int, List<String>>)
+
+    /** Reads the AI's JSON answer: {"giorni": {"2026-11-10": ["Umido"]}} and/or {"settimana": {"martedì": ["Umido"]}}. Tolerant of extra text. */
+    fun parseCalendar(text: String): Parsed {
+        val start = text.indexOf('{'); val end = text.lastIndexOf('}')
+        val startArr = text.indexOf('['); val endArr = text.lastIndexOf(']')
+        val root: JsonElement = runCatching {
+            when {
+                start >= 0 && end > start && (startArr < 0 || start < startArr) -> JsonParser.parseString(text.substring(start, end + 1))
+                startArr >= 0 && endArr > startArr -> JsonParser.parseString(text.substring(startArr, endArr + 1))
+                else -> null
+            }
+        }.getOrNull() ?: return Parsed(emptyMap(), emptyMap())
+        fun kindsOf(e: JsonElement?): List<String> = when {
+            e == null || e.isJsonNull -> emptyList()
+            e.isJsonArray -> e.asJsonArray.flatMap { normalizeKinds(runCatching { it.asString }.getOrDefault("")) }
+            else -> normalizeKinds(runCatching { e.asString }.getOrDefault(""))
+        }.distinct().sortedBy { k -> KINDS.indexOf(k) }
+        val dates = sortedMapOf<String, List<String>>()
+        val weekly = mutableMapOf<Int, List<String>>()
+        fun addDate(raw: String, e: JsonElement?) { val d = parseDay(raw) ?: return; val k = kindsOf(e); if (k.isNotEmpty()) dates[d] = ((dates[d].orEmpty()) + k).distinct().sortedBy { KINDS.indexOf(it) } }
+        fun fromMap(o: JsonObject) = o.entrySet().forEach { (k, v) -> addDate(k, v) }
+        fun fromArray(a: JsonArray) = a.forEach { el ->
+            val o = el.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
+            val day = listOf("data", "date", "giorno").firstNotNullOfOrNull { o.get(it)?.takeIf { v -> v.isJsonPrimitive }?.asString } ?: return@forEach
+            addDate(day, listOf("tipi", "rifiuti", "raccolte", "types", "kinds").firstNotNullOfOrNull { o.get(it) })
+        }
+        if (root.isJsonArray) fromArray(root.asJsonArray)
+        else {
+            val o = root.asJsonObject
+            (o.get("giorni") ?: o.get("calendario") ?: o.get("date"))?.let { if (it.isJsonObject) fromMap(it.asJsonObject) else if (it.isJsonArray) fromArray(it.asJsonArray) }
+            o.get("settimana")?.takeIf { it.isJsonObject }?.asJsonObject?.entrySet()?.forEach { (name, v) ->
+                val d = dayNames[name.lowercase(Locale.ITALIAN).take(3)] ?: return@forEach
+                kindsOf(v).takeIf { it.isNotEmpty() }?.let { weekly[d] = it }
+            }
+            if (dates.isEmpty() && weekly.isEmpty()) fromMap(o)               // the dates directly at the top level
+        }
+        return Parsed(dates, weekly)
+    }
+
+    fun encodeDates(m: Map<String, List<String>>): String = Gson().toJson(m)
+    fun decodeDates(s: String?): Map<String, List<String>> = runCatching {
+        Gson().fromJson<Map<String, List<String>>>(s, object : TypeToken<Map<String, List<String>>>() {}.type)
+    }.getOrNull()?.filterValues { it != null }?.toSortedMap() ?: emptyMap()
+
+    fun dayKey(c: Calendar) = "%04d-%02d-%02d".format(c.get(Calendar.YEAR), c.get(Calendar.MONTH) + 1, c.get(Calendar.DAY_OF_MONTH))
+
+    /** What is collected on [day]: the PDF's exact dates when they cover that day, else the weekly pattern. */
+    fun kindsOn(weekly: Map<Int, List<String>>, dates: Map<String, List<String>>, day: Calendar): List<String> {
+        val key = dayKey(day)
+        if (dates.isNotEmpty() && key >= dates.keys.first() && key <= dates.keys.last()) return dates[key].orEmpty()
+        return weekly[day.get(Calendar.DAY_OF_WEEK)].orEmpty()
+    }
+
+    /** What to put out for the day after [now]. */
+    fun tomorrow(m: Map<Int, List<String>>, now: Calendar, dates: Map<String, List<String>> = emptyMap()): List<String> =
+        kindsOn(m, dates, (now.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) })
+
+    /** The next [n] collection days from [from] (included), exact dates only. */
+    fun upcoming(dates: Map<String, List<String>>, from: Calendar, n: Int): List<Pair<String, List<String>>> =
+        dates.filterKeys { it >= dayKey(from) }.entries.take(n).map { it.key to it.value }
 }

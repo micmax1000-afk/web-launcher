@@ -181,6 +181,8 @@ internal fun MainActivity.todayEntries(): List<TodayEntry> {
     runCatching { Birthdays.upcoming(this, 1) }.getOrDefault(emptyList()).forEach { (p, days) ->
         out += TodayEntry(start + days * 86_400_000L, true, "Compleanno di ${p.name}" + (p.turning(java.util.Calendar.getInstance())?.let { " ($it)" } ?: ""), "🎂") { showBirthdaysPage() }
     }
+    runCatching { Waste.kindsOn(Evening.waste(this), Evening.wasteDates(this), java.util.Calendar.getInstance()) }.getOrDefault(emptyList())
+        .takeIf { it.isNotEmpty() }?.let { k -> out += TodayEntry(start, true, "Oggi raccolta: " + k.joinToString(", "), "🗑") { showWastePage() } }
     Places.parking(this)?.takeIf { it.until > now }?.let { p ->
         out += TodayEntry(p.until, false, "Scade il parcheggio", "🚗") { showPlacesPage() }
     }

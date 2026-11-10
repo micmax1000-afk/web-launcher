@@ -113,6 +113,18 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
           script: bash scripts/ui-smoke.sh app-debug.apk
+      - name: Pubblica le schermate sul ramo ui-shots (si possono guardare senza scaricare nulla)
+        if: always() && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls ui-shots/*.png >/dev/null 2>&1 || exit 0
+          mkdir -p /tmp/shots && cp ui-shots/*.png /tmp/shots/ && cd /tmp/shots
+          printf 'Schermate della prova sul telefono virtuale\nCommit: %s\nRamo: %s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > README.txt
+          git init -q -b ui-shots && git add -A
+          git -c user.name=ci -c user.email=ci@users.noreply.github.com commit -qm "Schermate della prova ($GITHUB_SHA)"
+          git push -f -q "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" ui-shots || echo "::warning::Pubblicazione delle schermate non riuscita"
+
       - name: Schermate e log
         if: always()
         uses: actions/upload-artifact@v4

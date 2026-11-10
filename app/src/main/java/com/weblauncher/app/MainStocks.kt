@@ -79,6 +79,14 @@ internal fun MainActivity.showStocksPage() {
                 }
                 return
             }
+            val banner = TextView(this).apply {
+                textSize = 13f; setTextColor(0xFFB45309.toInt()); visibility = View.GONE
+                setPadding(dp(14), dp(8), dp(14), dp(8))
+                background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 12 * d; setColor(0x26F59E0B) }
+                layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(6), dp(4), dp(6), dp(8)) }
+                setOnClickListener { render() }
+            }
+            body.addView(banner)
             val alerts = Stocks.alerts(this).filter { !it.done }
             val holdings = Stocks.holdings(this)
             val summary = TextView(this).apply { textSize = 15f; setTextColor(palette.text); setPadding(dp(14), dp(10), dp(14), dp(10)) }
@@ -122,7 +130,8 @@ internal fun MainActivity.showStocksPage() {
                     text = a.name + if (alerts.any { it.symbol == a.symbol }) " 🔔" else ""
                     textSize = 15f; setTextColor(palette.text); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
                 })
-                names.addView(TextView(this).apply { text = a.symbol; textSize = 12f; setTextColor(palette.textMuted) })
+                val symView = TextView(this).apply { text = a.symbol; textSize = 12f; setTextColor(palette.textMuted) }
+                names.addView(symView)
                 val chart = PriceChartView(this).apply { layoutParams = LinearLayout.LayoutParams(dp(70), dp(34)).apply { marginStart = dp(6) } }
                 val prices = LinearLayout(this).apply {
                     orientation = LinearLayout.VERTICAL; gravity = Gravity.END
@@ -140,7 +149,19 @@ internal fun MainActivity.showStocksPage() {
                 io.execute {
                     val ch = runCatching { Stocks.chart(a.symbol) }.getOrNull()
                     runOnUiThread {
-                        if (ch == null) { price.text = "n.d."; return@runOnUiThread }
+                        if (ch == null) {
+                            // no fresh data: show the last known price (greyed) and say why
+                            val q = Stocks.quotes(this@showStocksPage)[a.symbol]
+                            if (q != null) {
+                                price.text = Stocks.fmtPrice(q.price, q.currency); price.setTextColor(palette.textMuted)
+                                change.text = Stocks.fmtPct(q.pct)
+                                change.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 6 * d; setColor(0xFF9CA3AF.toInt()) }
+                                symView.text = "${a.symbol} · non aggiornato (${NewsAdapter.ago(q.time)})"
+                            } else price.text = "n.d."
+                            banner.text = "⚠ ${Stocks.describe(Stocks.lastError)} · tocca per riprovare"
+                            banner.visibility = View.VISIBLE
+                            return@runOnUiThread
+                        }
                         Stocks.remember(this@showStocksPage, a.symbol, ch)
                         if (holdings.any { it.symbol == a.symbol }) refreshSummary()
                         val col = if (ch.change >= 0) UP else DOWN
@@ -151,6 +172,7 @@ internal fun MainActivity.showStocksPage() {
                     }
                 }
             }
+            listRow(body, "🔧 Prova la connessione a Yahoo Finance", "Se vedi «n.d.»: mostra cosa risponde il servizio", onClick = { diagnoseStocks() })
             emptyLabel(body, "Dati Yahoo Finance, possono essere in ritardo di 15-20 minuti. Tieni premuto un titolo per spostarlo o toglierlo.")
         }
         render()
@@ -170,7 +192,7 @@ internal fun MainActivity.addStockDialog(onAdded: () -> Unit) {
                 val res = runCatching { Stocks.search(q) }
                 runOnUiThread {
                     val list = res.getOrNull()
-                    if (list == null) { toast("Ricerca non riuscita: controlla la connessione"); return@runOnUiThread }
+                    if (list == null) { toast(Stocks.describe(res.exceptionOrNull())); return@runOnUiThread }
                     if (list.isEmpty()) { toast("Nessun titolo trovato per «$q»"); return@runOnUiThread }
                     val type = mapOf("EQUITY" to "Azione", "ETF" to "ETF", "INDEX" to "Indice", "MUTUALFUND" to "Fondo",
                         "CURRENCY" to "Valuta", "CRYPTOCURRENCY" to "Cripto", "FUTURE" to "Materia prima")
@@ -216,7 +238,13 @@ internal fun MainActivity.showStockDetail(a: Stocks.Asset) {
             io.execute {
                 val ch = runCatching { Stocks.chart(a.symbol, range, interval) }.getOrNull()
                 runOnUiThread {
-                    if (ch == null) { price.text = "Dati non disponibili"; return@runOnUiThread }
+                    if (ch == null) {
+                        val q = Stocks.quotes(this@showStockDetail)[a.symbol]
+                        price.text = q?.let { Stocks.fmtPrice(it.price, it.currency) } ?: "Dati non disponibili"
+                        change.text = Stocks.describe(Stocks.lastError) + (q?.let { " · ultimo prezzo ${NewsAdapter.ago(it.time)}" } ?: "")
+                        change.setTextColor(palette.textMuted)
+                        return@runOnUiThread
+                    }
                     if (key == "1G") last = ch
                     val col = if (ch.change >= 0) UP else DOWN
                     price.text = Stocks.fmtPrice(ch.price, ch.currency)
@@ -314,4 +342,17 @@ internal fun MainActivity.holdingDialog(a: Stocks.Asset, h: Stocks.Holding?, don
         .setNegativeButton("Annulla", null)
     if (h != null) b.setNeutralButton("Non le ho più") { _, _ -> Stocks.saveHoldings(this, Stocks.holdings(this).filter { it.symbol != a.symbol }); done() }
     b.show()
+}
+
+internal fun MainActivity.diagnoseStocks() {
+    toast("Provo la connessione…")
+    io.execute {
+        val text = runCatching { Stocks.diagnose() }.getOrElse { "Errore: ${it.message}" }
+        runOnUiThread {
+            if (isFinishing) return@runOnUiThread
+            MaterialAlertDialogBuilder(this).setTitle("Connessione a Yahoo Finance").setMessage(text)
+                .setPositiveButton("OK", null)
+                .setNeutralButton("Copia") { _, _ -> copyText("Diagnosi Yahoo Finance", text); toast("Copiato") }.show()
+        }
+    }
 }

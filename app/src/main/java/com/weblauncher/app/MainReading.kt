@@ -69,7 +69,7 @@ internal fun MainActivity.pdfName(url: String?): String =
     runCatching { Uri.parse(url).getQueryParameter("name") }.getOrNull()?.takeIf { it.isNotBlank() } ?: "PDF"
 
 internal fun MainActivity.showPdf(file: java.io.File, name: String, src: String?) {
-    val viewer = MiaAi.ORIGIN + "/assets/pdf/viewer.html?file=" + Uri.encode("/files/pdf/" + file.name) +
+    val viewer = MiaAi.ORIGIN + "/assets/pdf/viewer.html?theme=" + (if (AppRepository.isLightUi(this)) "light" else "dark") + "&file=" + Uri.encode("/files/pdf/" + file.name) +
         "&name=" + Uri.encode(name) + (src?.let { "&src=" + Uri.encode(it) } ?: "")
     if (webTabs.getOrNull(webTabIndex)?.url?.let { it.startsWith("http") } == true) openNewTab(false)
     openInBrowser(viewer)
@@ -238,7 +238,7 @@ internal fun MainActivity.showReader(doc: ReaderDoc, saved: ReadLaterItem? = nul
     barBtn("A+", "Testo più grande") { size = (size + 1).coerceAtMost(30f); prefs.edit().putFloat("reader_size", size).apply(); applyStyle() }
     barBtn("◐", "Colori") { theme = (theme + 1) % 3; prefs.edit().putInt("reader_theme", theme).apply(); applyStyle() }
     val listenBtn = barBtn("🔊", "Ascolta") { b ->
-        if (speaking) { tts?.stop(); speaking = false; b.text = "🔊" }
+        if (speaking) { stopSpeaking(); speaking = false; b.text = "🔊" }
         else { speak(doc.title + ".\n" + doc.text, prefs.getFloat("reader_rate", 1f)); speaking = true; b.text = "⏹" }
     }
     barBtn("⋮", "Altro") { b ->
@@ -269,7 +269,7 @@ internal fun MainActivity.showReader(doc: ReaderDoc, saved: ReadLaterItem? = nul
     root.addView(bar); root.addView(scroll)
     dialog.setContentView(root)
     dialog.window?.setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
-    dialog.setOnDismissListener { tts?.stop() }
+    dialog.setOnDismissListener { stopSpeaking() }
     applyStyle()
     dialog.show()
     if (listen) listenBtn.performClick()

@@ -16,6 +16,10 @@ object Evening {
     private fun prefs(c: Context) = c.getSharedPreferences("wl_evening", Context.MODE_PRIVATE)
     fun waste(c: Context) = Waste.decode(prefs(c).getString("waste", null))
     fun setWaste(c: Context, m: Map<Int, List<String>>) { prefs(c).edit().putString("waste", Waste.encode(m)).apply(); schedule(c) }
+    /** Exact collection dates read from the town's PDF calendar. */
+    fun wasteDates(c: Context) = Waste.decodeDates(prefs(c).getString("wasteDates", null))
+    fun setWasteDates(c: Context, m: Map<String, List<String>>) { prefs(c).edit().putString("wasteDates", Waste.encodeDates(m)).apply(); schedule(c) }
+    fun wastePdf(c: Context) = java.io.File(java.io.File(c.filesDir, "waste").apply { mkdirs() }, "calendario.pdf")
     fun weekly(c: Context) = prefs(c).getBoolean("weekly", false)
     fun setWeekly(c: Context, on: Boolean) { prefs(c).edit().putBoolean("weekly", on).apply(); schedule(c) }
     fun lastWeekly(c: Context) = prefs(c).getString("weeklyText", null)
@@ -26,7 +30,7 @@ object Evening {
     fun schedule(c: Context) {
         val am = c.getSystemService(AlarmManager::class.java)
         am.cancel(pending(c))
-        if (waste(c).isEmpty() && !weekly(c)) return
+        if (waste(c).isEmpty() && wasteDates(c).isEmpty() && !weekly(c)) return
         val at = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 19); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0)
             if (timeInMillis <= System.currentTimeMillis()) add(Calendar.DAY_OF_YEAR, 1)
@@ -78,7 +82,7 @@ object Evening {
 
     fun fire(c: Context) {
         val now = Calendar.getInstance()
-        val out = Waste.tomorrow(waste(c), now)
+        val out = Waste.tomorrow(waste(c), now, wasteDates(c))
         if (out.isNotEmpty()) notify(c, 7801, "🗑 Domani passa la raccolta", "Stasera metti fuori: " + out.joinToString(", "), "waste")
         if (weekly(c) && now.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) {
             val t = runCatching { composeWeekly(c) }.getOrNull() ?: return

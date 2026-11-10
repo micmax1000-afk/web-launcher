@@ -111,4 +111,38 @@ class InstrumentsTest {
         assertTrue(t.contains("Compleanni: Anna"))
         assertTrue(Evening.weeklyText(0.0, 0.0, emptyList(), 0, 0, emptyList(), emptyList()).contains("Nessuna scadenza"))
     }
+
+    @Test fun rifiutiDaPdf_tipiEDate() {
+        assertEquals(listOf("🟤 Umido"), Waste.normalizeKinds("Organico"))
+        assertEquals(listOf("🟢 Vetro", "🥫 Metalli"), Waste.normalizeKinds("Vetro e lattine"))
+        assertEquals(listOf("⚪ Indifferenziato"), Waste.normalizeKinds("Secco residuo"))
+        assertEquals(listOf("🟡 Plastica"), Waste.normalizeKinds("Multimateriale"))
+        assertEquals("2026-11-10", Waste.parseDay("10/11/2026")); assertEquals("2026-11-10", Waste.parseDay("2026-11-10"))
+        assertNull(Waste.parseDay("31/02/2026")); assertNull(Waste.parseDay("boh"))
+    }
+
+    @Test fun rifiutiDaPdf_rispostaDellAi() {
+        val ai = "Ecco il risultato:\n```json\n{\"giorni\": {\"2026-11-12\": [\"Carta\", \"umido\"], \"12/11/2026\": [\"Vetro\"], \"2026-11-10\": \"Plastica\", \"2026-13-40\": [\"Carta\"]},\n" +
+            "\"settimana\": {\"martedì\": [\"Umido\"], \"Sabato\": [\"Indifferenziato\"]}}\n```"
+        val p = Waste.parseCalendar(ai)
+        assertEquals(listOf("2026-11-10", "2026-11-12"), p.dates.keys.toList())          // ordinate, data falsa scartata
+        assertEquals(listOf("🟤 Umido", "🔵 Carta", "🟢 Vetro"), p.dates["2026-11-12"])  // unite e ordinate
+        assertEquals(mapOf(Calendar.TUESDAY to listOf("🟤 Umido"), Calendar.SATURDAY to listOf("⚪ Indifferenziato")), p.weekly)
+        val arr = Waste.parseCalendar("""[{"data":"2026-01-02","tipi":["Carta"]},{"date":"03/01/2026","raccolte":"Umido"}]""")
+        assertEquals(listOf("2026-01-02", "2026-01-03"), arr.dates.keys.toList())
+        assertTrue(Waste.parseCalendar("non lo so").dates.isEmpty())
+        assertTrue(Waste.parseCalendar("{rotto").dates.isEmpty())
+        assertEquals(p.dates, Waste.decodeDates(Waste.encodeDates(p.dates)))
+    }
+
+    @Test fun rifiutiDaPdf_dateEGiorniFissi() {
+        val dates = mapOf("2026-11-10" to listOf("🔵 Carta"), "2026-11-20" to listOf("🟤 Umido"))
+        val weekly = mapOf(Calendar.WEDNESDAY to listOf("🟡 Plastica"))
+        fun d(m: Int, day: Int) = Calendar.getInstance().apply { clear(); set(2026, m - 1, day, 19, 0) }
+        assertEquals(listOf("🔵 Carta"), Waste.kindsOn(weekly, dates, d(11, 10)))
+        assertTrue(Waste.kindsOn(weekly, dates, d(11, 11)).isEmpty())              // dentro il calendario: valgono solo le date (mercoledì escluso)
+        assertEquals(listOf("🟡 Plastica"), Waste.kindsOn(weekly, dates, d(12, 2)))  // oltre la fine del PDF: torna al giorno fisso
+        assertEquals(listOf("🔵 Carta"), Waste.tomorrow(weekly, d(11, 9), dates))
+        assertEquals(listOf("2026-11-20"), Waste.upcoming(dates, d(11, 11), 5).map { it.first })
+    }
 }

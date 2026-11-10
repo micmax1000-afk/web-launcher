@@ -105,6 +105,11 @@ Scelta di cosa cercare · riepilogo della settimana (domenica alle 19) · raccol
 «Misure e sensori»: altimetro, tachimetro GPS, Tabata, fonometro, metal detector, lente d'ingrandimento, righello e goniometro,
 alba/tramonto/luna, aria e pollini, terremoti INGV con avviso, mancia e conto diviso.
 
+## Fatto nella 7.10
+Audio di Mia AI (voce con eventi veri, tasto «Ferma la lettura», stop cambiando pagina) · Mia AI e visualizzatore PDF seguono il tema dell'app ·
+raccolta rifiuti da PDF (apri, leggi con l'AI, date esatte) · Borsa: Yahoo Finance con nuovi tentativi, ultimo prezzo noto e diagnosi della connessione ·
+schermate della prova pubblicate sul ramo `ui-shots`.
+
 ## Viaggi
 | # | Cosa | Note |
 |---|------|------|
