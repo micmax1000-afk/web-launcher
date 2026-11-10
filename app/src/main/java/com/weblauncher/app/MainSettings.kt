@@ -73,69 +73,49 @@ internal fun MainActivity.renderSettings() {
     val d = resources.displayMetrics.density
     fun dp(v: Int) = (v * d).toInt()
     settingsList.addView(TextView(this).apply {
-        text = "← Strumenti"
+        text = if (settingsPage == null) "← Strumenti" else "← Impostazioni"
         textSize = 15f
         setTextColor(accent)
         setPadding(dp(4), dp(10), dp(4), 0)
-        setOnClickListener { showTab(TAB_TOOLS) }
+        setOnClickListener {
+            if (settingsPage == null) showTab(TAB_TOOLS) else { settingsPage = null; renderSettings() }
+        }
     })
+    val pageTitle = mapOf(
+        "ASPETTO" to "Aspetto", "HOME" to "Home", "BROWSER" to "Browser", "PRIVACY" to "Privacy",
+        "NOTIZIE" to "Notizie e YouTube", "BACKUP" to "Backup", "AI" to "Intelligenza artificiale",
+        "AGGIORNAMENTI" to "Aggiornamenti"
+    )
     settingsList.addView(TextView(this).apply {
-        text = "Impostazioni"
+        text = pageTitle[settingsPage] ?: "Impostazioni"
         textSize = 28f
         setTypeface(typeface, android.graphics.Typeface.BOLD)
         setTextColor(palette.text)
         setPadding(dp(4), dp(12), dp(4), dp(8))
     })
-    // ricerca + pulsanti per saltare alle sezioni
-    val search = EditText(this).apply {
-        hint = "🔎  Cerca nelle impostazioni"; setSingleLine(); textSize = 16f; setText(settingsQuery)
+    val hub = settingsPage == null && settingsQuery.isBlank()
+    val search = if (settingsPage == null) EditText(this).apply {
+        hint = "Cerca nelle impostazioni"; setSingleLine(); textSize = 16f; setText(settingsQuery)
         setTextColor(palette.text); setHintTextColor(palette.textMuted)
         setPadding(dp(18), dp(12), dp(18), dp(12))
         background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 26 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
         importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
-    }
-    settingsList.addView(search)
-    val jump = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, 0) }
-    val jumpScroll = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(jump) }
-    settingsList.addView(jumpScroll)
-    val sectionLook = mapOf(
-        "BROWSER E RICERCA" to ("🌐" to 0xFF3B82F6.toInt()), "INTELLIGENZA ARTIFICIALE" to ("✨" to 0xFF8B5CF6.toInt()),
-        "COMODITÀ" to ("👍" to 0xFF0EA5E9.toInt()), "NOTIZIE" to ("📰" to 0xFFEF4444.toInt()), "YOUTUBE" to ("▶️" to 0xFFDC2626.toInt()),
-        "APP INTEGRATE" to ("🧩" to 0xFF14B8A6.toInt()), "SICUREZZA E PRIVACY" to ("🛡" to 0xFF16A34A.toInt()),
-        "BACKUP E SINCRONIZZAZIONE" to ("📦" to 0xFFD97706.toInt()), "AGGIORNAMENTI" to ("⬆️" to 0xFF6366F1.toInt()), "HOME" to ("🏠" to 0xFFF59E0B.toInt()))
-    val shortNames = mapOf("BROWSER E RICERCA" to "Browser", "INTELLIGENZA ARTIFICIALE" to "AI", "COMODITÀ" to "Comodità", "NOTIZIE" to "Notizie",
-        "YOUTUBE" to "YouTube", "APP INTEGRATE" to "App", "SICUREZZA E PRIVACY" to "Privacy", "BACKUP E SINCRONIZZAZIONE" to "Backup",
-        "AGGIORNAMENTI" to "Aggiornamenti", "HOME" to "Home")
-    /** (section header, card, rows of that card as (row view, divider before it, searchable text)) */
+    } else null
+    search?.let { settingsList.addView(it) }
     class Sec(val head: View, val card: View) { val rows = mutableListOf<Triple<View, View?, String>>() }
     val secs = mutableListOf<Sec>()
     var group: android.widget.LinearLayout? = null
     fun section(title: String) {
-        val (emoji, color) = sectionLook[title] ?: ("⚙️" to accent)
-        val head = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(22), dp(8), dp(10))
-        }
-        head.addView(TextView(this).apply {
-            text = emoji; textSize = 16f; gravity = android.view.Gravity.CENTER
-            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 11 * d; setColor((color and 0x00FFFFFF) or 0x2E000000) }
-            layoutParams = android.widget.LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(10) }
-        })
-        head.addView(TextView(this).apply {
-            text = title
-            setTextColor(palette.text)
+        if (hub || (settingsPage != null && settingsPage != title)) { group = null; return }
+        val head = TextView(this).apply {
+            text = pageTitle[title] ?: title
+            setTextColor(palette.textMuted)
             textSize = 13f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             letterSpacing = 0.06f
-        })
-        settingsList.addView(head)
-        jump.addView(TextView(this).apply {
-            text = "$emoji ${shortNames[title] ?: title}"; textSize = 14f; setTextColor(palette.text)
-            setPadding(dp(14), dp(8), dp(14), dp(8))
-            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 20 * d; setColor((color and 0x00FFFFFF) or 0x26000000) }
-            layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) }
-            setOnClickListener { (settingsPanel as? android.widget.ScrollView)?.smoothScrollTo(0, head.top - dp(4)) }
-        })
+            setPadding(dp(6), dp(18), dp(8), dp(8))
+        }
+        if (settingsPage == null) settingsList.addView(head)
         val card = com.google.android.material.card.MaterialCardView(this).apply {
             radius = dp(20).toFloat()
             cardElevation = 0f
@@ -211,7 +191,6 @@ internal fun MainActivity.renderSettings() {
     }
     fun applyFilter(q: String) {
         val query = q.trim().lowercase(Locale.ITALIAN)
-        jumpScroll.visibility = if (query.isEmpty()) View.VISIBLE else View.GONE
         secs.forEach { sec ->
             var shown = 0
             sec.rows.forEach { (row, div, text) ->
@@ -224,13 +203,58 @@ internal fun MainActivity.renderSettings() {
             sec.card.visibility = if (shown > 0) View.VISIBLE else View.GONE
         }
     }
-    search.addTextChangedListener(object : android.text.TextWatcher {
+    search?.addTextChangedListener(object : android.text.TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-        override fun afterTextChanged(s: android.text.Editable?) { settingsQuery = s?.toString().orEmpty(); applyFilter(settingsQuery) }
+        override fun afterTextChanged(s: android.text.Editable?) {
+            val next = s?.toString().orEmpty()
+            val wasBlank = settingsQuery.isBlank()
+            settingsQuery = next
+            if (wasBlank != next.isBlank()) renderSettings() else applyFilter(next)
+        }
     })
+    if (settingsQuery.isNotBlank()) {
+        search?.requestFocus()
+        search?.setSelection(settingsQuery.length)
+    }
 
-    section("BROWSER E RICERCA")
+    section("ASPETTO")
+    row("Dimensione testo", value = "${repo.textZoom()}%") { showTextZoomDialog() }
+    val themeLabel = when (repo.getThemeMode()) {
+        "light" -> "Chiaro"
+        "system" -> "Sistema"
+        else -> "Scuro"
+    }
+    row("Tema", value = themeLabel) { showThemePicker() }
+    val accentLabel = when (repo.getAccent()) {
+        "amber" -> "Ambra"
+        "green" -> "Verde"
+        else -> "Blu"
+    }
+    row("Colore", value = accentLabel) { showAccentPicker() }
+    row("Icone per riga", value = homePrefs.getInt("cols", 4).toString()) {
+        val vals = intArrayOf(3, 4, 5)
+        MaterialAlertDialogBuilder(this).setTitle("Icone per riga")
+            .setSingleChoiceItems(arrayOf("3 (grandi)", "4", "5 (piccole)"), vals.indexOf(homePrefs.getInt("cols", 4)).coerceAtLeast(0)) { dl, w ->
+                homePrefs.edit().putInt("cols", vals[w]).apply(); applyHomeLook(); dl.dismiss(); renderSettings()
+            }.show()
+    }
+    row("Nascondi i nomi delle app", switch = homePrefs.getBoolean("hideNames", false)) {
+        homePrefs.edit().putBoolean("hideNames", !homePrefs.getBoolean("hideNames", false)).apply(); applyHomeLook(); renderSettings()
+    }
+    row("Sfondo della home", if (homePrefs.getBoolean("wallpaper", false)) "Foto personale · tocca per cambiare" else "Nessuno") {
+        if (homePrefs.getBoolean("wallpaper", false)) {
+            MaterialAlertDialogBuilder(this).setTitle("Sfondo").setItems(arrayOf("Cambia foto", "Togli lo sfondo")) { _, w ->
+                if (w == 0) wallpaperPicker.launch("image/*")
+                else { homePrefs.edit().putBoolean("wallpaper", false).apply(); applyHomeLook(); renderSettings() }
+            }.show()
+        } else wallpaperPicker.launch("image/*")
+    }
+    row("Mostra \"Più usate\"", "In cima alla home, quando hai almeno 6 app", switch = repo.showMostUsed()) {
+        repo.setShowMostUsed(!repo.showMostUsed()); refreshList(); renderSettings()
+    }
+
+    section("BROWSER")
     row("Aggiungi web app", "Nome, indirizzo e categoria") { showAddEditDialog(null) }
     row("Browser predefinito", "Apri qui i link di WhatsApp, email…", value = if (isDefaultBrowser()) "Sì" else "No") { requestDefaultBrowser() }
     row("Motore di ricerca", value = engine.label) { showSearchEnginePicker() }
@@ -251,7 +275,6 @@ internal fun MainActivity.renderSettings() {
     row("Nascondi barre scorrendo", "Più spazio, ma lo scorrimento è meno fluido", switch = repo.hideBarsOnScroll()) {
         repo.setHideBarsOnScroll(!repo.hideBarsOnScroll()); hideBarsOn = repo.hideBarsOnScroll(); renderSettings()
     }
-    row("Dimensione testo", value = "${repo.textZoom()}%") { showTextZoomDialog() }
     row("Link e app", "Scelte «apri nell'app o qui»: ${openInPrefs.all.size}") {
         val entries = openInPrefs.all.entries.sortedBy { it.key }
         if (entries.isEmpty()) { toast("Nessuna scelta salvata"); return@row }
@@ -260,23 +283,9 @@ internal fun MainActivity.renderSettings() {
                 openInPrefs.edit().remove(entries[w].key).apply(); renderSettings()
             }.setNeutralButton("Dimentica tutte") { _, _ -> openInPrefs.edit().clear().apply(); renderSettings() }.show()
     }
-    val themeLabel = when (repo.getThemeMode()) {
-        "light" -> "Chiaro"
-        "system" -> "Sistema"
-        else -> "Scuro"
-    }
-    row("Tema", value = themeLabel) { showThemePicker() }
-    val accentLabel = when (repo.getAccent()) {
-        "amber" -> "Ambra"
-        "green" -> "Verde"
-        else -> "Blu"
-    }
-    row("Colore", value = accentLabel) { showAccentPicker() }
     row("🍪 Rifiuta i banner dei cookie", "Tocca «Rifiuta» al posto tuo, quando il sito lo permette", switch = CookieBanners.enabled(this)) {
         CookieBanners.setEnabled(this, !CookieBanners.enabled(this)); setupCookieBanners(); renderSettings()
     }
-    row("🛡 Report privacy", "Pubblicità e tracciatori bloccati, sito per sito") { showPrivacyReport() }
-    row("🧹 Siti da dimenticare", "Cookie cancellati alla chiusura: ${SiteCookies.list(this).size} siti") { showForgetSites() }
     row("Siti in modalità scura", "Scurisce i siti chiari quando il tema è scuro", switch = repo.darkSites()) {
         repo.setDarkSites(!repo.darkSites())
         applyDarkSites()
@@ -284,7 +293,7 @@ internal fun MainActivity.renderSettings() {
         renderSettings()
     }
 
-    section("INTELLIGENZA ARTIFICIALE")
+    section("AI")
     val aiRowSub = "Usa provider, chiave e modello di Mia AI"
     row("Assistente AI", aiRowSub, value = "Configura") { openMiaAi() }
     row("Comandi vocali con AI", "Es. «apri YouTube e cerca ricette di pasta»", switch = repo.aiVoice()) {
@@ -304,19 +313,16 @@ internal fun MainActivity.renderSettings() {
             )
             .setPositiveButton("OK", null).show()
     }
-
-
-    section("COMODITÀ")
-    row("📋 Appunti intelligenti", "Propone l'azione per link, pacchi e numeri copiati", switch = toolsPrefs.getBoolean("smartClipboard", true)) {
-        toolsPrefs.edit().putBoolean("smartClipboard", !toolsPrefs.getBoolean("smartClipboard", true)).apply(); renderSettings()
+    val miaOnHome = apps.any { MiaAi.isMiaUrl(it.url) }
+    row("Mia AI", "Chat AI personale: Gemini, OpenRouter, Groq, Ollama…",
+        value = if (miaOnHome) "Apri" else "Aggiungi") {
+        if (miaOnHome) openInBrowser(MiaAi.URL) else { addMiaToHome(); renderSettings() }
     }
-
 
     section("NOTIZIE")
     row("Fonti notizie", "${news.enabledIds().size} attive su ${news.allSources().size}") { showNewsSources() }
     row("Aggiungi una fonte", "Da qualsiasi sito con notizie") { addNewsSourceDialog() }
 
-    section("YOUTUBE")
     row("Opzioni YouTube", listOfNotNull(
         "salta annunci".takeIf { ytPrefs.getBoolean("skipAds", true) },
         "SponsorBlock".takeIf { ytPrefs.getBoolean("sponsorBlock", true) },
@@ -327,14 +333,9 @@ internal fun MainActivity.renderSettings() {
     row("Velocità e qualità", "${ytPrefs.getFloat("speed", 1f)}x · ${ytPrefs.getString("quality", "auto")}") { ytSpeedDialog() }
     row("Canali seguiti", "${ytChannels().size} · in Ascolta → Video") { audioTab = "video"; showTab(TAB_AUDIO) }
 
-    section("APP INTEGRATE")
-    val miaOnHome = apps.any { MiaAi.isMiaUrl(it.url) }
-    row("Mia AI", "Chat AI personale: Gemini, OpenRouter, Groq, Ollama…",
-        value = if (miaOnHome) "Apri" else "Aggiungi") {
-        if (miaOnHome) openInBrowser(MiaAi.URL) else { addMiaToHome(); renderSettings() }
-    }
-
-    section("SICUREZZA E PRIVACY")
+    section("PRIVACY")
+    row("🛡 Report privacy", "Pubblicità e tracciatori bloccati, sito per sito") { showPrivacyReport() }
+    row("🧹 Siti da dimenticare", "Cookie cancellati alla chiusura: ${SiteCookies.list(this).size} siti") { showForgetSites() }
     row("🔒 Blocca l'app con impronta", if (lockEnabled()) "Attivo · " + listOf("subito", "dopo 1 minuto", "dopo 5 minuti", "dopo 15 minuti")[listOf(0, 1, 5, 15).indexOf(lockPrefs.getInt("delayMin", 1)).coerceAtLeast(0)]
         else "Impronta o PIN all'apertura", switch = lockEnabled()) { toggleAppLock() }
     if (lockEnabled()) row("Quando bloccare", "Dopo quanto tempo fuori dall'app") {
@@ -373,7 +374,7 @@ internal fun MainActivity.renderSettings() {
     row("Cancella cache") { confirmClear("Cancellare la cache?") { webView.clearCache(true); toast("Cache cancellata") } }
     row("Cancella tutti i dati", "Recenti, cronologia, cookie, cache", danger = true) { confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
 
-    section("BACKUP E SINCRONIZZAZIONE")
+    section("BACKUP")
     row("📦 Backup completo", syncPrefs.getLong("fullLast", 0L).let { if (it > 0) "Ultimo ${NewsAdapter.ago(it)}" + (if (syncPrefs.getString("fullUri", null) != null) " · ogni notte" else "") else "Tutto in un file: libri, registrazioni, biglietti…" }) { showFullBackupMenu() }
     row("🔄 Sincronizza tra dispositivi", if (repo.getAutoBackupUri() != null) "Collegato a un file di backup" else "Tramite un file su Google Drive") { showSyncHelp() }
     val autoOn = repo.getAutoBackupUri() != null
@@ -413,28 +414,10 @@ internal fun MainActivity.renderSettings() {
                 "• Cerca: barra di ricerca con microfono e notizie\n• Notizie: gli ultimi titoli delle tue fonti")
             .setPositiveButton("OK", null).show()
     }
-    row("Icone per riga", value = homePrefs.getInt("cols", 4).toString()) {
-        val vals = intArrayOf(3, 4, 5)
-        MaterialAlertDialogBuilder(this).setTitle("Icone per riga")
-            .setSingleChoiceItems(arrayOf("3 (grandi)", "4", "5 (piccole)"), vals.indexOf(homePrefs.getInt("cols", 4)).coerceAtLeast(0)) { dl, w ->
-                homePrefs.edit().putInt("cols", vals[w]).apply(); applyHomeLook(); dl.dismiss(); renderSettings()
-            }.show()
-    }
-    row("Nascondi i nomi delle app", switch = homePrefs.getBoolean("hideNames", false)) {
-        homePrefs.edit().putBoolean("hideNames", !homePrefs.getBoolean("hideNames", false)).apply(); applyHomeLook(); renderSettings()
-    }
-    row("Sfondo della home", if (homePrefs.getBoolean("wallpaper", false)) "Foto personale · tocca per cambiare" else "Nessuno") {
-        if (homePrefs.getBoolean("wallpaper", false)) {
-            MaterialAlertDialogBuilder(this).setTitle("Sfondo").setItems(arrayOf("Cambia foto", "Togli lo sfondo")) { _, w ->
-                if (w == 0) wallpaperPicker.launch("image/*")
-                else { homePrefs.edit().putBoolean("wallpaper", false).apply(); applyHomeLook(); renderSettings() }
-            }.show()
-        } else wallpaperPicker.launch("image/*")
+    row("📋 Appunti intelligenti", "Propone l'azione per link, pacchi e numeri copiati", switch = toolsPrefs.getBoolean("smartClipboard", true)) {
+        toolsPrefs.edit().putBoolean("smartClipboard", !toolsPrefs.getBoolean("smartClipboard", true)).apply(); renderSettings()
     }
     row("📁 Cartelle", "Tieni premuta un'app → «Metti in una cartella»") { toast("Tieni premuta un'app in home → Metti in una cartella") }
-    row("Mostra \"Più usate\"", "In cima alla home, quando hai almeno 6 app", switch = repo.showMostUsed()) {
-        repo.setShowMostUsed(!repo.showMostUsed()); refreshList(); renderSettings()
-    }
     row("Sposta le icone", "Tieni premuta un'app → Sposta") { toast("Tieni premuta un'app e scegli Sposta") }
     row("Microfono", "Come attivare il permesso voce") {
         MaterialAlertDialogBuilder(this).setTitle("Microfono")
@@ -449,7 +432,59 @@ internal fun MainActivity.renderSettings() {
             }.setNegativeButton("Annulla", null).show()
     }
 
-    settingsList.addView(TextView(this).apply {
+    if (hub) {
+        val pages = listOf(
+            Triple("ASPETTO", "Tema, colore, testo, icone e sfondo", R.drawable.ic_tool_sun),
+            Triple("HOME", "Meteo, buongiorno, widget e app", R.drawable.ic_nav_home),
+            Triple("BROWSER", "Motore, suggerimenti, cookie e link", R.drawable.ic_nav_browser),
+            Triple("PRIVACY", "Impronta, pubblicità, pulizia e dati", R.drawable.ic_tool_lock),
+            Triple("NOTIZIE", "Fonti, YouTube e canali", R.drawable.ic_nav_news),
+            Triple("BACKUP", "File, Drive e ripristino", R.drawable.ic_tool_box),
+            Triple("AI", "Assistente, voce e Mia AI", R.drawable.ic_tool_spark),
+            Triple("AGGIORNAMENTI", "Versioni e segnalazioni", R.drawable.ic_tool_download)
+        )
+        val card = com.google.android.material.card.MaterialCardView(this).apply {
+            radius = dp(20).toFloat(); cardElevation = 0f; setCardBackgroundColor(palette.card)
+            strokeWidth = dp(1); strokeColor = palette.stroke
+        }
+        val inner = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        pages.forEachIndexed { i, (key, sub, icon) ->
+            if (i > 0) inner.addView(View(this).apply {
+                setBackgroundColor(palette.stroke)
+                layoutParams = android.widget.LinearLayout.LayoutParams(-1, d.toInt().coerceAtLeast(1)).apply { marginStart = dp(68) }
+            })
+            inner.addView(android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.HORIZONTAL
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                minimumHeight = dp(72)
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                val tv = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+                setBackgroundResource(tv.resourceId)
+                addView(ImageView(this@renderSettings).apply {
+                    setImageResource(icon); setColorFilter(accent); scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    setPadding(dp(10), dp(10), dp(10), dp(10))
+                    background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 16 * d; setColor((accent and 0x00FFFFFF) or 0x1A000000) }
+                    layoutParams = android.widget.LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(12) }
+                })
+                addView(android.widget.LinearLayout(this@renderSettings).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
+                    addView(TextView(this@renderSettings).apply { text = pageTitle[key]; textSize = 17f; setTextColor(palette.text) })
+                    addView(TextView(this@renderSettings).apply { text = sub; textSize = 13f; setTextColor(palette.textMuted); setPadding(0, dp(2), 0, 0) })
+                })
+                addView(ImageView(this@renderSettings).apply {
+                    setImageResource(R.drawable.ic_web_forward); setColorFilter(palette.textMuted)
+                    layoutParams = android.widget.LinearLayout.LayoutParams(dp(20), dp(20))
+                })
+                setOnClickListener { settingsPage = key; renderSettings() }
+            })
+        }
+        card.addView(inner)
+        settingsList.addView(card)
+    }
+
+    if (settingsPage == null) settingsList.addView(TextView(this).apply {
         text = "Web Launcher $appVersion"
         textSize = 13f
         gravity = android.view.Gravity.CENTER

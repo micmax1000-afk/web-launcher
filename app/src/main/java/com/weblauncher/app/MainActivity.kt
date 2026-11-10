@@ -1595,6 +1595,7 @@ class MainActivity : AppCompatActivity() {
     @Volatile var pageHost: String? = null
     /** Tools page tiles by group: (group, [(label, emoji)]) — filled by renderTools, used by customizeTools. */
     var settingsQuery = ""
+    var settingsPage: String? = null
     var toolsCatalog: List<Pair<String, List<Pair<String, String>>>> = emptyList()
     var ytPlaying = false
     var ytTranscriptCallback: ((org.json.JSONObject) -> Unit)? = null
