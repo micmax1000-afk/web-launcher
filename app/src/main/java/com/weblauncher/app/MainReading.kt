@@ -402,7 +402,7 @@ internal fun MainActivity.editNote(existing: Note?, onSaved: () -> Unit = { note
         fun action(label: String, onClick: () -> Unit) = actions.addView(com.google.android.material.button.MaterialButton(
             this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle
         ).apply {
-            text = label; isAllCaps = false
+            text = label; isAllCaps = false; maxLines = 1
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { marginEnd = (8 * d).toInt() }
@@ -432,7 +432,7 @@ internal fun MainActivity.editNote(existing: Note?, onSaved: () -> Unit = { note
                 type = "text/plain"; putExtra(Intent.EXTRA_TEXT, et.text?.toString().orEmpty())
             }, "Condividi nota"))
         }
-        body.addView(actions)
+        body.addView(android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(actions) })
         body.addView(et)
         dialog.setOnDismissListener {
             if (saved) return@setOnDismissListener

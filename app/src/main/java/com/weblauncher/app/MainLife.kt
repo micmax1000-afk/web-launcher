@@ -106,7 +106,7 @@ internal fun MainActivity.saveRecipeFromPage() {
 }
 
 internal fun MainActivity.showRecipesPage() {
-    openPage("Ricette", "📅 Menu", { _ -> weeklyMenu() }) { _, body, dialog ->
+    openPage("Ricette", "Menu", { _ -> weeklyMenu() }) { _, body, dialog ->
         fun render() {
             body.removeAllViews()
             val list = Recipes.load(this)

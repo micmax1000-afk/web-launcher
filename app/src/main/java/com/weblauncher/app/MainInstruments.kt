@@ -602,7 +602,7 @@ internal fun MainActivity.showWastePage() {
             val today = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
             Waste.DAYS.forEach { (day, name) ->
                 val kinds = m[day].orEmpty()
-                listRow(body, (if (day == today) "▸ " else "") + name, if (kinds.isEmpty()) "Nessuna raccolta" else kinds.joinToString(" · "), onClick = {
+                listRow(body, name, if (kinds.isEmpty()) { if (day == today) "Oggi · nessuna raccolta" else "Nessuna raccolta" } else { (if (day == today) "Oggi · " else "") + kinds.joinToString(" · ") }, onClick = {
                     val checked = BooleanArray(Waste.KINDS.size) { Waste.KINDS[it] in kinds }
                     MaterialAlertDialogBuilder(this).setTitle(name)
                         .setMultiChoiceItems(Waste.KINDS.toTypedArray(), checked) { _, i, on -> checked[i] = on }

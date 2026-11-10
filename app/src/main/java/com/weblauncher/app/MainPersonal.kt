@@ -63,6 +63,12 @@ import com.weblauncher.app.MainActivity.YtChannel
 import java.util.Locale
 import java.util.UUID
 
+private fun chipRow(group: com.google.android.material.chip.ChipGroup) =
+    android.widget.HorizontalScrollView(group.context).apply {
+        isHorizontalScrollBarEnabled = false
+        addView(group)
+    }
+
 internal fun MainActivity.addExpenseDialog(amount: Double? = null, desc: String = "", cat: String? = null, time: Long = System.currentTimeMillis(), replaceId: String? = null) {
     val d = resources.displayMetrics.density
     fun dp(v: Int) = (v * d).toInt()
@@ -72,7 +78,7 @@ internal fun MainActivity.addExpenseDialog(amount: Double? = null, desc: String 
         amount?.let { setText(String.format(Locale.ROOT, "%.2f", it)) }
     }
     val descEt = TextInputEditText(this).apply { hint = "Per cosa? (es. pizza, benzina)"; setSingleLine(); setText(desc) }
-    val chips = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true; setPadding(0, dp(10), 0, 0) }
+    val chips = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true; isSingleLine = true; setPadding(0, dp(10), 0, 0) }
     var chosen = cat ?: Expenses.guess(desc)
     val chipViews = Expenses.CATS.map { c ->
         com.google.android.material.chip.Chip(this).apply {
@@ -91,7 +97,7 @@ internal fun MainActivity.addExpenseDialog(amount: Double? = null, desc: String 
     })
     val box = android.widget.LinearLayout(this).apply {
         orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(8), dp(22), 0)
-        addView(amountEt); addView(descEt); addView(chips)
+        addView(amountEt); addView(descEt); addView(chipRow(chips))
     }
     MaterialAlertDialogBuilder(this).setTitle("Nuova spesa").setView(android.widget.ScrollView(this).apply { addView(box) })
         .setPositiveButton("Salva") { _, _ ->
@@ -146,12 +152,12 @@ internal fun MainActivity.showExpensesPage() {
             }
             fun act(label: String, onClick: () -> Unit) = actions.addView(com.google.android.material.button.MaterialButton(
                 this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-                text = label; isAllCaps = false
+                text = label; isAllCaps = false; maxLines = 1
                 layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(4), 0, dp(4), 0) }
                 setOnClickListener { onClick() }
             })
-            act("🧾 Scontrino") { scanPurpose = "expense"; scanDocument() }
-            act("💼 Finanze") { showFinancePage() }
+            act("Scontrino") { scanPurpose = "expense"; scanDocument() }
+            act("Finanze") { showFinancePage() }
             act("Esporta") {
                 val csv = "Data;Importo;Categoria;Descrizione\n" + all.sortedBy { it.time }.joinToString("\n") {
                     java.text.SimpleDateFormat("dd/MM/yyyy", Locale.ITALIAN).format(java.util.Date(it.time)) + ";" +
@@ -161,7 +167,7 @@ internal fun MainActivity.showExpensesPage() {
                     type = "text/plain"; putExtra(Intent.EXTRA_TEXT, csv); putExtra(Intent.EXTRA_SUBJECT, "Spese.csv")
                 }, "Esporta spese"))
             }
-            body.addView(actions)
+            body.addView(android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(actions) })
             if (list.isEmpty()) { emptyLabel(body, "Nessuna spesa in questo mese.\nA voce: «speso 12 euro pizza»."); return }
             sectionLabel(body, "PER CATEGORIA")
             val byCat = list.groupBy { it.cat }.mapValues { it.value.sumOf { e -> e.amount } }.entries.sortedByDescending { it.value }
@@ -563,7 +569,7 @@ internal fun MainActivity.editDeadline(kind: String, existing: Deadline? = null,
     fun dp(v: Int) = (v * d).toInt()
     val title = TextInputEditText(this).apply {
         setSingleLine(); setText(existing?.title ?: presetTitle.orEmpty())
-        hint = when (kind) { Deadlines.SUBSCRIPTION -> "Nome (es. Netflix, palestra)"; Deadlines.WARRANTY -> "Prodotto (es. lavatrice, telefono)"; else -> "Cosa scade" }
+        hint = when (kind) { Deadlines.SUBSCRIPTION -> "Nome (es. Netflix)"; Deadlines.WARRANTY -> "Prodotto"; else -> "Cosa scade" }
     }
     var date = existing?.date ?: presetDate ?: when (kind) {
         Deadlines.WARRANTY -> java.util.Calendar.getInstance().apply { add(java.util.Calendar.YEAR, 2) }.timeInMillis
@@ -574,11 +580,11 @@ internal fun MainActivity.editDeadline(kind: String, existing: Deadline? = null,
     var photoPath = existing?.photo ?: photo
     val box = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(8), dp(22), 0) }
     if (kind == Deadlines.DEADLINE && existing == null) {
-        val presets = com.google.android.material.chip.ChipGroup(this)
+        val presets = com.google.android.material.chip.ChipGroup(this).apply { isSingleLine = true }
         listOf("Revisione auto", "Bollo auto", "Assicurazione auto", "Carta d'identità", "Passaporto", "Patente", "Tessera sanitaria").forEach { p ->
             presets.addView(com.google.android.material.chip.Chip(this).apply { text = p; setOnClickListener { title.setText(p) } })
         }
-        box.addView(presets)
+        box.addView(chipRow(presets))
     }
     box.addView(title)
     val amount = TextInputEditText(this).apply {
@@ -588,11 +594,11 @@ internal fun MainActivity.editDeadline(kind: String, existing: Deadline? = null,
     }
     if (kind == Deadlines.SUBSCRIPTION) {
         box.addView(amount)
-        val chips = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true }
+        val chips = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true; isSingleLine = true }
         listOf("mese" to "Mensile", "anno" to "Annuale", "settimana" to "Settimanale").forEach { (k, l) ->
             chips.addView(com.google.android.material.chip.Chip(this).apply { text = l; isCheckable = true; isChecked = k == period; setOnClickListener { period = k } })
         }
-        box.addView(chips)
+        box.addView(chipRow(chips))
     }
     val dateBtn = com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply { isAllCaps = false }
     fun dateLabel() {
@@ -602,14 +608,14 @@ internal fun MainActivity.editDeadline(kind: String, existing: Deadline? = null,
     dateBtn.setOnClickListener { pickDate("Data", date) { date = it; dateLabel() } }
     box.addView(dateBtn)
     if (kind == Deadlines.WARRANTY && existing == null) {
-        val yrs = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true }
+        val yrs = com.google.android.material.chip.ChipGroup(this).apply { isSingleSelection = true; isSingleLine = true }
         listOf(1, 2, 3, 5).forEach { y ->
             yrs.addView(com.google.android.material.chip.Chip(this).apply {
                 text = "$y ${if (y == 1) "anno" else "anni"} da oggi"; isCheckable = true; isChecked = y == 2
                 setOnClickListener { date = java.util.Calendar.getInstance().apply { add(java.util.Calendar.YEAR, y) }.timeInMillis; dateLabel() }
             })
         }
-        box.addView(yrs)
+        box.addView(chipRow(yrs))
     }
     if (kind != Deadlines.SUBSCRIPTION) {
         val photoBtn = com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
