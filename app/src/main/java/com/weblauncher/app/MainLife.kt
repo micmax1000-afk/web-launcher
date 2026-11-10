@@ -302,7 +302,7 @@ internal fun MainActivity.showCarMode() {
     val now = TextView(this).apply { textSize = 18f; setTextColor(0xFFB8C0CC.toInt()); maxLines = 2; setPadding(dp(4), dp(8), dp(4), dp(10)) }
     root.addView(now)
     val grid = android.widget.GridLayout(this).apply { columnCount = 2; layoutParams = android.widget.LinearLayout.LayoutParams(-1, 0, 1f) }
-    fun tile(emoji: String, label: String, color: Int, onClick: () -> Unit) = grid.addView(android.widget.LinearLayout(this).apply {
+    fun tile(icon: Int, label: String, color: Int, onClick: () -> Unit) = grid.addView(android.widget.LinearLayout(this).apply {
         orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER
         background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 24 * d; setColor(color) }
         layoutParams = android.widget.GridLayout.LayoutParams().apply {
@@ -311,30 +311,33 @@ internal fun MainActivity.showCarMode() {
             rowSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
             setMargins(dp(6), dp(6), dp(6), dp(6))
         }
-        addView(TextView(this@showCarMode).apply { text = emoji; textSize = 40f; gravity = android.view.Gravity.CENTER })
+        addView(ImageView(this@showCarMode).apply {
+            setImageResource(icon)
+            setColorFilter(android.graphics.Color.WHITE)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+            layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
+        })
         addView(TextView(this@showCarMode).apply { text = label; textSize = 19f; setTextColor(android.graphics.Color.WHITE); gravity = android.view.Gravity.CENTER; setPadding(0, dp(6), 0, 0) })
         setOnClickListener { onClick() }
     })
     val dark = 0xFF1C2230.toInt()
-    tile("🎤", "Comando vocale", accent) { requestMicAndListen() }
-    tile("⏯", "Play / Pausa", dark) {
+    tile(R.drawable.ic_tool_record, "Comando vocale", accent) { requestMicAndListen() }
+    tile(R.drawable.ic_car_play, "Play / Pausa", dark) {
         val c = controller
         if (c?.currentMediaItem != null) { if (c.isPlaying) c.pause() else c.play() }
         else audio.favoriteStations().firstOrNull()?.let { playRadio(it) } ?: toast("Scegli una radio preferita in Ascolta")
     }
-    tile("📻", "Radio preferita", dark) {
+    tile(R.drawable.ic_car_radio, "Radio preferita", dark) {
         val favs = audio.favoriteStations()
         if (favs.isEmpty()) toast("Aggiungi una radio preferita (⭐) in Ascolta → Radio")
         else MaterialAlertDialogBuilder(this).setItems(favs.map { it.name }.toTypedArray()) { _, w -> playRadio(favs[w]) }.show()
     }
-    tile("🎧", "Riprendi podcast", dark) {
+    tile(R.drawable.ic_car_podcast, "Riprendi podcast", dark) {
         val eps = if (episodes.isEmpty()) audio.cachedEpisodes() else episodes
         val e = eps.filter { AudioStore.position(this, it.id) > 0 && !AudioStore.isFinished(this, it.id) }.maxByOrNull { it.time }
             ?: eps.firstOrNull { !AudioStore.isFinished(this, it.id) }
         if (e != null) playEpisode(e) else toast("Nessun episodio: segui un podcast in Ascolta")
     }
-    tile("🏠", "Portami a casa", dark) { goHome() }
-    tile("🚗", "Ho parcheggiato", dark) { parkHere() }
     root.addView(grid)
     val tick = object : Runnable {
         override fun run() {

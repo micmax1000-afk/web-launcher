@@ -133,6 +133,8 @@ class MainActivity : AppCompatActivity() {
     var categories: MutableList<String> = mutableListOf()
     var currentTab = TAB_HOME
     var browserHasPage = false
+    private var leavePromptShowing = false
+    private var suppressLeavePrompt = false
 
     val speechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -793,6 +795,32 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun showTab(tab: Int) {
+        if (!suppressLeavePrompt && currentTab == TAB_BROWSER && tab != TAB_BROWSER &&
+            (browserHasPage || repo.loadHistory().isNotEmpty())
+        ) {
+            if (leavePromptShowing) return
+            leavePromptShowing = true
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Chiudi il browser")
+                .setMessage("Vuoi cancellare la cronologia?")
+                .setPositiveButton("Cancella") { _, _ ->
+                    leavePromptShowing = false
+                    clearHistoryAndRecents()
+                    suppressLeavePrompt = true
+                    showTab(tab)
+                    suppressLeavePrompt = false
+                }
+                .setNegativeButton("Tieni") { _, _ ->
+                    leavePromptShowing = false
+                    suppressLeavePrompt = true
+                    showTab(tab)
+                    suppressLeavePrompt = false
+                }
+                .setNeutralButton("Annulla") { _, _ -> leavePromptShowing = false }
+                .setOnCancelListener { leavePromptShowing = false }
+                .show()
+            return
+        }
         AppRepository.restoreUiMode(this)
         currentTab = tab
         showBars()
