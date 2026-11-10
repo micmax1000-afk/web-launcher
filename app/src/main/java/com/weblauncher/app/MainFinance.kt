@@ -182,36 +182,77 @@ internal fun MainActivity.show730Page(year: Int) {
 // ======================= Compleanni =======================
 
 internal fun MainActivity.showBirthdaysPage() {
-    if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-        pendingContactCommand = "__birthdays__"; contactsPermission.launch(Manifest.permission.READ_CONTACTS); return
-    }
-    openPage("Compleanni") { _, body, _ ->
-        val now = Calendar.getInstance()
-        val list = Birthdays.upcoming(this, 366, now)
-        if (list.isEmpty()) { emptyLabel(body, "Nessun compleanno nei contatti.\nAggiungi la data di nascita nella scheda del contatto (Contatti → Modifica → Evento → Compleanno)."); return@openPage }
-        val fmt = SimpleDateFormat("d MMMM", Locale.ITALIAN)
-        fun label(days: Int) = when (days) { 0 -> "🎉 Oggi"; 1 -> "Domani"; else -> "Tra $days giorni" }
-        listOf("PROSSIMI 30 GIORNI" to list.filter { it.second <= 30 }, "PIÙ AVANTI" to list.filter { it.second > 30 }).forEach { (title, group) ->
-            if (group.isEmpty()) return@forEach
-            sectionLabel(body, title)
-            group.forEach { (p, days) ->
-                val date = Calendar.getInstance().apply { set(Calendar.MONTH, p.month - 1); set(Calendar.DAY_OF_MONTH, p.day) }
-                val age = p.turning(now)?.let { " · compie $it anni" } ?: ""
-                listRow(body, "${if (days == 0) "🎂 " else ""}${p.name}", "${label(days)} · ${fmt.format(date.time)}$age", onClick = { birthdayActions(p) })
+    openPage("Compleanni", "Aggiungi", { _ -> editBirthday(null) }) { _, body, dialog ->
+        fun render() {
+            body.removeAllViews()
+            val now = Calendar.getInstance()
+            val list = Birthdays.upcoming(this, 366, now)
+            if (!Birthdays.hasContactsPermission(this)) {
+                listRow(body, "👥 Importa dai contatti", "Legge le date di nascita già salvate nella rubrica (serve il permesso)", onClick = {
+                    pendingContactCommand = "__birthdays__"; contactsPermission.launch(Manifest.permission.READ_CONTACTS)
+                })
+            }
+            if (list.isEmpty()) {
+                emptyLabel(body, "Nessun compleanno.\nTocca «Aggiungi» in alto per inserirne uno a mano" + if (Birthdays.hasContactsPermission(this)) ", oppure aggiungi la data di nascita nella scheda del contatto." else ".")
+                return
+            }
+            val fmt = SimpleDateFormat("d MMMM", Locale.ITALIAN)
+            fun label(days: Int) = when (days) { 0 -> "🎉 Oggi"; 1 -> "Domani"; else -> "Tra $days giorni" }
+            listOf("PROSSIMI 30 GIORNI" to list.filter { it.second <= 30 }, "PIÙ AVANTI" to list.filter { it.second > 30 }).forEach { (title, group) ->
+                if (group.isEmpty()) return@forEach
+                sectionLabel(body, title)
+                group.forEach { (p, days) ->
+                    val date = Calendar.getInstance().apply { set(Calendar.MONTH, p.month - 1); set(Calendar.DAY_OF_MONTH, p.day) }
+                    val age = p.turning(now)?.let { " · compie $it anni" } ?: ""
+                    listRow(body, "${if (days == 0) "🎂 " else "🎁 "}${p.name}", "${label(days)} · ${fmt.format(date.time)}$age", onClick = { birthdayActions(p) },
+                        onRemove = if (p.manualId != null) ({ confirmClear("Eliminare il compleanno di ${p.name}?") { Birthdays.removeManual(this, p.manualId); render() } }) else null)
+                }
             }
         }
+        render()
+        birthdaysRefresh = { render() }
+        dialog.setOnDismissListener { birthdaysRefresh = null }
     }
 }
 
+/** Add (p == null) or edit a birthday typed by hand: name, day, month and, if known, year. */
+internal fun MainActivity.editBirthday(p: Birthdays.Person?) {
+    val d = resources.displayMetrics.density
+    val name = field("Nome (es. Anna)", p?.name)
+    fun num(hint: String, v: Int?) = EditText(this).apply {
+        this.hint = hint; setSingleLine(); inputType = InputType.TYPE_CLASS_NUMBER; v?.let { setText(it.toString()) }
+        gravity = android.view.Gravity.CENTER; filters = arrayOf(android.text.InputFilter.LengthFilter(4))
+        layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins((4 * d).toInt(), 0, (4 * d).toInt(), 0) }
+    }
+    val day = num("Giorno", p?.day); val month = num("Mese", p?.month); val year = num("Anno (facoltativo)", p?.year)
+    val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; addView(day); addView(month); addView(year) }
+    val box = form(name).apply { addView(row) }
+    MaterialAlertDialogBuilder(this).setTitle(if (p == null) "Nuovo compleanno" else "Modifica compleanno").setView(box)
+        .setPositiveButton("Salva") { _, _ ->
+            val dd = day.text.toString().toIntOrNull(); val mm = month.text.toString().toIntOrNull()
+            val yy = year.text.toString().trim().takeIf { it.isNotEmpty() }?.toIntOrNull()
+            val okYear = year.text.toString().isBlank() || yy != null
+            if (name.text.toString().isBlank()) { toast("Scrivi il nome"); return@setPositiveButton }
+            if (dd == null || mm == null || !okYear || !Birthdays.validDate(dd, mm, yy)) { toast("Data non valida: scrivi giorno e mese, es. 14 e 3"); return@setPositiveButton }
+            Birthdays.saveManual(this, p?.manualId, name.text.toString(), mm, dd, yy)
+            birthdaysRefresh?.invoke()
+            toast("🎂 Compleanno salvato")
+        }.setNegativeButton("Annulla", null).show()
+}
+
 private fun MainActivity.birthdayActions(p: Birthdays.Person) {
+    val options = mutableListOf("💬 Auguri su WhatsApp", "✨ Scrivi gli auguri con l'AI", "📞 Chiama")
+    if (p.manualId != null) { options += "✏️ Modifica"; options += "🗑 Elimina" }
     MaterialAlertDialogBuilder(this).setTitle("🎂 ${p.name}")
-        .setItems(arrayOf("💬 Auguri su WhatsApp", "✨ Scrivi gli auguri con l'AI", "📞 Chiama")) { _, w ->
+        .setItems(options.toTypedArray()) { _, w ->
             when (w) {
                 0 -> systemVoiceCommand("manda whatsapp a ${p.name} dicendo Tanti auguri di buon compleanno! 🎉")
                 1 -> if (aiReady()) showAiSheet("Auguri per ${p.name}", null,
                     "Scrivi 3 brevi messaggi di auguri di compleanno in italiano per ${p.name}" + (p.turning(Calendar.getInstance())?.let { ", che compie $it anni" } ?: "") +
                         ": uno affettuoso, uno simpatico, uno formale. Solo i messaggi, numerati.", false)
                 2 -> withContact("chiama ${p.name}", p.name) { _, number -> runCatching { startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$number"))) } }
+                3 -> editBirthday(p)
+                4 -> confirmClear("Eliminare il compleanno di ${p.name}?") { p.manualId?.let { Birthdays.removeManual(this, it) }; birthdaysRefresh?.invoke() }
             }
         }.show()
 }

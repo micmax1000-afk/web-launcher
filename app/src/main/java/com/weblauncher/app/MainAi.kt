@@ -148,7 +148,8 @@ internal fun MainActivity.showAiSheet(
     showFirstQuestion: Boolean = true,
     hint: String = "Fai un'altra domanda…",
     quote: String? = null,
-    firstAttachments: List<Triple<String, String, String>> = emptyList()
+    firstAttachments: List<Triple<String, String, String>> = emptyList(),
+    previewAnswer: String? = null            // only for the automatic test: a ready-made long answer
 ) {
     val palette = AppRepository.palette(this)
     val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
@@ -181,11 +182,20 @@ internal fun MainActivity.showAiSheet(
     val modelLabel = TextView(this).apply { textSize = 12f; setTextColor(palette.textMuted) }
     headBox.addView(modelLabel)
     head.addView(headBox)
+    // the sheet can no longer be swiped away (it closed while scrolling): an explicit close button instead
+    head.addView(ImageView(this).apply {
+        setImageResource(R.drawable.ic_web_close); setColorFilter(palette.textMuted)
+        setPadding(dp(10), dp(10), dp(10), dp(10)); contentDescription = "Chiudi"
+        layoutParams = android.widget.LinearLayout.LayoutParams(dp(44), dp(44))
+        setOnClickListener { sheet.dismiss() }
+    })
     root.addView(head)
     ai.status { ok, label -> modelLabel.text = if (ok) label else "Da configurare in Mia AI" }
 
     val chat = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
-    val scroll = android.widget.ScrollView(this).apply {
+    // NestedScrollView (not ScrollView): inside a bottom sheet the content scrolls by itself, the sheet does not move
+    val scroll = androidx.core.widget.NestedScrollView(this).apply {
+        isFillViewport = false
         addView(chat)
         layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
     }
@@ -284,7 +294,8 @@ internal fun MainActivity.showAiSheet(
                 answerView.text = formatAi(text)
                 if (model.isNotBlank()) modelLabel.text = model
                 actions(text)
-                scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+                // show the START of the answer (the old code jumped to the bottom of a long text)
+                scroll.post { scroll.smoothScrollTo(0, (answerView.top - dp(8)).coerceAtLeast(0)) }
             }
             override fun onError(message: String, noKey: Boolean) {
                 running = 0; sendBtn.alpha = 1f
@@ -309,9 +320,19 @@ internal fun MainActivity.showAiSheet(
     root.minimumHeight = (resources.displayMetrics.heightPixels * 0.78f).toInt()
     sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
     sheet.behavior.skipCollapsed = true
+    sheet.behavior.isDraggable = false             // dragging used to close the sheet while the user was trying to scroll
+    sheet.setCanceledOnTouchOutside(false)         // a stray tap outside must not cancel the answer
+    sheet.window?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     sheet.show()
+    if (previewAnswer != null) {                   // automatic test: long text, then report scrolling and whether it stayed open
+        bubble("Domanda di prova", true)
+        bubble(formatAi(previewAnswer), false)
+        var maxY = 0
+        scroll.setOnScrollChangeListener(androidx.core.widget.NestedScrollView.OnScrollChangeListener { _, _, y, _, _ -> maxY = maxOf(maxY, y) })
+        uiHandler.postDelayed({ android.util.Log.i(SelfTest.TAG, "AI_SHEET shown=${sheet.isShowing} maxScrollY=$maxY") }, 15000)
+    }
     if (firstQuestion != null) send(firstQuestion, showFirstQuestion)
-    else input.requestFocus()
+    else if (previewAnswer == null) input.requestFocus()
 }
 
 internal fun MainActivity.openMiaAi() {

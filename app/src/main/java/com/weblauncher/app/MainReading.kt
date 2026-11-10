@@ -517,3 +517,76 @@ internal fun MainActivity.renderHomeTools() {
     chip("⏱ Tempo") { showUsagePage() }
     chip("📄 PDF") { pdfPicker.launch(arrayOf("application/pdf")) }
 }
+
+/** Shows a PDF in a full-screen page of the app (search and zoom included), without switching to the Browser tab. */
+@android.annotation.SuppressLint("SetJavaScriptEnabled")
+internal fun MainActivity.openPdfPage(pdf: java.io.File, title: String) {
+    if (!pdf.exists()) { toast("File non trovato"); return }
+    val copy = java.io.File(pdfDir, "page_" + pdf.name)
+    runCatching { pdf.copyTo(copy, true) }.onFailure { toast("Non riesco ad aprire il PDF"); return }
+    val url = MiaAi.ORIGIN + "/assets/pdf/viewer.html?theme=" + (if (AppRepository.isLightUi(this)) "light" else "dark") +
+        "&file=" + Uri.encode("/files/pdf/" + copy.name) + "&name=" + Uri.encode(title)
+    openPage(title) { root, body, dialog ->
+        (body.parent as? View)?.visibility = View.GONE
+        val wv = WebView(this)
+        syncWebViewTheme()
+        wv.settings.javaScriptEnabled = true
+        wv.settings.domStorageEnabled = true
+        wv.settings.allowFileAccess = false
+        wv.settings.builtInZoomControls = true
+        wv.settings.displayZoomControls = false
+        wv.setBackgroundColor(AppRepository.palette(this).bg)
+        wv.webViewClient = object : android.webkit.WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView?, request: android.webkit.WebResourceRequest?): android.webkit.WebResourceResponse? =
+                request?.url?.let { assetLoader.shouldInterceptRequest(it) }
+            override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean = true
+        }
+        root.addView(wv, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
+        wv.loadUrl(url)
+        dialog.setOnDismissListener { runCatching { wv.stopLoading(); wv.destroy() } }
+    }
+}
+
+/**
+ * The text of a PDF, read by pdf.js in an invisible WebView (null if it has none, e.g. a scan, or after [timeoutMs]).
+ * Call on the main thread; [onResult] runs on the main thread.
+ */
+@android.annotation.SuppressLint("SetJavaScriptEnabled")
+internal fun MainActivity.extractPdfText(pdf: java.io.File, timeoutMs: Long = 30_000, onResult: (String?) -> Unit) {
+    val copy = java.io.File(pdfDir, "extract_" + pdf.name)
+    if (runCatching { pdf.copyTo(copy, true) }.isFailure) { onResult(null); return }
+    val host = findViewById<android.widget.FrameLayout>(R.id.webViewHost)
+    val wv = WebView(this)
+    syncWebViewTheme()
+    wv.settings.javaScriptEnabled = true
+    wv.settings.allowFileAccess = false
+    wv.alpha = 0f
+    wv.webViewClient = object : android.webkit.WebViewClient() {
+        override fun shouldInterceptRequest(view: WebView?, request: android.webkit.WebResourceRequest?): android.webkit.WebResourceResponse? =
+            request?.url?.let { assetLoader.shouldInterceptRequest(it) }
+    }
+    host.addView(wv, android.widget.FrameLayout.LayoutParams(1, 1))
+    var finished = false
+    val started = System.currentTimeMillis()
+    fun finish(text: String?) {
+        if (finished) return
+        finished = true
+        runCatching { host.removeView(wv); wv.stopLoading(); wv.destroy() }
+        onResult(text?.takeIf { it.replace(Regex("\\[Pagina \\d+]"), "").trim().length >= 40 })
+    }
+    lateinit var poll: Runnable
+    poll = Runnable {
+        if (finished) return@Runnable
+        if (System.currentTimeMillis() - started > timeoutMs) { finish(null); return@Runnable }
+        wv.evaluateJavascript("(function(){return JSON.stringify({d:window.__done===true,t:window.__text||'',e:window.__error||null})})()") { raw ->
+            val obj = runCatching { org.json.JSONObject(org.json.JSONTokener(raw).nextValue() as String) }.getOrNull()
+            when {
+                obj == null || !obj.optBoolean("d") -> uiHandler.postDelayed(poll, 500)
+                obj.optString("e").let { it.isNotEmpty() && it != "null" } -> { android.util.Log.w("WL_PDF", "estrazione: " + obj.optString("e")); finish(null) }
+                else -> finish(obj.optString("t"))
+            }
+        }
+    }
+    wv.loadUrl(MiaAi.ORIGIN + "/assets/pdf/extract.html?file=" + Uri.encode("/files/pdf/" + copy.name))
+    uiHandler.postDelayed(poll, 700)
+}

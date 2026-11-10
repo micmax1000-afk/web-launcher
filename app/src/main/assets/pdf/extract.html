@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="it"><head><meta charset="utf-8"><title>Testo del PDF</title></head>
+<body>
+<!-- Invisible page used by the launcher: extracts the text of a PDF (no rendering).
+     The launcher polls window.__done / window.__text / window.__error. -->
+<script type="module">
+  import * as pdfjsLib from './pdf.min.js';
+  pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.js';
+  window.__done = false; window.__text = ''; window.__pages = 0; window.__error = null;
+  try {
+    const file = new URLSearchParams(location.search).get('file');
+    const pdf = await pdfjsLib.getDocument({ url: file, isEvalSupported: false }).promise;
+    window.__pages = pdf.numPages;
+    let out = '';
+    for (let i = 1; i <= Math.min(pdf.numPages, 40); i++) {
+      const page = await pdf.getPage(i);
+      const tc = await page.getTextContent();
+      // one line per row of the page (a new line when the vertical position changes): keeps tables readable
+      const lines = []; let line = '', lastY = null;
+      for (const it of tc.items) {
+        const y = Math.round(it.transform[5]);
+        if (lastY !== null && Math.abs(y - lastY) > 2) { lines.push(line.trim()); line = ''; }
+        line += it.str + ' '; lastY = y;
+      }
+      lines.push(line.trim());
+      out += '[Pagina ' + i + ']\n' + lines.filter(Boolean).join('\n') + '\n\n';
+      if (out.length > 80000) break;
+    }
+    window.__text = out;
+  } catch (e) { window.__error = String((e && (e.message || e.name)) || e); }
+  window.__done = true;
+</script>
+</body></html>

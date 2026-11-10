@@ -62,4 +62,22 @@ class FinanceTest {
         assertNull(CalendarVoice.clean("metti la sveglia alle 7"))
         assertNull(CalendarVoice.clean("che tempo fa domani"))
     }
+
+    @Test fun compleanniAMano_dateValide() {
+        assertTrue(Birthdays.validDate(14, 3, 1985)); assertTrue(Birthdays.validDate(14, 3, null))
+        assertTrue(Birthdays.validDate(29, 2, null))          // senza anno si accetta il 29 febbraio
+        assertTrue(Birthdays.validDate(29, 2, 2000)); assertFalse(Birthdays.validDate(29, 2, 2001))
+        assertFalse(Birthdays.validDate(31, 4, 1990)); assertFalse(Birthdays.validDate(0, 5, null))
+        assertFalse(Birthdays.validDate(10, 13, null)); assertFalse(Birthdays.validDate(10, 5, 1800))
+    }
+
+    @Test fun compleanniAMano_salvataggio() {
+        val list = listOf(Birthdays.Person("Anna", 3, 14, 1985, -1L, "a1"), Birthdays.Person("Luca", 11, 2, null, -1L, "l1"))
+        val back = Birthdays.decodeManual(Birthdays.encodeManual(list))
+        assertEquals(listOf("Anna", "Luca"), back.map { it.name })
+        assertEquals(listOf(3 to 14, 11 to 2), back.map { it.month to it.day })
+        assertEquals(1985, back[0].year); assertNull(back[1].year)
+        assertEquals(listOf("a1", "l1"), back.map { it.manualId })
+        assertTrue(Birthdays.decodeManual("rotto").isEmpty()); assertTrue(Birthdays.decodeManual(null).isEmpty())
+    }
 }

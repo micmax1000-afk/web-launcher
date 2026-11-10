@@ -12,6 +12,7 @@ object SelfTest {
     const val EXTRA_THEME = "wl_theme_check"
     const val EXTRA_DIALOG = "wl_dialog_check"
     const val EXTRA_MIA = "wl_mia_check"
+    const val EXTRA_AI_SHEET = "wl_ai_sheet"
 
     fun run(activity: MainActivity): Boolean {
         val checks = listOf<Pair<String, () -> Any?>>(
