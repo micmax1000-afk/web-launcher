@@ -66,9 +66,9 @@ private fun MainActivity.myPlace(): Triple<Double, Double, String>? {
 internal fun MainActivity.showInstrumentsPage() {
     openPage("Misure e sensori") { _, body, _ ->
         sectionLabel(body, "MOVIMENTO E QUOTA")
-        listRow(body, "⛰ Altimetro", "Quota e dislivello, con barometro o GPS", onClick = { showAltimeter() })
+        listRow(body, "🏔️ Altimetro", "Quota e dislivello, con barometro o GPS", onClick = { showAltimeter() })
         listRow(body, "🚴 Tachimetro GPS", "Velocità, distanza e tempo", onClick = { withPermissions(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION) { showSpeedometer() } })
-        listRow(body, "⏱ Tabata", "Allenamento a intervalli con segnali acustici", onClick = { showTabata() })
+        listRow(body, "💪 Tabata", "Allenamento a intervalli con segnali acustici", onClick = { showTabata() })
         sectionLabel(body, "SENSORI")
         listRow(body, "🔊 Fonometro", "Rumore in decibel", onClick = { withPermissions(Manifest.permission.RECORD_AUDIO) { showSoundMeter() } })
         listRow(body, "🧲 Metal detector", "Trova chiodi, tubi e cavi nel muro", onClick = { showMetalDetector() })
