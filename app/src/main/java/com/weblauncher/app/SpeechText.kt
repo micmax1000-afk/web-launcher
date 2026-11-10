@@ -47,3 +47,16 @@ object SpeechText {
         return out
     }
 }
+
+/** Leading emoji of a label ("💰 Spese" → "💰" + "Spese"): rows show them in a coloured tile, settings drop them. */
+object EmojiText {
+    private val leading = Regex("^([\\p{So}\\p{Cs}\\u200d\\ufe0f\\u20e3]+)\\s*")
+
+    /** (emoji or null, the rest). A label that is only an emoji is left whole. */
+    fun split(label: String): Pair<String?, String> {
+        val m = leading.find(label) ?: return null to label
+        val rest = label.substring(m.range.last + 1)
+        return if (rest.isBlank()) null to label else m.groupValues[1] to rest
+    }
+    fun strip(label: String) = split(label).second
+}

@@ -127,6 +127,10 @@ internal fun MainActivity.openPage(
         setBackgroundDrawable(android.graphics.drawable.ColorDrawable(palette.bg))
         statusBarColor = palette.bg
         navigationBarColor = palette.bg
+        // dark icons on a light page, light icons on a dark one (they were white on light: the clock was unreadable)
+        val ctl = androidx.core.view.WindowInsetsControllerCompat(this, decorView)
+        ctl.isAppearanceLightStatusBars = AppRepository.isLightUi(this@openPage)
+        ctl.isAppearanceLightNavigationBars = AppRepository.isLightUi(this@openPage)
     }
     dialog.show()
 }
@@ -149,12 +153,20 @@ internal fun MainActivity.listRow(
         setOnClickListener { onClick() }
         if (onLong != null) setOnLongClickListener { onLong(); true }
     }
+    // a leading emoji goes in a tinted tile, like the tiles of Strumenti: same look on every row, in colour
+    val (rowIcon, shownTitle) = EmojiText.split(title)
+    val accentColor = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
+    if (rowIcon != null) r.addView(TextView(this).apply {
+        text = rowIcon; textSize = 19f; gravity = android.view.Gravity.CENTER
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 14 * d; setColor((accentColor and 0x00FFFFFF) or 0x1F000000) }
+        layoutParams = android.widget.LinearLayout.LayoutParams(dp(42), dp(42)).apply { marginEnd = dp(12) }
+    })
     val box = android.widget.LinearLayout(this).apply {
         orientation = android.widget.LinearLayout.VERTICAL
         layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
     }
     box.addView(TextView(this).apply {
-        text = title; textSize = 16f; setTextColor(palette.text)
+        text = shownTitle; textSize = 16f; setTextColor(palette.text)
         maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
     })
     if (!sub.isNullOrBlank()) box.addView(TextView(this).apply {
@@ -182,6 +194,18 @@ internal fun MainActivity.sectionLabel(body: android.widget.LinearLayout, text: 
         setTypeface(typeface, android.graphics.Typeface.BOLD)
         setTextColor(com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt()))
         setPadding((10 * d).toInt(), (18 * d).toInt(), 0, (4 * d).toInt())
+    })
+}
+
+/** A short note under a list (not an empty state): small, left-aligned, no big gap above. */
+internal fun MainActivity.hintLabel(body: android.widget.LinearLayout, text: String) {
+    val d = resources.displayMetrics.density
+    body.addView(TextView(this).apply {
+        this.text = text
+        textSize = 13f
+        setTextColor(AppRepository.palette(this@hintLabel).textMuted)
+        setLineSpacing(0f, 1.08f)
+        setPadding((10 * d).toInt(), (10 * d).toInt(), (10 * d).toInt(), (6 * d).toInt())
     })
 }
 

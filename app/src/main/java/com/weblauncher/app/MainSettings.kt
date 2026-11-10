@@ -100,6 +100,9 @@ internal fun MainActivity.renderSettings() {
         setPadding(dp(18), dp(12), dp(18), dp(12))
         background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 26 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
         importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+        compoundDrawablePadding = dp(10)
+        setCompoundDrawablesRelativeWithIntrinsicBounds(androidx.core.content.ContextCompat.getDrawable(this@renderSettings, R.drawable.ic_tool_search)?.mutate()?.apply { setTint(palette.textMuted) }, null, null, null)
+        layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(2), dp(2), dp(2), dp(14)) }
     } else null
     search?.let { settingsList.addView(it) }
     class Sec(val head: View, val card: View) { val rows = mutableListOf<Triple<View, View?, String>>() }
@@ -156,7 +159,7 @@ internal fun MainActivity.renderSettings() {
             layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         box.addView(TextView(this).apply {
-            text = label
+            text = EmojiText.strip(label)
             textSize = 17f
             setTextColor(if (danger) ContextCompat.getColor(this@renderSettings, R.color.danger) else palette.text)
         })

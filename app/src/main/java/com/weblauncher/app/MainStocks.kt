@@ -73,7 +73,7 @@ internal fun MainActivity.showStocksPage() {
             body.removeAllViews()
             val list = Stocks.watch(this)
             if (list.isEmpty()) {
-                emptyLabel(body, "La tua watchlist è vuota.\nTocca «Aggiungi» e cerca un titolo (es. Eni, Apple, un ETF) oppure parti da questi:")
+                hintLabel(body, "La tua watchlist è vuota.\nTocca «Aggiungi» e cerca un titolo (es. Eni, Apple, un ETF) oppure parti da questi:")
                 Stocks.PRESETS.forEach { a ->
                     listRow(body, "➕ ${a.name}", a.symbol, onClick = { Stocks.saveWatch(this, Stocks.watch(this) + a); render() })
                 }
@@ -173,7 +173,7 @@ internal fun MainActivity.showStocksPage() {
                 }
             }
             listRow(body, "🔧 Prova la connessione a Yahoo Finance", "Se vedi «n.d.»: mostra cosa risponde il servizio", onClick = { diagnoseStocks() })
-            emptyLabel(body, "Dati Yahoo Finance, possono essere in ritardo di 15-20 minuti. Tieni premuto un titolo per spostarlo o toglierlo.")
+            hintLabel(body, "Dati Yahoo Finance, possono essere in ritardo di 15-20 minuti. Tieni premuto un titolo per spostarlo o toglierlo.")
         }
         render()
     }

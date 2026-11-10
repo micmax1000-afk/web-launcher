@@ -42,4 +42,14 @@ class SpeechTextTest {
         assertTrue(c.all { !it.startsWith(" ") && !it.endsWith(" ") })
         assertEquals(s, c.joinToString(" "))
     }
+
+    @Test fun emojiInTestaAlleEtichette() {
+        assertEquals("💰" to "Spese", EmojiText.split("💰 Spese"))
+        assertEquals("⏱" to "Tabata", EmojiText.split("⏱ Tabata"))
+        assertEquals("✏️" to "Tara con una quota", EmojiText.split("✏️ Tara con una quota"))
+        assertEquals(null to "Nessuna emoji", EmojiText.split("Nessuna emoji"))
+        assertEquals(null to "🎉", EmojiText.split("🎉"))                 // solo emoji: resta intera
+        assertEquals("Report privacy", EmojiText.strip("🛡 Report privacy"))
+        assertEquals("Rifiuta i banner", EmojiText.strip("🍪 Rifiuta i banner"))
+    }
 }

@@ -500,7 +500,7 @@ internal fun MainActivity.showAirQuality() {
                     "Artemisia" to "mugwort_pollen", "Ambrosia" to "ragweed_pollen").filter { !c.isNull(it.second) }
                 if (pollens.isEmpty()) small(body).text = "Dati sui pollini non disponibili in questo periodo"
                 pollens.forEach { (n, k) -> val v = c.optDouble(k); listRow(body, "$n: ${Instruments.pollenLabel(v)}", "%.0f granuli/m³".format(v), onClick = {}) }
-                emptyLabel(body, "Dati Open-Meteo / Copernicus, aggiornati ogni ora.")
+                hintLabel(body, "Dati Open-Meteo / Copernicus, aggiornati ogni ora.")
             }
         }
     }
@@ -535,7 +535,7 @@ internal fun MainActivity.showQuakes() {
                         openInBrowser("https://www.google.com/maps/search/?api=1&query=${q.lat},${q.lon}"); dialog.dismiss()
                     })
                 }
-                emptyLabel(body, "Dati INGV (Istituto Nazionale di Geofisica e Vulcanologia). Non è un sistema di allerta in tempo reale.")
+                hintLabel(body, "Dati INGV (Istituto Nazionale di Geofisica e Vulcanologia). Non è un sistema di allerta in tempo reale.")
             }
         }
     }
@@ -621,14 +621,14 @@ internal fun MainActivity.showWastePage() {
                     val d = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).parse(day)
                     listRow(body, df.format(d!!).replaceFirstChar { it.uppercase() }, kinds.joinToString(" · "), onClick = {})
                 }
-                emptyLabel(body, "La sera prima alle 19 ricevi un avviso con cosa mettere fuori. Se il PDF finisce, valgono i giorni fissi qui sotto.")
+                hintLabel(body, "La sera prima alle 19 ricevi un avviso con cosa mettere fuori. Se il PDF finisce, valgono i giorni fissi qui sotto.")
             }
             sectionLabel(body, "GIORNI FISSI DELLA SETTIMANA")
-            if (dates.isEmpty()) emptyLabel(body, "Scegli cosa passa in ogni giorno: la sera prima alle 19 ricevi un avviso su cosa mettere fuori.")
+            if (dates.isEmpty()) hintLabel(body, "Scegli cosa passa in ogni giorno: la sera prima alle 19 ricevi un avviso su cosa mettere fuori.")
             val today = Calendar.getInstance().get(Calendar.DAY_OF_WEEK)
             Waste.DAYS.forEach { (day, name) ->
                 val kinds = m[day].orEmpty()
-                listRow(body, (if (day == today) "▸ " else "") + name, if (kinds.isEmpty()) "Nessuna raccolta" else kinds.joinToString(" · "), onClick = {
+                listRow(body, name + (if (day == today) " · oggi" else ""), if (kinds.isEmpty()) "Nessuna raccolta" else kinds.joinToString(" · "), onClick = {
                     val checked = BooleanArray(Waste.KINDS.size) { Waste.KINDS[it] in kinds }
                     MaterialAlertDialogBuilder(this).setTitle(name)
                         .setMultiChoiceItems(Waste.KINDS.toTypedArray(), checked) { _, i, on -> checked[i] = on }
@@ -639,7 +639,7 @@ internal fun MainActivity.showWastePage() {
                 })
             }
             val out = Waste.tomorrow(m, Calendar.getInstance(), dates)
-            if (out.isNotEmpty()) emptyLabel(body, "Stasera metti fuori: " + out.joinToString(", "))
+            if (out.isNotEmpty()) hintLabel(body, "Stasera metti fuori: " + out.joinToString(", "))
         }
         render()
         wasteRefresh = { render() }

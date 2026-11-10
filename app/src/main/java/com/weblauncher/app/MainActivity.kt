@@ -863,6 +863,10 @@ class MainActivity : AppCompatActivity() {
         val toolsActive = tab == TAB_SETTINGS || tab == TAB_TOOLS
         iconSettings.setColorFilter(if (toolsActive) accent else muted)
         labelSettings.setTextColor(if (toolsActive) accent else muted)
+        // only the active tab is bold (Home used to stay bold whatever the tab)
+        listOf(labelHome to (tab == TAB_HOME), labelBrowser to (tab == TAB_BROWSER), findViewById<TextView>(R.id.labelNews) to (tab == TAB_NEWS),
+            findViewById<TextView>(R.id.labelAudio) to (tab == TAB_AUDIO), labelSettings to toolsActive)
+            .forEach { (l, on) -> l.setTypeface(null, if (on) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL) }
     }
 
     fun openInBrowser(url: String) {
