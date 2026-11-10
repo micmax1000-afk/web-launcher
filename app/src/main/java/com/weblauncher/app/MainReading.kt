@@ -517,3 +517,32 @@ internal fun MainActivity.renderHomeTools() {
     chip("⏱ Tempo") { showUsagePage() }
     chip("📄 PDF") { pdfPicker.launch(arrayOf("application/pdf")) }
 }
+
+/** Shows a PDF in a full-screen page of the app (search and zoom included), without switching to the Browser tab. */
+@android.annotation.SuppressLint("SetJavaScriptEnabled")
+internal fun MainActivity.openPdfPage(pdf: java.io.File, title: String) {
+    if (!pdf.exists()) { toast("File non trovato"); return }
+    val copy = java.io.File(pdfDir, "page_" + pdf.name)
+    runCatching { pdf.copyTo(copy, true) }.onFailure { toast("Non riesco ad aprire il PDF"); return }
+    val url = MiaAi.ORIGIN + "/assets/pdf/viewer.html?theme=" + (if (AppRepository.isLightUi(this)) "light" else "dark") +
+        "&file=" + Uri.encode("/files/pdf/" + copy.name) + "&name=" + Uri.encode(title)
+    openPage(title) { root, body, dialog ->
+        (body.parent as? View)?.visibility = View.GONE
+        val wv = WebView(this)
+        syncWebViewTheme()
+        wv.settings.javaScriptEnabled = true
+        wv.settings.domStorageEnabled = true
+        wv.settings.allowFileAccess = false
+        wv.settings.builtInZoomControls = true
+        wv.settings.displayZoomControls = false
+        wv.setBackgroundColor(AppRepository.palette(this).bg)
+        wv.webViewClient = object : android.webkit.WebViewClient() {
+            override fun shouldInterceptRequest(view: WebView?, request: android.webkit.WebResourceRequest?): android.webkit.WebResourceResponse? =
+                request?.url?.let { assetLoader.shouldInterceptRequest(it) }
+            override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean = true
+        }
+        root.addView(wv, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
+        wv.loadUrl(url)
+        dialog.setOnDismissListener { runCatching { wv.stopLoading(); wv.destroy() } }
+    }
+}

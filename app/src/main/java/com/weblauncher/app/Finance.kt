@@ -86,7 +86,7 @@ object Finance {
 
 /** Birthdays saved in the phone's contacts. */
 object Birthdays {
-    data class Person(val name: String, val month: Int, val day: Int, val year: Int?, val contactId: Long) {
+    data class Person(val name: String, val month: Int, val day: Int, val year: Int?, val contactId: Long, val manualId: String? = null) {
         /** Days until the next birthday (0 = today). */
         fun daysFrom(now: Calendar): Int {
             val next = (now.clone() as Calendar).apply {
@@ -116,9 +116,48 @@ object Birthdays {
         return null
     }
 
+    // ---------- birthdays typed in the app ----------
+
+    /** A real calendar day (29 Feb only if the year is a leap year, or unknown). */
+    fun validDate(day: Int, month: Int, year: Int?): Boolean {
+        if (month !in 1..12 || day < 1) return false
+        if (year != null && year !in 1900..2100) return false
+        val c = Calendar.getInstance().apply { clear(); set(year ?: 2000, month - 1, 1) }   // 2000 is a leap year: 29 Feb is fine when no year
+        return day <= c.getActualMaximum(Calendar.DAY_OF_MONTH)
+    }
+
+    private data class Stored(val id: String, val name: String, val month: Int, val day: Int, val year: Int?)
+    private fun prefs(c: Context) = c.getSharedPreferences("wl_birthdays", Context.MODE_PRIVATE)
+
+    fun encodeManual(list: List<Person>): String =
+        com.google.gson.Gson().toJson(list.map { Stored(it.manualId ?: java.util.UUID.randomUUID().toString(), it.name, it.month, it.day, it.year) })
+    fun decodeManual(s: String?): List<Person> = runCatching {
+        com.google.gson.Gson().fromJson<List<Stored>>(s, object : com.google.gson.reflect.TypeToken<List<Stored>>() {}.type)
+    }.getOrNull().orEmpty().filterNotNull().map { Person(it.name, it.month, it.day, it.year, -1L, it.id) }
+
+    fun manual(c: Context): List<Person> = decodeManual(prefs(c).getString("list", null))
+    private fun saveManual(c: Context, list: List<Person>) = prefs(c).edit().putString("list", encodeManual(list)).apply()
+
+    /** Adds a new birthday, or replaces the one with [id]. Returns false if the date is not valid. */
+    fun saveManual(c: Context, id: String?, name: String, month: Int, day: Int, year: Int?): Boolean {
+        if (name.isBlank() || !validDate(day, month, year)) return false
+        val list = manual(c).filter { it.manualId != id }
+        saveManual(c, list + Person(name.trim(), month, day, year, -1L, id ?: java.util.UUID.randomUUID().toString()))
+        return true
+    }
+    fun removeManual(c: Context, id: String) = saveManual(c, manual(c).filter { it.manualId != id })
+
+    fun hasContactsPermission(c: Context) = androidx.core.content.ContextCompat.checkSelfPermission(c, android.Manifest.permission.READ_CONTACTS) ==
+        android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    /** Typed-in birthdays plus the ones in the phone's contacts (if allowed). The typed-in one wins when both exist. */
     fun load(c: Context): List<Person> {
-        if (androidx.core.content.ContextCompat.checkSelfPermission(c, android.Manifest.permission.READ_CONTACTS) !=
-            android.content.pm.PackageManager.PERMISSION_GRANTED) return emptyList()
+        val all = manual(c) + fromContacts(c)
+        return all.distinctBy { Triple(it.name.trim().lowercase(Locale.ITALIAN), it.month, it.day) }
+    }
+
+    private fun fromContacts(c: Context): List<Person> {
+        if (!hasContactsPermission(c)) return emptyList()
         val out = mutableListOf<Person>()
         runCatching {
             val d = android.provider.ContactsContract.Data.CONTENT_URI
@@ -134,7 +173,7 @@ object Birthdays {
                 }
             }
         }
-        return out.distinctBy { it.name to (it.month * 100 + it.day) }
+        return out
     }
 
     /** Upcoming within [days], soonest first. */

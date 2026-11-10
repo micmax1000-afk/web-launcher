@@ -1005,6 +1005,11 @@ class MainActivity : AppCompatActivity() {
             }, 6000)
             return
         }
+        if (intent?.getBooleanExtra(SelfTest.EXTRA_AI_SHEET, false) == true) {
+            intent.removeExtra(SelfTest.EXTRA_AI_SHEET)
+            showAiSheet("Prova della finestra AI", null, null, previewAnswer = ("Questa è una risposta lunga per provare lo scorrimento. ".repeat(6) + "\n\n").repeat(14))
+            return
+        }
         if (intent?.getBooleanExtra(SelfTest.EXTRA_DIALOG, false) == true) {
             intent.removeExtra(SelfTest.EXTRA_DIALOG)
             val probe = com.google.android.material.textfield.TextInputEditText(this).apply { hint = "Suggerimento di prova" }
@@ -1038,6 +1043,20 @@ class MainActivity : AppCompatActivity() {
             "voice" -> { intent.removeExtra(EXTRA_WIDGET); requestMicAndListen(); return }
             "stocks" -> { intent.removeExtra(EXTRA_WIDGET); showStocksPage(); return }
             "waste" -> { intent.removeExtra(EXTRA_WIDGET); showWastePage(); return }
+            "birthdays" -> { intent.removeExtra(EXTRA_WIDGET); showBirthdaysPage(); return }
+            "pdfpage" -> {          // automatic test: a small PDF made on the spot, shown by the in-app viewer
+                intent.removeExtra(EXTRA_WIDGET)
+                val f = java.io.File(cacheDir, "prova.pdf")
+                runCatching {
+                    val doc = android.graphics.pdf.PdfDocument()
+                    val page = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, 1).create())
+                    val paint = android.graphics.Paint().apply { textSize = 28f }
+                    page.canvas.drawText("Calendario di prova", 60f, 120f, paint)
+                    page.canvas.drawText("Lunedi: Umido   Giovedi: Carta", 60f, 180f, paint)
+                    doc.finishPage(page); f.outputStream().use { doc.writeTo(it) }; doc.close()
+                }
+                openPdfPage(f, "Prova PDF"); return
+            }
             "tools" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_TOOLS); return }
             "settings" -> { intent.removeExtra(EXTRA_WIDGET); settingsPage = null; settingsQuery = ""; showTab(TAB_SETTINGS); return }
             "instruments" -> { intent.removeExtra(EXTRA_WIDGET); showInstrumentsPage(); return }
@@ -1842,6 +1861,7 @@ class MainActivity : AppCompatActivity() {
     var expenseMonth = java.util.Calendar.getInstance()
     var expensesRefresh: (() -> Unit)? = null
     var financeRefresh: (() -> Unit)? = null
+    var birthdaysRefresh: (() -> Unit)? = null
     var scanPurpose: String? = null
 
     // ======================= Parking & saved places =======================
@@ -1889,7 +1909,7 @@ class MainActivity : AppCompatActivity() {
     var pendingContactCommand: String? = null
     val contactsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         val cmd = pendingContactCommand; pendingContactCommand = null
-        if (ok && cmd == "__birthdays__") showBirthdaysPage()
+        if (ok && cmd == "__birthdays__") { birthdaysRefresh?.invoke() ?: showBirthdaysPage() }
         else if (ok && cmd != null) systemVoiceCommand(cmd) else if (!ok) toast("Serve il permesso contatti")
     }
     var torchState = false

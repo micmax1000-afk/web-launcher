@@ -51,13 +51,19 @@ shot 05-browser 8
 
 # pagine degli strumenti: si devono aprire senza crash
 n=10
-for page in instruments tabata altimeter ruler metal split waste finance stocks; do
+for page in instruments tabata altimeter ruler metal split waste finance stocks birthdays; do
   adb shell am start -W -n $PKG/.MainActivity --es widget_action $page >/dev/null
   shot "$n-$page" 3
   alive || { echo "::error::L'app si è chiusa aprendo $page"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -60; exit 1; }
   adb shell input keyevent KEYCODE_BACK
   n=$((n+1))
 done
+
+# PDF dentro l'app (pagina con il visualizzatore, senza passare dal browser)
+adb shell am start -W -n $PKG/.MainActivity --es widget_action pdfpage >/dev/null
+shot 19-pdf-nell-app 7
+alive || { echo "::error::L'app si e' chiusa aprendo il PDF"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -60; exit 1; }
+adb shell input keyevent KEYCODE_BACK
 
 # riconoscitori di testo sul motore regex di Android (diverso da quello dei test JVM)
 adb shell am start -W -n $PKG/.MainActivity --ez wl_selftest true >/dev/null
@@ -128,6 +134,24 @@ case "$MIA" in
 esac
 adb shell am start -W -n $PKG/.MainActivity --es wl_theme_check dark >/dev/null
 adb shell cmd uimode night no
+
+# finestra dell'AI: il testo lungo deve scorrere e la finestra NON deve chiudersi (prima si chiudeva trascinando)
+adb shell am start -W -n $PKG/.MainActivity --ez wl_ai_sheet true >/dev/null
+sleep 3
+shot 09a-finestra-ai 1
+adb shell input swipe 540 1700 540 800 250; adb shell input swipe 540 1700 540 800 250
+adb shell input swipe 540 900 540 2100 150; adb shell input swipe 540 900 540 2100 150; adb shell input swipe 540 900 540 2100 150
+sleep 12
+shot 09b-finestra-ai 1
+AIS=$(adb logcat -d -s WL_SELFTEST:* | grep -o 'AI_SHEET .*' | tail -1)
+echo "Finestra AI: $AIS"
+case "$AIS" in
+  *'shown=true'*) ;;
+  *) echo "::error::La finestra dell'AI si e' chiusa mentre si scorreva ($AIS)"; exit 1;;
+esac
+MAXY=$(echo "$AIS" | sed -n 's/.*maxScrollY=\([0-9]*\).*/\1/p')
+if [ -z "$MAXY" ] || [ "$MAXY" -lt 100 ]; then echo "::error::Il testo della finestra AI non scorre ($AIS)"; exit 1; fi
+adb shell input keyevent KEYCODE_BACK
 
 # tocchi casuali solo dentro l'app (niente barra di sistema / altre app)
 adb shell monkey -p $PKG --pct-syskeys 0 --pct-appswitch 0 --throttle 150 -s 4242 --ignore-security-exceptions 600 > "$OUT/monkey.txt" 2>&1 || true
