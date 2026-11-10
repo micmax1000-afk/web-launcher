@@ -113,25 +113,80 @@ object Stocks {
 
     // ---------- network (call off the main thread) ----------
 
+    /** Why a Yahoo Finance request failed: [kind] = rete | limite | nontrovato | server | dati. */
+    class StockError(val kind: String, message: String, val http: Int = 0) : Exception(message)
+
+    /** The last failure, to explain «n.d.» to the user. Cleared by a successful request. */
+    @Volatile var lastError: StockError? = null
+
+    fun describe(e: Throwable?): String = when ((e as? StockError)?.kind) {
+        "rete" -> "Nessuna connessione a Yahoo Finance: controlla internet"
+        "limite" -> "Yahoo Finance ha limitato le richieste: riprova tra qualche minuto"
+        "nontrovato" -> "Titolo non trovato su Yahoo Finance"
+        "dati" -> "Yahoo Finance non ha mandato dati per questo titolo (simbolo non valido?)"
+        "server" -> "Yahoo Finance non risponde (errore ${(e as StockError).http})"
+        else -> "Quotazioni non disponibili al momento"
+    }
+
     private fun get(url: String): String {
         val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         c.connectTimeout = 10000; c.readTimeout = 15000
         c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36")
         c.setRequestProperty("Accept", "application/json,text/xml,*/*")
+        c.setRequestProperty("Accept-Language", "it-IT,it;q=0.9,en;q=0.8")
         try {
-            if (c.responseCode !in 200..299) error("HTTP ${c.responseCode}")
+            val code = c.responseCode
+            when {
+                code == 429 -> throw StockError("limite", "HTTP 429", 429)
+                code == 404 -> throw StockError("nontrovato", "HTTP 404", 404)
+                code !in 200..299 -> throw StockError("server", "HTTP $code", code)
+            }
             return c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+        } catch (e: StockError) { throw e
+        } catch (e: java.io.IOException) { throw StockError("rete", "${e.javaClass.simpleName}: ${e.message}")
         } finally { c.disconnect() }
     }
 
-    fun search(q: String): List<Asset> =
-        parseSearch(get("https://query2.finance.yahoo.com/v1/finance/search?q=" + java.net.URLEncoder.encode(q, "UTF-8") +
-            "&quotesCount=12&newsCount=0&lang=it-IT&region=IT"))
+    /** Yahoo Finance request with a second host and a pause before retrying when it is busy. Throws [StockError]. */
+    private fun <T> yahoo(path: String, hosts: List<String>, parse: (String) -> T?): T {
+        var last: StockError? = null
+        for ((i, h) in hosts.withIndex()) {
+            try {
+                val r = parse(get("https://$h.finance.yahoo.com$path")) ?: throw StockError("dati", "risposta senza dati")
+                lastError = null
+                return r
+            } catch (e: StockError) {
+                last = e
+                if (e.kind == "nontrovato" || e.kind == "dati") break           // retrying will not help
+                if (i < hosts.lastIndex) Thread.sleep(if (e.kind == "limite") 1200L else 400L)
+            }
+        }
+        lastError = last
+        throw last!!
+    }
 
-    fun chart(symbol: String, range: String = "1d", interval: String = "5m"): Chart? {
-        val path = "/v8/finance/chart/" + java.net.URLEncoder.encode(symbol, "UTF-8") + "?range=$range&interval=$interval&includePrePost=false"
-        return runCatching { parseChart(get("https://query1.finance.yahoo.com$path")) }.getOrNull()
-            ?: parseChart(get("https://query2.finance.yahoo.com$path"))
+    fun search(q: String): List<Asset> =
+        yahoo("/v1/finance/search?q=" + java.net.URLEncoder.encode(q, "UTF-8") + "&quotesCount=12&newsCount=0&lang=it-IT&region=IT",
+            listOf("query2", "query1", "query2")) { parseSearch(it) }
+
+    fun chart(symbol: String, range: String = "1d", interval: String = "5m"): Chart =
+        yahoo("/v8/finance/chart/" + java.net.URLEncoder.encode(symbol, "UTF-8") + "?range=$range&interval=$interval&includePrePost=false",
+            listOf("query1", "query2", "query1")) { parseChart(it) }
+
+    /** For the «Prova la connessione» button: what each Yahoo host answers right now. */
+    fun diagnose(): String = buildString {
+        for (h in listOf("query1", "query2")) {
+            val t0 = System.currentTimeMillis()
+            try {
+                val ch = parseChart(get("https://$h.finance.yahoo.com/v8/finance/chart/%5EGSPC?range=1d&interval=5m"))
+                append("✅ $h: ").append(if (ch != null) "S&P 500 ${fmtPrice(ch.price, ch.currency)}" else "risposta senza dati").append(" (${System.currentTimeMillis() - t0} ms)\n")
+            } catch (e: StockError) { append("❌ $h: ${describe(e)}\n    dettaglio: ${e.message}\n") }
+        }
+        try {
+            val r = parseSearch(get("https://query2.finance.yahoo.com/v1/finance/search?q=eni&quotesCount=5&newsCount=0"))
+            append("✅ ricerca titoli: ${r.size} risultati\n")
+        } catch (e: StockError) { append("❌ ricerca titoli: ${describe(e)}\n    dettaglio: ${e.message}\n") }
+        append("\nOra: ").append(java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.ITALIAN).format(java.util.Date()))
     }
 
     fun news(name: String): List<String> = runCatching {

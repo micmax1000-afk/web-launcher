@@ -686,7 +686,7 @@
 
             <LinearLayout android:id="@+id/navHome" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">
                 <ImageView android:id="@+id/iconHome" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/ic_nav_home" app:tint="?attr/colorPrimary" android:contentDescription="@string/home" />
-                <TextView android:id="@+id/labelHome" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/home" android:textColor="?attr/colorPrimary" android:textSize="11sp" android:textStyle="bold" android:layout_marginTop="3dp" />
+                <TextView android:id="@+id/labelHome" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="@string/home" android:textColor="?attr/colorPrimary" android:textSize="11sp" android:layout_marginTop="3dp" />
             </LinearLayout>
 
             <LinearLayout android:id="@+id/navNews" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:orientation="vertical" android:gravity="center" android:background="?attr/selectableItemBackgroundBorderless" android:paddingVertical="6dp">

@@ -221,10 +221,10 @@ internal fun MainActivity.askByVoice(question: String) {
     }
     var full = ""
     val dlg = MaterialAlertDialogBuilder(this).setTitle("🗣 $question").setView(android.widget.ScrollView(this).apply { addView(answer) })
-        .setPositiveButton("Altra domanda") { _, _ -> tts?.stop(); listenForQuestion() }
-        .setNeutralButton("Continua in chat") { _, _ -> tts?.stop(); showAiSheet("Risposta AI", null, question) }
-        .setNegativeButton("Stop") { _, _ -> tts?.stop() }
-        .setOnCancelListener { tts?.stop() }
+        .setPositiveButton("Altra domanda") { _, _ -> stopSpeaking(); listenForQuestion() }
+        .setNeutralButton("Continua in chat") { _, _ -> stopSpeaking(); showAiSheet("Risposta AI", null, question) }
+        .setNegativeButton("Stop") { _, _ -> stopSpeaking() }
+        .setOnCancelListener { stopSpeaking() }
         .show()
     val id = ai.ask(listOf("user" to question),
         "Sei un assistente vocale. Rispondi in italiano in massimo 3-4 frasi brevi e chiare, adatte a essere lette ad alta voce: " +

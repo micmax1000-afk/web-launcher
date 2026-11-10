@@ -43,7 +43,7 @@ internal fun MainActivity.showForgetSites() {
         fun render() {
             body.removeAllViews()
             val list = SiteCookies.list(this).sorted()
-            emptyLabel(body, "Per questi siti cookie e dati salvati si cancellano quando chiudi la scheda o esci dall'app: al prossimo accesso sei un visitatore nuovo.\n\nPer aggiungerne uno: nel browser, menu ⋮ → 🍪 Dimentica questo sito alla chiusura.")
+            hintLabel(body, "Per questi siti cookie e dati salvati si cancellano quando chiudi la scheda o esci dall'app: al prossimo accesso sei un visitatore nuovo.\n\nPer aggiungerne uno: nel browser, menu ⋮ → 🍪 Dimentica questo sito alla chiusura.")
             if (list.isEmpty()) return
             sectionLabel(body, "SITI · ${list.size}")
             list.forEach { reg ->
@@ -93,7 +93,7 @@ private fun MainActivity.renderPrivacyReport(d: PrivacyStats.Data) {
             trackers.forEach { (k, v) -> listRow(body, k, "$v volte", onClick = {}) }
         }
         if (d.total == 0L) emptyLabel(body, "Ancora nessun dato: naviga un po' con il blocco pubblicità attivo.")
-        emptyLabel(body, "I numeri restano solo sul telefono.")
+        hintLabel(body, "I numeri restano solo sul telefono.")
     }
 }
 

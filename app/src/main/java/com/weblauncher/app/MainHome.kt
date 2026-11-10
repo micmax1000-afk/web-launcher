@@ -82,14 +82,14 @@ internal fun MainActivity.renderTools() {
         layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
     })
     header.addView(android.widget.ImageButton(this).apply {
-        setImageResource(R.drawable.ic_nav_settings); setColorFilter(palette.text); background = null
+        setImageResource(R.drawable.ic_tool_settings); setColorFilter(palette.text); background = null
         setPadding(dp(10), dp(10), dp(10), dp(10)); scaleType = ImageView.ScaleType.FIT_CENTER
         layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
         contentDescription = "Impostazioni"
         setOnClickListener { showTab(TAB_SETTINGS) }
     })
     header.addView(android.widget.ImageButton(this).apply {
-        setImageResource(android.R.drawable.ic_menu_edit); setColorFilter(palette.text); background = null
+        setImageResource(R.drawable.ic_tool_edit); setColorFilter(palette.text); background = null
         setPadding(dp(12), dp(12), dp(12), dp(12)); scaleType = ImageView.ScaleType.FIT_CENTER
         layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
         contentDescription = "Personalizza"
@@ -97,7 +97,9 @@ internal fun MainActivity.renderTools() {
     }, 1)
     list.addView(header)
     val search = android.widget.EditText(this).apply {
-        hint = "🔎  Cerca uno strumento"; setSingleLine(); textSize = 16f
+        hint = "Cerca uno strumento"; setSingleLine(); textSize = 16f
+        compoundDrawablePadding = dp(10)
+        setCompoundDrawablesRelativeWithIntrinsicBounds(androidx.core.content.ContextCompat.getDrawable(this@renderTools, R.drawable.ic_tool_search)?.mutate()?.apply { setTint(palette.textMuted) }, null, null, null)
         setTextColor(palette.text); setHintTextColor(palette.textMuted)
         setPadding(dp(18), dp(12), dp(18), dp(12))
         background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 26 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
@@ -383,15 +385,15 @@ private fun toolIcon(label: String): Int = when (label) {
     "Bussola" -> R.drawable.ic_tool_compass
     "Livella" -> R.drawable.ic_tool_level
     "Altimetro" -> R.drawable.ic_tool_altitude
-    "Tabata" -> R.drawable.ic_tool_usage
-    "Raccolta rifiuti" -> R.drawable.ic_tool_box
+    "Tabata" -> R.drawable.ic_tool_dumbbell
+    "Raccolta rifiuti" -> R.drawable.ic_tool_trash
     "La mia settimana" -> R.drawable.ic_tool_chart
-    "Misure e sensori" -> R.drawable.ic_tool_level
+    "Misure e sensori" -> R.drawable.ic_tool_ruler
     "Torcia e bussola" -> R.drawable.ic_tool_torch
     "Borsa" -> R.drawable.ic_tool_chart
     "Pacchi" -> R.drawable.ic_tool_box
     "Meteo" -> R.drawable.ic_tool_weather
-    "Tempo di utilizzo" -> R.drawable.ic_tool_usage
+    "Tempo di utilizzo" -> R.drawable.ic_tool_hourglass
     "Calcoli" -> R.drawable.ic_tool_calc
     "Catalogo app" -> R.drawable.ic_tool_catalog
     "Profilo 2" -> R.drawable.ic_tool_mask

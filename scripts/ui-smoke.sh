@@ -16,8 +16,28 @@ adb logcat -c
 shot() { sleep "${2:-4}"; adb exec-out screencap -p > "$OUT/$1.png"; echo "schermata: $1"; }
 alive() { adb shell pidof $PKG >/dev/null; }
 
+# le schermate si fanno con il tema chiaro, come lo usa chi guarda
+adb shell am start -W -n $PKG/.MainActivity >/dev/null
+sleep 4
+adb shell am start -W -n $PKG/.MainActivity --es wl_theme_check light >/dev/null
+sleep 4
 adb shell am start -W -n $PKG/.MainActivity >/dev/null
 shot 01-home 6
+# Strumenti (scorrendo) e ogni pagina delle Impostazioni
+adb shell am start -W -n $PKG/.MainActivity --es widget_action tools >/dev/null
+shot 02a-strumenti 3
+adb shell input swipe 540 1800 540 500 300; shot 02b-strumenti 2
+adb shell input swipe 540 1800 540 500 300; shot 02c-strumenti 2
+adb shell am start -W -n $PKG/.MainActivity --es widget_action settings >/dev/null
+shot 03a-impostazioni 3
+n=1
+for key in ASPETTO HOME BROWSER PRIVACY NOTIZIE BACKUP AI AGGIORNAMENTI; do
+  adb shell am start -W -n $PKG/.MainActivity --es widget_action settings_$key >/dev/null
+  shot "03b-imp-$n-$key" 3
+  alive || { echo "::error::L'app si è chiusa aprendo le impostazioni $key"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -60; exit 1; }
+  n=$((n+1))
+done
+adb shell am start -W -n $PKG/.MainActivity --es widget_action settings >/dev/null
 adb shell am start -W -n $PKG/.MainActivity --es widget_action news >/dev/null
 shot 02-notizie 8
 adb shell am start -W -n $PKG/.MainActivity --es widget_action reminders >/dev/null
@@ -96,6 +116,16 @@ if [ -z "$HL" ] || [ "$HL" -gt 170 ] || [ "$HA" -lt 150 ] || [ "$TL" -gt 120 ]; 
   echo "::error::Con il tema chiaro i suggerimenti o il testo dei campi non si leggono ($HINT)"; exit 1
 fi
 adb shell input keyevent KEYCODE_BACK
+# Mia AI con sistema scuro e app chiara: deve essere chiara (non scura)
+adb shell am start -W -n $PKG/.MainActivity --ez wl_mia_check true >/dev/null
+sleep 12
+shot 08-mia-ai-tema-chiaro 2
+MIA=$(adb logcat -d -s WL_SELFTEST:* | grep -o 'MIA_CHECK=.*' | tail -1)
+echo "Mia AI: $MIA"
+case "$MIA" in
+  *'"light|rgb('*'|function|function"'*) ;;
+  *) echo "::error::Mia AI non segue il tema chiaro dell'app oppure mancano le funzioni vocali ($MIA)"; exit 1;;
+esac
 adb shell am start -W -n $PKG/.MainActivity --es wl_theme_check dark >/dev/null
 adb shell cmd uimode night no
 

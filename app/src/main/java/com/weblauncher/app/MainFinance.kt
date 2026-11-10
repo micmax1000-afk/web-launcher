@@ -43,12 +43,23 @@ internal fun MainActivity.showFinancePage() {
             val earned = Finance.incomes(this).filter { sameMonth(it.time) }.sumOf { it.amount }
             val month = SimpleDateFormat("MMMM yyyy", Locale.ITALIAN).format(now.time).replaceFirstChar { it.uppercase() }
             sectionLabel(body, month.uppercase(Locale.ITALIAN))
-            body.addView(TextView(this).apply {
-                val saldo = earned - spent
-                text = "Entrate  ${Expenses.fmt(earned)}\nSpese    ${Expenses.fmt(spent)}\nSaldo    ${if (saldo >= 0) "+" else "−"}${Expenses.fmt(kotlin.math.abs(saldo))}"
-                textSize = 17f; setTextColor(palette.text); typeface = android.graphics.Typeface.MONOSPACE
-                setPadding(dp(14), dp(4), dp(14), dp(8))
-            })
+            val saldo = earned - spent
+            val stats = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(2), 0, dp(4)) }
+            fun stat(label: String, value: String, color: Int) = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER
+                setPadding(dp(6), dp(12), dp(6), dp(12))
+                background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 16 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
+                layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(3), 0, dp(3), 0) }
+                addView(TextView(this@showFinancePage).apply { text = label; textSize = 12f; setTextColor(palette.textMuted); gravity = android.view.Gravity.CENTER })
+                addView(TextView(this@showFinancePage).apply {
+                    text = value; textSize = 16f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(color); gravity = android.view.Gravity.CENTER
+                    setPadding(0, dp(3), 0, 0); maxLines = 1; setAutoSizeTextTypeUniformWithConfiguration(11, 16, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+                })
+            }
+            stats.addView(stat("Entrate", Expenses.fmt(earned), 0xFF16A34A.toInt()))
+            stats.addView(stat("Spese", Expenses.fmt(spent), 0xFFDC2626.toInt()))
+            stats.addView(stat("Saldo", (if (saldo >= 0) "+" else "−") + Expenses.fmt(kotlin.math.abs(saldo)), if (saldo >= 0) 0xFF16A34A.toInt() else 0xFFDC2626.toInt()))
+            body.addView(stats)
 
             val accounts = Finance.accounts(this)
             sectionLabel(body, "CONTI" + if (accounts.isNotEmpty()) " · totale ${Expenses.fmt(accounts.sumOf { it.balance })}" else "")
@@ -79,7 +90,7 @@ internal fun MainActivity.showFinancePage() {
             listRow(body, "🧾 Spese sanitarie e detraibili ${now.get(Calendar.YEAR)}", "Totale, detrazione stimata ed esportazione per il 730",
                 onClick = { show730Page(now.get(Calendar.YEAR)) })
             listRow(body, "🧾 Anno ${now.get(Calendar.YEAR) - 1} (per il 730 di quest'anno)", null, onClick = { show730Page(now.get(Calendar.YEAR) - 1) })
-            emptyLabel(body, "I dati restano sul telefono e sono inclusi nel backup completo.")
+            hintLabel(body, "I dati restano sul telefono e sono inclusi nel backup completo.")
         }
         render()
         financeRefresh = { render() }
@@ -154,7 +165,7 @@ internal fun MainActivity.show730Page(year: Int) {
                 } + "\n\nTotale;" + String.format(Locale.ITALIAN, "%.2f", total)
                 startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_SUBJECT, "Spese detraibili $year"); putExtra(Intent.EXTRA_TEXT, csv) }, "Esporta"))
             })
-            emptyLabel(body, "Sono incluse in automatico le spese «Salute» e quelle con parole come farmacia, dentista, visita, veterinario. Tocca una spesa per includerla o escluderla. Conserva scontrini parlanti e fatture: le foto le trovi in Biglietti e documenti.")
+            hintLabel(body, "Sono incluse in automatico le spese «Salute» e quelle con parole come farmacia, dentista, visita, veterinario. Tocca una spesa per includerla o escluderla. Conserva scontrini parlanti e fatture: le foto le trovi in Biglietti e documenti.")
             sectionLabel(body, "INCLUSE · ${ded.size}")
             ded.forEach { e -> listRow(body, "✅ ${Expenses.fmt(e.amount)} · ${e.desc}", SimpleDateFormat("d MMM", Locale.ITALIAN).format(java.util.Date(e.time)) + " · ${e.cat}", onClick = { Finance.toggleDeductible(this, e.id); render() }) }
             val other = all.filter { !Finance.isDeductible(it, ov) }
@@ -162,7 +173,7 @@ internal fun MainActivity.show730Page(year: Int) {
                 sectionLabel(body, "ALTRE SPESE DELL'ANNO · tocca per includere")
                 other.takeLast(60).reversed().forEach { e -> listRow(body, "${Expenses.fmt(e.amount)} · ${e.desc}", SimpleDateFormat("d MMM", Locale.ITALIAN).format(java.util.Date(e.time)) + " · ${e.cat}", onClick = { Finance.toggleDeductible(this, e.id); render() }) }
             }
-            emptyLabel(body, "Stima indicativa: verifica sempre con il CAF o con il 730 precompilato.")
+            hintLabel(body, "Stima indicativa: verifica sempre con il CAF o con il 730 precompilato.")
         }
         render()
     }

@@ -269,7 +269,7 @@ internal fun MainActivity.openWalletItem(w: WalletItem) {
         "pdf" -> {
             val f = java.io.File(w.path)
             if (!f.exists()) { toast("File mancante"); return }
-            val viewer = MiaAi.ORIGIN + "/assets/pdf/viewer.html?file=" + Uri.encode("/files/wallet/" + f.name) + "&name=" + Uri.encode(w.title)
+            val viewer = MiaAi.ORIGIN + "/assets/pdf/viewer.html?theme=" + (if (AppRepository.isLightUi(this)) "light" else "dark") + "&file=" + Uri.encode("/files/wallet/" + f.name) + "&name=" + Uri.encode(w.title)
             if (webTabs.getOrNull(webTabIndex)?.url?.startsWith("http") == true) openNewTab(false)
             openInBrowser(viewer)
         }

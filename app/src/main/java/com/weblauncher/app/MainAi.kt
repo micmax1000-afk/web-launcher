@@ -303,7 +303,7 @@ internal fun MainActivity.showAiSheet(
     input.setOnEditorActionListener { _, id, _ ->
         if (id == EditorInfo.IME_ACTION_SEND) { send(input.text?.toString()?.trim().orEmpty(), true); true } else false
     }
-    sheet.setOnDismissListener { if (running != 0) ai.cancel(running); tts?.stop() }
+    sheet.setOnDismissListener { if (running != 0) ai.cancel(running); stopSpeaking() }
     sheet.setContentView(root)
     root.layoutParams?.height = (resources.displayMetrics.heightPixels * 0.78f).toInt()
     root.minimumHeight = (resources.displayMetrics.heightPixels * 0.78f).toInt()

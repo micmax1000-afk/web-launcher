@@ -86,6 +86,12 @@ class MainActivity : AppCompatActivity() {
     var ttsReady = false
     var pendingSpeech: Pair<String, Float>? = null
     var speechReply: androidx.webkit.JavaScriptReplyProxy? = null
+    /** Reading aloud: generation counter (a newer reading supersedes the older), who wants to know when it ends, web origin. */
+    @Volatile var speakGen = 0
+    var speakState: ((Boolean) -> Unit)? = null
+    var speakFromWeb = false
+    var speakReply: androidx.webkit.JavaScriptReplyProxy? = null
+    var ttsWarned = false
 
     val webSpeechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -268,7 +274,7 @@ class MainActivity : AppCompatActivity() {
             )
         }
         findViewById<android.widget.FrameLayout>(R.id.webViewHost).addView(webView)
-        AppRepository.restoreUiMode(this)
+        syncWebViewTheme()
         val palette = AppRepository.palette(this)
         window.statusBarColor = palette.bg
         window.navigationBarColor = palette.bg
@@ -527,11 +533,12 @@ class MainActivity : AppCompatActivity() {
             }
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 AdBlocker.resetCount()
+                if (speakFromWeb) stopSpeaking()          // leaving the page: stop its voice
                 pageHost = runCatching { Uri.parse(url).host }.getOrNull()
                 showBars()
                 if (MiaAi.isMiaUrl(url) &&
                     !androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)
-                ) view?.evaluateJavascript(MiaAi.SPEECH_SHIM, null)
+                ) view?.evaluateJavascript(MiaAi.script(AppRepository.isLightUi(this@MainActivity)), null)
                 webProgress.visibility = View.VISIBLE; webProgress.progress = 0
             }
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -823,6 +830,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
         AppRepository.restoreUiMode(this)
+        if (tab != TAB_BROWSER && speakFromWeb) stopSpeaking()   // the page's voice must not go on in another screen
+        syncWebViewTheme()
         currentTab = tab
         showBars()
         hideSuggestions()
@@ -854,6 +863,10 @@ class MainActivity : AppCompatActivity() {
         val toolsActive = tab == TAB_SETTINGS || tab == TAB_TOOLS
         iconSettings.setColorFilter(if (toolsActive) accent else muted)
         labelSettings.setTextColor(if (toolsActive) accent else muted)
+        // only the active tab is bold (Home used to stay bold whatever the tab)
+        listOf(labelHome to (tab == TAB_HOME), labelBrowser to (tab == TAB_BROWSER), findViewById<TextView>(R.id.labelNews) to (tab == TAB_NEWS),
+            findViewById<TextView>(R.id.labelAudio) to (tab == TAB_AUDIO), labelSettings to toolsActive)
+            .forEach { (l, on) -> l.setTypeface(null, if (on) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL) }
     }
 
     fun openInBrowser(url: String) {
@@ -919,6 +932,7 @@ class MainActivity : AppCompatActivity() {
             webPaused = true
         }
         vaultDialog?.dismiss()
+        if (speakFromWeb && !isChangingConfigurations) stopSpeaking()
         runCatching { forgetClosedSites() }
         io.execute { PrivacyStats.flush(this) }
         if (lockEnabled() && !isChangingConfigurations) lockedSince = System.currentTimeMillis()
@@ -945,7 +959,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        AppRepository.restoreUiMode(this)
+        syncWebViewTheme()
         hasWindowFocusOrResumed = true
         if (::webView.isInitialized) trackUsage()
         checkSyncFromOtherDevice()
@@ -970,11 +984,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openShortcut(intent: Intent?) {
+        intent?.getStringExtra(EXTRA_WIDGET)?.takeIf { it.startsWith("settings_") }?.let { w ->     // «settings_PRIVACY»: a settings page
+            intent.removeExtra(EXTRA_WIDGET); settingsPage = w.removePrefix("settings_"); settingsQuery = ""; showTab(TAB_SETTINGS); return
+        }
         if (intent != null && handleShare(intent)) { intent.action = null; return }
         // prova automatica del tema (telefono virtuale): imposta un tema, poi apre una finestra di prova
         intent?.getStringExtra(SelfTest.EXTRA_THEME)?.let { mode ->
             intent.removeExtra(SelfTest.EXTRA_THEME)
             if (mode in setOf("light", "dark", "system")) { repo.setThemeMode(mode); AppRepository.applySavedTheme(this) }
+            return
+        }
+        // prova automatica: Mia AI deve seguire il tema dell'app, anche con il sistema nell'altro tema
+        if (intent?.getBooleanExtra(SelfTest.EXTRA_MIA, false) == true) {
+            intent.removeExtra(SelfTest.EXTRA_MIA)
+            openMiaAi()
+            uiHandler.postDelayed({
+                webView.evaluateJavascript("(function(){try{return document.documentElement.getAttribute('data-theme')+'|'+getComputedStyle(document.body).backgroundColor+'|'+typeof speechSynthesis.cancel+'|'+typeof webkitSpeechRecognition}catch(e){return 'errore '+e}})()") { r ->
+                    android.util.Log.i(SelfTest.TAG, "MIA_CHECK=$r")
+                }
+            }, 6000)
             return
         }
         if (intent?.getBooleanExtra(SelfTest.EXTRA_DIALOG, false) == true) {
@@ -1010,6 +1038,8 @@ class MainActivity : AppCompatActivity() {
             "voice" -> { intent.removeExtra(EXTRA_WIDGET); requestMicAndListen(); return }
             "stocks" -> { intent.removeExtra(EXTRA_WIDGET); showStocksPage(); return }
             "waste" -> { intent.removeExtra(EXTRA_WIDGET); showWastePage(); return }
+            "tools" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_TOOLS); return }
+            "settings" -> { intent.removeExtra(EXTRA_WIDGET); settingsPage = null; settingsQuery = ""; showTab(TAB_SETTINGS); return }
             "instruments" -> { intent.removeExtra(EXTRA_WIDGET); showInstrumentsPage(); return }
             "tabata" -> { intent.removeExtra(EXTRA_WIDGET); showTabata(); return }
             "altimeter" -> { intent.removeExtra(EXTRA_WIDGET); showAltimeter(); return }
@@ -1414,6 +1444,12 @@ class MainActivity : AppCompatActivity() {
         popup.showAsDropDown(anchor, -dp(228), -anchor.height + dp(4))
     }
 
+    /** WebView resets the theme to the phone's when it is created: put the app's back and tell the WebView. */
+    fun syncWebViewTheme() {
+        AppRepository.restoreUiMode(this)
+        if (::webView.isInitialized) runCatching { webView.dispatchConfigurationChanged(resources.configuration) }
+    }
+
     fun applyDarkSites() {
         if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.ALGORITHMIC_DARKENING)) {
             androidx.webkit.WebSettingsCompat.setAlgorithmicDarkeningAllowed(
@@ -1539,6 +1575,11 @@ class MainActivity : AppCompatActivity() {
     val pdfPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) openPdfFromUri(uri)
     }
+    /** PDF of the rubbish collection calendar (Strumenti → Raccolta rifiuti). */
+    val wastePdfPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importWastePdf(uri)
+    }
+    var wasteRefresh: (() -> Unit)? = null
 
     val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 

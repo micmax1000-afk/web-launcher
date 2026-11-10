@@ -198,14 +198,14 @@ internal fun MainActivity.cookingMode(r: Recipe) {
     })
     big("‹ Indietro") { if (step > 0) { step--; show() } }
     big("🔊") { speak(r.steps[step], 1f) }
-    big("Avanti ›") { if (step < r.steps.lastIndex) { step++; show() } else { tts?.stop(); dialog.dismiss(); toast("Buon appetito! 🍽") } }
+    big("Avanti ›") { if (step < r.steps.lastIndex) { step++; show() } else { stopSpeaking(); dialog.dismiss(); toast("Buon appetito! 🍽") } }
     root.addView(counter); root.addView(scroll); root.addView(nav)
     dialog.setContentView(root)
     dialog.window?.apply {
         setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
         addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
-    dialog.setOnDismissListener { tts?.stop() }
+    dialog.setOnDismissListener { stopSpeaking() }
     dialog.show()
     show()
 }
@@ -513,8 +513,8 @@ internal fun MainActivity.showBrief(text: String?) {
     val t = text ?: Brief.lastText(this) ?: run { toast("Nessun buongiorno ancora"); return }
     MaterialAlertDialogBuilder(this).setTitle("☀️ Buongiorno").setMessage(t)
         .setPositiveButton("🔊 Ascolta") { _, _ -> speak(t.replace("•", ","), 1f) }
-        .setNegativeButton("Chiudi") { _, _ -> tts?.stop() }
-        .setOnCancelListener { tts?.stop() }.show()
+        .setNegativeButton("Chiudi") { _, _ -> stopSpeaking() }
+        .setOnCancelListener { stopSpeaking() }.show()
     speak(t.replace("•", ","), 1f)
 }
 
