@@ -163,7 +163,10 @@ internal fun MainActivity.renderTools() {
     ))
     group("UTILITÀ", listOf(
         Triple("📷", "QR code") { scanQr() },
-        Triple("🔦", "Torcia e bussola") { showUtilitiesPage() },
+        Triple("🔦", "Torcia") { showUtilitiesPage("torcia") },
+        Triple("🧭", "Bussola") { showUtilitiesPage("bussola") },
+        Triple("📏", "Livella") { showUtilitiesPage("livella") },
+        Triple("⛰️", "Altimetro") { showUtilitiesPage("altimetro") },
         Triple("📈", "Borsa") { showStocksPage() },
         Triple("📦", "Pacchi") { showParcelsPage() },
         Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
@@ -322,7 +325,10 @@ private fun toolIcon(label: String): Int = when (label) {
     "Leggi dopo" -> R.drawable.ic_tool_bookmark
     "Cassaforte" -> R.drawable.ic_tool_lock
     "QR code" -> R.drawable.ic_tool_qr
-    "Torcia e bussola" -> R.drawable.ic_tool_torch
+    "Torcia" -> R.drawable.ic_tool_torch
+    "Bussola" -> R.drawable.ic_tool_compass
+    "Livella" -> R.drawable.ic_tool_level
+    "Altimetro" -> R.drawable.ic_tool_altitude
     "Borsa" -> R.drawable.ic_tool_chart
     "Pacchi" -> R.drawable.ic_tool_box
     "Meteo" -> R.drawable.ic_tool_weather

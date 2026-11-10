@@ -346,7 +346,7 @@ internal fun MainActivity.readScanWithAi(images: List<java.io.File>) {
 
 // ======================= Utilities: torch, compass, level =======================
 
-internal fun MainActivity.showUtilitiesPage() {
+internal fun MainActivity.showUtilitiesPage(only: String? = null) {
     val sm = getSystemService(SENSOR_SERVICE) as android.hardware.SensorManager
     val cm = getSystemService(CAMERA_SERVICE) as android.hardware.camera2.CameraManager
     val torchId = runCatching {
@@ -354,7 +354,16 @@ internal fun MainActivity.showUtilitiesPage() {
     }.getOrNull()
     var torchOn = false
     var listener: android.hardware.SensorEventListener? = null
-    openPage("Utilità") { _, body, dialog ->
+    var pressureNow = 1013.25f
+    var zeroPressure: Float? = null
+    val title = when (only) {
+        "torcia" -> "Torcia"
+        "bussola" -> "Bussola"
+        "livella" -> "Livella"
+        "altimetro" -> "Altimetro"
+        else -> "Utilità"
+    }
+    openPage(title) { _, body, dialog ->
         val palette = AppRepository.palette(this)
         val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
         val d = resources.displayMetrics.density
@@ -368,7 +377,9 @@ internal fun MainActivity.showUtilitiesPage() {
             layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(4), dp(6), dp(4), dp(6)) }
             body.addView(this)
         }
+        val showAll = only == null
         // torch
+        if (showAll || only == "torcia") {
         val torch = card()
         val torchBtn = TextView(this).apply {
             text = "🔦"; textSize = 46f; gravity = android.view.Gravity.CENTER
@@ -384,32 +395,77 @@ internal fun MainActivity.showUtilitiesPage() {
             torchLabel.text = if (torchOn) "Torcia accesa" else "Torcia spenta"
         }
         torch.addView(torchBtn); torch.addView(torchLabel)
+        }
         // compass
+        val needle: TextView
+        val heading: TextView
+        if (showAll || only == "bussola") {
         val compass = card()
-        val needle = TextView(this).apply { text = "⬆"; textSize = 54f; setTextColor(0xFFE53935.toInt()); gravity = android.view.Gravity.CENTER }
-        val heading = TextView(this).apply { textSize = 26f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); gravity = android.view.Gravity.CENTER }
+        needle = TextView(this).apply { text = "⬆"; textSize = 54f; setTextColor(0xFFE53935.toInt()); gravity = android.view.Gravity.CENTER }
+        heading = TextView(this).apply { textSize = 26f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); gravity = android.view.Gravity.CENTER }
         compass.addView(TextView(this).apply { text = "Bussola"; textSize = 13f; setTextColor(palette.textMuted) })
         compass.addView(needle); compass.addView(heading)
+        } else {
+            needle = TextView(this)
+            heading = TextView(this)
+        }
         // level
-        val level = card()
-        val bubbleBox = android.widget.FrameLayout(this).apply {
-            layoutParams = android.widget.LinearLayout.LayoutParams(dp(200), dp(200))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(palette.iconTile); setStroke(dp(2), palette.stroke)
+        var bubble: View? = null
+        var angles: TextView? = null
+        if (showAll || only == "livella") {
+            val level = card()
+            val bubbleBox = android.widget.FrameLayout(this).apply {
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(200), dp(200))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(palette.iconTile); setStroke(dp(2), palette.stroke)
+                }
             }
+            bubble = View(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(accent) }
+                layoutParams = android.widget.FrameLayout.LayoutParams(dp(40), dp(40), android.view.Gravity.CENTER)
+            }
+            bubbleBox.addView(View(this).apply {
+                background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setStroke(dp(2), palette.textMuted) }
+                layoutParams = android.widget.FrameLayout.LayoutParams(dp(48), dp(48), android.view.Gravity.CENTER)
+            })
+            bubbleBox.addView(bubble)
+            angles = TextView(this).apply { textSize = 15f; setTextColor(palette.text); setPadding(0, dp(8), 0, 0); gravity = android.view.Gravity.CENTER }
+            level.addView(TextView(this).apply { text = "Livella (appoggia il telefono)"; textSize = 13f; setTextColor(palette.textMuted); setPadding(0, 0, 0, dp(8)) })
+            level.addView(bubbleBox); level.addView(angles)
         }
-        val bubble = View(this).apply {
-            background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(accent) }
-            layoutParams = android.widget.FrameLayout.LayoutParams(dp(40), dp(40), android.view.Gravity.CENTER)
+        val pressureView: TextView?
+        val altitudeView: TextView?
+        val relativeView: TextView?
+        if (showAll || only == "altimetro") {
+            val alti = card()
+            pressureView = TextView(this).apply { textSize = 34f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); gravity = android.view.Gravity.CENTER }
+            altitudeView = TextView(this).apply { textSize = 18f; setTextColor(palette.text); gravity = android.view.Gravity.CENTER; setPadding(0, dp(6), 0, 0) }
+            relativeView = TextView(this).apply { textSize = 16f; setTextColor(palette.textMuted); gravity = android.view.Gravity.CENTER; setPadding(0, dp(4), 0, dp(8)) }
+            alti.addView(TextView(this).apply { text = "Altimetro"; textSize = 13f; setTextColor(palette.textMuted) })
+            alti.addView(pressureView); alti.addView(altitudeView); alti.addView(relativeView)
+            val baro = sm.getDefaultSensor(android.hardware.Sensor.TYPE_PRESSURE)
+            if (baro == null) {
+                pressureView.text = "Barometro assente"
+                altitudeView.text = "Questo telefono non misura la quota"
+            } else {
+                pressureView.text = "…"
+                alti.addView(TextView(this).apply {
+                    text = "Azzera qui"
+                    textSize = 16f
+                    setTextColor(accent)
+                    setTypeface(typeface, android.graphics.Typeface.BOLD)
+                    setPadding(dp(16), dp(10), dp(16), dp(10))
+                    setOnClickListener {
+                        zeroPressure = pressureNow
+                        toast("Quota azzerata")
+                    }
+                })
+            }
+        } else {
+            pressureView = null
+            altitudeView = null
+            relativeView = null
         }
-        bubbleBox.addView(View(this).apply {
-            background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setStroke(dp(2), palette.textMuted) }
-            layoutParams = android.widget.FrameLayout.LayoutParams(dp(48), dp(48), android.view.Gravity.CENTER)
-        })
-        bubbleBox.addView(bubble)
-        val angles = TextView(this).apply { textSize = 15f; setTextColor(palette.text); setPadding(0, dp(8), 0, 0); gravity = android.view.Gravity.CENTER }
-        level.addView(TextView(this).apply { text = "Livella (appoggia il telefono)"; textSize = 13f; setTextColor(palette.textMuted); setPadding(0, 0, 0, dp(8)) })
-        level.addView(bubbleBox); level.addView(angles)
 
         val rot = FloatArray(9); val orient = FloatArray(3)
         val dirs = arrayOf("N", "NE", "E", "SE", "S", "SO", "O", "NO")
@@ -426,20 +482,42 @@ internal fun MainActivity.showUtilitiesPage() {
                     android.hardware.Sensor.TYPE_ACCELEROMETER -> {
                         val x = e.values[0]; val y = e.values[1]
                         val max = dp(80).toFloat()
-                        bubble.translationX = (-x / 9.81f * max * 2).coerceIn(-max, max)
-                        bubble.translationY = (y / 9.81f * max * 2).coerceIn(-max, max)
+                        bubble?.translationX = (-x / 9.81f * max * 2).coerceIn(-max, max)
+                        bubble?.translationY = (y / 9.81f * max * 2).coerceIn(-max, max)
                         val ax = Math.toDegrees(Math.asin((x / 9.81).coerceIn(-1.0, 1.0))).toInt()
                         val ay = Math.toDegrees(Math.asin((y / 9.81).coerceIn(-1.0, 1.0))).toInt()
-                        angles.text = if (kotlin.math.abs(ax) <= 1 && kotlin.math.abs(ay) <= 1) "✓ In bolla" else "${kotlin.math.abs(ax)}° · ${kotlin.math.abs(ay)}°"
+                        angles?.text = if (kotlin.math.abs(ax) <= 1 && kotlin.math.abs(ay) <= 1) "✓ In bolla" else "${kotlin.math.abs(ax)}° · ${kotlin.math.abs(ay)}°"
+                    }
+                    android.hardware.Sensor.TYPE_PRESSURE -> {
+                        val p = e.values[0]
+                        pressureNow = p
+                        val sea = 44330.0 * (1.0 - Math.pow((p / 1013.25).toDouble(), 0.1903))
+                        pressureView?.text = String.format(java.util.Locale.ITALIAN, "%.0f hPa", p)
+                        altitudeView?.text = "${sea.toInt()} m sul livello del mare"
+                        val base = zeroPressure
+                        relativeView?.text = if (base == null) "Tocca «Azzera qui» per la quota da questo punto"
+                        else {
+                            val fromHere = 44330.0 * (1.0 - Math.pow((p / base).toDouble(), 0.1903))
+                            if (fromHere >= 0) "+${fromHere.toInt()} m da qui" else "${fromHere.toInt()} m da qui"
+                        }
                     }
                 }
             }
             override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
         }
-        val rv = sm.getDefaultSensor(android.hardware.Sensor.TYPE_ROTATION_VECTOR)
-        val acc = sm.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
-        if (rv != null) sm.registerListener(listener, rv, android.hardware.SensorManager.SENSOR_DELAY_UI) else heading.text = "Bussola non disponibile"
-        if (acc != null) sm.registerListener(listener, acc, android.hardware.SensorManager.SENSOR_DELAY_UI)
+        if (showAll || only == "bussola") {
+            val rv = sm.getDefaultSensor(android.hardware.Sensor.TYPE_ROTATION_VECTOR)
+            if (rv != null) sm.registerListener(listener, rv, android.hardware.SensorManager.SENSOR_DELAY_UI) else heading.text = "Bussola non disponibile"
+        }
+        if (showAll || only == "livella") {
+            val acc = sm.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+            if (acc != null) sm.registerListener(listener, acc, android.hardware.SensorManager.SENSOR_DELAY_UI)
+        }
+        if (showAll || only == "altimetro") {
+            sm.getDefaultSensor(android.hardware.Sensor.TYPE_PRESSURE)?.let {
+                sm.registerListener(listener, it, android.hardware.SensorManager.SENSOR_DELAY_UI)
+            }
+        }
         dialog.setOnDismissListener {
             listener?.let { sm.unregisterListener(it) }
             if (torchOn) torchId?.let { runCatching { cm.setTorchMode(it, false) } }
