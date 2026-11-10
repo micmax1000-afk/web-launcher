@@ -205,11 +205,20 @@ internal fun MainActivity.showTabata() {
     val prefs = getSharedPreferences("wl_tools", MODE_PRIVATE)
     var timer: android.os.CountDownTimer? = null
     var tone: android.media.ToneGenerator? = null
+    var coach: Coach? = null
     openPage("Tabata") { _, body, dialog ->
         val palette = AppRepository.palette(this)
         var work = prefs.getInt("tb_work", 20); var rest = prefs.getInt("tb_rest", 10)
         var rounds = prefs.getInt("tb_rounds", 8); var prep = prefs.getInt("tb_prep", 10)
         val phase = big(body, 30f); val clock = big(body, 96f); val round = small(body, 18f)
+        val hrLine = small(body, 18f)
+        val hh = android.os.Handler(android.os.Looper.getMainLooper())
+        val hrTick = object : Runnable { override fun run() {
+            val b = HrBand.current(); val mx = WorkoutOpts.maxHr(this@showTabata)
+            hrLine.text = if (HrBand.isOn()) (if (b > 0) "❤ $b · " + HrZones.NAMES[HrZones.zone(b, mx)].substringBefore(" ·") else "❤ —") else ""
+            if (b > 0) hrLine.setTextColor(HrZones.COLORS[HrZones.zone(b, mx)])
+            hh.postDelayed(this, 1000) } }
+        hh.post(hrTick)
         val setup = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         body.addView(setup)
         var running = false
@@ -244,7 +253,7 @@ internal fun MainActivity.showTabata() {
         }
         fun run(list: List<Instruments.Phase>, i: Int) {
             if (i >= list.size) {
-                beep(true); idle(); phase.text = "✅ Finito!"
+                beep(true); coach?.say("Finito! Bravo, allenamento completato.", true); idle(); phase.text = "✅ Finito!"
                 return
             }
             val ph = list[i]
@@ -253,11 +262,16 @@ internal fun MainActivity.showTabata() {
             phase.setTextColor(color); clock.setTextColor(color)
             round.text = if (ph.round > 0) "Round ${ph.round} di $rounds" else "Si parte tra poco"
             beep(true)
+            coach?.say(when (ph.kind) {
+                "lavoro" -> "Lavoro! " + (if (ph.round == rounds) "Ultimo round." else if (rounds >= 4 && ph.round == rounds / 2 + 1) "Metà strada. Round ${ph.round}." else "Round ${ph.round}.")
+                "riposo" -> "Riposo. ${ph.seconds} secondi."
+                else -> "Preparati. Si parte tra ${ph.seconds} secondi."
+            }, true)
             timer = object : android.os.CountDownTimer(ph.seconds * 1000L, 200) {
                 var lastShown = -1
                 override fun onTick(ms: Long) {
                     val s = ((ms + 999) / 1000).toInt()
-                    if (s != lastShown) { lastShown = s; clock.text = Instruments.fmtClock(s); if (s in 1..3) beep(false) }
+                    if (s != lastShown) { lastShown = s; clock.text = Instruments.fmtClock(s); if (s in 1..3) { if (coach != null) coach?.say("$s", true) else beep(false) } }
                 }
                 override fun onFinish() { run(list, i + 1) }
             }.start()
@@ -265,11 +279,18 @@ internal fun MainActivity.showTabata() {
         startBtn = button(body, "▶ Inizia") { b ->
             if (running) { idle(); return@button }
             running = true; setup.visibility = View.GONE; b.text = "⏹ Ferma"
+            if (WorkoutOpts.voiceTabata(this) && coach == null) coach = Coach(this)
             dialog.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             run(Instruments.tabata(prep, work, rest, rounds), 0)
         }
+        var voiceBtn: MaterialButton? = null
+        voiceBtn = button(body, if (WorkoutOpts.voiceTabata(this)) "🔊 Voce: sì" else "🔇 Voce: no") { b ->
+            val on = !WorkoutOpts.voiceTabata(this); WorkoutOpts.setVoiceTabata(this, on)
+            b.text = if (on) "🔊 Voce: sì" else "🔇 Voce: no"
+            if (on && running && coach == null) coach = Coach(this) else if (!on) { coach?.shutdown(); coach = null }
+        }
         small(body, 13f).text = "Lo schermo resta acceso durante l'allenamento. Tre bip brevi prima di ogni cambio, uno lungo al cambio."
-        dialog.setOnDismissListener { timer?.cancel(); runCatching { tone?.release() } }
+        dialog.setOnDismissListener { timer?.cancel(); runCatching { tone?.release() }; coach?.shutdown(); hh.removeCallbacksAndMessages(null) }
     }
 }
 

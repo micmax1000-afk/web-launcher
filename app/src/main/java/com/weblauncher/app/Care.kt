@@ -155,7 +155,8 @@ object Report {
         val name: String, val from: Long, val to: Long,
         val weights: List<Pair<Long, Double>>, val pressures: List<Triple<Long, Int, Int>>, val glucose: List<Pair<Long, Double>>,
         val stepsAvg: Long, val sleepAvgMin: Long, val restHrAvg: Long, val workouts: Int,
-        val medicines: List<String>, val allergies: String, val conditions: String
+        val medicines: List<String>, val allergies: String, val conditions: String,
+        val symptoms: List<String> = emptyList()
     )
 
     fun sections(d: Data): List<Pair<String, List<String>>> {
@@ -188,6 +189,7 @@ object Report {
             if (d.workouts > 0) add("Allenamenti: ${d.workouts}")
         }
         if (activity.isNotEmpty()) out += "Attività e riposo" to activity
+        if (d.symptoms.isNotEmpty()) out += "Sintomi annotati" to d.symptoms
         if (out.size == 1) out += "Dati" to listOf("Nessuna misurazione nel periodo.")
         return out
     }

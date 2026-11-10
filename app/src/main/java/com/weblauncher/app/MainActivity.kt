@@ -152,6 +152,8 @@ class MainActivity : AppCompatActivity() {
         if (spoken.isNotEmpty()) handleVoiceText(spoken)
     }
 
+    var bleDone: ((Boolean) -> Unit)? = null
+    val blePermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r -> bleDone?.invoke(r.isNotEmpty() && r.values.all { it }) }
     var locationDone: ((Boolean) -> Unit)? = null
     val workoutLocationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
         locationDone?.invoke(r[android.Manifest.permission.ACCESS_FINE_LOCATION] == true || r[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true)
@@ -1062,6 +1064,9 @@ class MainActivity : AppCompatActivity() {
             "visits" -> { intent.removeExtra(EXTRA_WIDGET); showVisitsPage(); return }
             "emergency" -> { intent.removeExtra(EXTRA_WIDGET); showEmergencyPage(); return }
             "report" -> { intent.removeExtra(EXTRA_WIDGET); showReportPage(); return }
+            "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
+            "body" -> { intent.removeExtra(EXTRA_WIDGET); showBodyPage(); return }
+            "symptoms" -> { intent.removeExtra(EXTRA_WIDGET); showSymptomsPage(); return }
             "pdftext" -> {          // automatic test: text extraction of a PDF made on the spot (the AI reads this text)
                 intent.removeExtra(EXTRA_WIDGET)
                 val f = java.io.File(cacheDir, "prova-testo.pdf")
