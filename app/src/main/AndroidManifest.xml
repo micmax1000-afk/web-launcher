@@ -105,6 +105,7 @@
         </provider>
 
         <receiver android:name=".BriefReceiver" android:exported="false" />
+        <receiver android:name=".EveningReceiver" android:exported="false" />
         <receiver android:name=".ReminderReceiver" android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

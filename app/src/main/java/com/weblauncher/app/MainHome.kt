@@ -142,6 +142,8 @@ internal fun MainActivity.renderTools() {
         Triple("💼", "Finanze") { showFinancePage() },
         Triple("🧠", "Chiedi ai tuoi dati") { askMyData() },
         Triple("🎂", "Compleanni") { showBirthdaysPage() },
+        Triple("🗑", "Raccolta rifiuti") { showWastePage() },
+        Triple("📊", "La mia settimana") { showWeeklySummary() },
         Triple("📆", "Scadenze") { showDeadlinesPage(Deadlines.DEADLINE) },
         Triple("🔁", "Abbonamenti") { showDeadlinesPage(Deadlines.SUBSCRIPTION) },
         Triple("🧾", "Garanzie") { showDeadlinesPage(Deadlines.WARRANTY) },
@@ -158,11 +160,14 @@ internal fun MainActivity.renderTools() {
     ))
     group("UTILITÀ", listOf(
         Triple("📷", "QR code") { scanQr() },
+        Triple("🧰", "Misure e sensori") { showInstrumentsPage() },
+        Triple("⛰", "Altimetro") { showAltimeter() },
+        Triple("⏱", "Tabata") { showTabata() },
         Triple("🔦", "Torcia e bussola") { showUtilitiesPage() },
         Triple("📈", "Borsa") { showStocksPage() },
         Triple("📦", "Pacchi") { showParcelsPage() },
         Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
-        Triple("⏱", "Tempo di utilizzo") { showUsagePage() },
+        Triple("⌛", "Tempo di utilizzo") { showUsagePage() },
         Triple("🧮", "Calcoli") {
             showTab(TAB_HOME); searchInput.requestFocus()
             toast("Scrivi nella ricerca: «15% di 230», «10 km in miglia», «50 dollari in euro»")

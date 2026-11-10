@@ -29,6 +29,16 @@ adb shell input keyevent KEYCODE_BACK
 adb shell am start -W -a android.intent.action.VIEW -d "https://example.com" -n $PKG/.MainActivity >/dev/null
 shot 05-browser 8
 
+# pagine degli strumenti: si devono aprire senza crash
+n=10
+for page in instruments tabata altimeter ruler metal split waste finance stocks; do
+  adb shell am start -W -n $PKG/.MainActivity --es widget_action $page >/dev/null
+  shot "$n-$page" 3
+  alive || { echo "::error::L'app si è chiusa aprendo $page"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -60; exit 1; }
+  adb shell input keyevent KEYCODE_BACK
+  n=$((n+1))
+done
+
 # riconoscitori di testo sul motore regex di Android (diverso da quello dei test JVM)
 adb shell am start -W -n $PKG/.MainActivity --ez wl_selftest true >/dev/null
 sleep 5

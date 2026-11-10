@@ -32,6 +32,7 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
         runCatching { if (prefs.getBoolean("podcasts", true)) podcasts(first) }
         runCatching { if (prefs.getBoolean("youtube", true)) youtube(first) }
         runCatching { keywords(first) }
+        runCatching { if (prefs.getBoolean("quakes", false)) quakes() }
         prefs.edit().putBoolean("initialized", true).putLong("lastRun", System.currentTimeMillis()).apply()
         return Result.success()
     }
@@ -42,6 +43,21 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
         conn.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) WebLauncher")
         conn.setRequestProperty("Cookie", "SOCS=CAI")
         return conn.inputStream.use { it.readBytes() }.also { conn.disconnect() }
+    }
+
+    /** Magnitude 3+ within 100 km of the weather city, notified once each. */
+    private fun quakes() {
+        val w = c.getSharedPreferences("wl_weather", Context.MODE_PRIVATE)
+        val lat = w.getFloat("lat", Float.NaN); val lon = w.getFloat("lon", Float.NaN)
+        if (lat.isNaN()) return
+        val last = prefs.getLong("quakeLast", System.currentTimeMillis() - 6 * 3600_000L)
+        val list = Instruments.parseQuakes(get("https://webservices.ingv.it/fdsnws/event/1/query?format=text&minmag=3&limit=30&orderby=time").toString(Charsets.UTF_8))
+        val near = list.filter { it.time > last && Instruments.haversineKm(lat.toDouble(), lon.toDouble(), it.lat, it.lon) <= 100 }
+        near.forEach { q ->
+            val km = Instruments.haversineKm(lat.toDouble(), lon.toDouble(), q.lat, q.lon)
+            notify("🌍 Terremoto magnitudo %.1f".format(q.mag), "${q.place} · a %.0f km da te · %s".format(km, NewsAdapter.ago(q.time)), "quakes", null)
+        }
+        (list.maxOfOrNull { it.time } ?: last).let { prefs.edit().putLong("quakeLast", maxOf(it, last)).apply() }
     }
 
     private fun podcasts(first: Boolean) {
@@ -111,7 +127,7 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
 
         fun schedule(c: Context) {
             val p = c.getSharedPreferences("wl_alerts", Context.MODE_PRIVATE)
-            val any = p.getBoolean("podcasts", true) || p.getBoolean("youtube", true) || p.getStringSet("keywords", emptySet()).orEmpty().isNotEmpty()
+            val any = p.getBoolean("podcasts", true) || p.getBoolean("youtube", true) || p.getStringSet("keywords", emptySet()).orEmpty().isNotEmpty() || p.getBoolean("quakes", false)
             val wm = WorkManager.getInstance(c)
             if (!p.getBoolean("enabled", true) || !any) { wm.cancelUniqueWork(WORK); return }
             val req = PeriodicWorkRequestBuilder<AlertsWorker>(2, TimeUnit.HOURS)

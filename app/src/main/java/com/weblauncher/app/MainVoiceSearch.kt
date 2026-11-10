@@ -1,5 +1,7 @@
 package com.weblauncher.app
 
+import android.content.Context.MODE_PRIVATE
+
 import android.content.Context.CAMERA_SERVICE
 import android.Manifest
 import android.annotation.SuppressLint
@@ -244,25 +246,26 @@ internal fun MainActivity.updateUnifiedSearch(q: String) {
         data class Hit(val icon: String, val title: String, val sub: String, val action: () -> Unit)
         val hits = mutableListOf<Hit>()
         fun has(s: String?) = s?.lowercase(Locale.ITALIAN)?.contains(query) == true
+        val off = getSharedPreferences("wl_search", MODE_PRIVATE).getStringSet("off", emptySet()).orEmpty()
         runCatching {
-            notes.load().filter { has(it.text) }.take(3).forEach { n ->
+            if ("note" !in off) notes.load().filter { has(it.text) }.take(3).forEach { n ->
                 val first = n.text.lines().firstOrNull { it.isNotBlank() }.orEmpty()
                 hits += Hit(if (isChecklist(n.text)) "☑" else "📝", first.take(60), "Nota", {
                     if (isChecklist(n.text)) showChecklist(n.id) else editNote(n)
                 })
             }
-            Ebooks.load(this).filter { has(it.title) || has(it.author) }.take(2).forEach { b -> hits += Hit("📖", b.title, "Libro · ${b.author}", { openBook(b) }) }
-            wallet.load().filter { has(it.title) }.take(2).forEach { w -> hits += Hit("🎫", w.title, "Biglietti e documenti", { openWalletItem(w) }) }
-            cards.load().filter { has(it.name) }.take(2).forEach { c -> hits += Hit("💳", c.name, "Carta fedeltà", { showCodeFullscreen(c.name, c.code, c.format, c.color) }) }
-            Deadlines.load(this).filter { has(it.title) }.take(2).forEach { x -> hits += Hit("📆", x.title, "Scadenza · ${daysLeft(x.date)}", { showDeadlinesPage(x.kind) }) }
-            Places.load(this).filter { has(it.name) || has(it.note) }.take(2).forEach { p -> hits += Hit("📍", p.name, "Luogo · tocca per andarci", { navigateTo(p.lat, p.lon, false) }) }
-            Expenses.load(this).filter { has(it.desc) }.sortedByDescending { it.time }.take(2).forEach { e ->
+            if ("libri" !in off) Ebooks.load(this).filter { has(it.title) || has(it.author) }.take(2).forEach { b -> hits += Hit("📖", b.title, "Libro · ${b.author}", { openBook(b) }) }
+            if ("biglietti" !in off) wallet.load().filter { has(it.title) }.take(2).forEach { w -> hits += Hit("🎫", w.title, "Biglietti e documenti", { openWalletItem(w) }) }
+            if ("carte" !in off) cards.load().filter { has(it.name) }.take(2).forEach { c -> hits += Hit("💳", c.name, "Carta fedeltà", { showCodeFullscreen(c.name, c.code, c.format, c.color) }) }
+            if ("scadenze" !in off) Deadlines.load(this).filter { has(it.title) }.take(2).forEach { x -> hits += Hit("📆", x.title, "Scadenza · ${daysLeft(x.date)}", { showDeadlinesPage(x.kind) }) }
+            if ("luoghi" !in off) Places.load(this).filter { has(it.name) || has(it.note) }.take(2).forEach { p -> hits += Hit("📍", p.name, "Luogo · tocca per andarci", { navigateTo(p.lat, p.lon, false) }) }
+            if ("spese" !in off) Expenses.load(this).filter { has(it.desc) }.sortedByDescending { it.time }.take(2).forEach { e ->
                 hits += Hit("💰", "${Expenses.fmt(e.amount)} · ${e.desc}", "Spesa", { showExpensesPage() })
             }
-            readLater.load().filter { has(it.title) }.take(2).forEach { r ->
+            if ("leggi" !in off) readLater.load().filter { has(it.title) }.take(2).forEach { r ->
                 hits += Hit("🔖", r.title, "Leggi dopo", { showReader(ReaderDoc(r.title, r.site, r.url, r.image, r.text), r) })
             }
-            repo.loadHistory().filter { has(it.title) || has(it.url) }.distinctBy { it.url }.take(3).forEach { h ->
+            if ("cronologia" !in off) repo.loadHistory().filter { has(it.title) || has(it.url) }.distinctBy { it.url }.take(3).forEach { h ->
                 hits += Hit("🕘", recentLabel(RecentSite(h.title, h.url)), displayUrl(h.url), { openInBrowser(h.url) })
             }
         }

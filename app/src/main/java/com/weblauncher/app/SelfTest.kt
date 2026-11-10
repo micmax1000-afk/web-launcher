@@ -32,6 +32,9 @@ object SelfTest {
             "calendario a voce" to { CalendarVoice.clean("aggiungi al calendario cena da Luca sabato alle 20") },
             "compleanni" to { Birthdays.parseDate("--03-14") },
             "ricorrenti" to { Finance.dueMonths(202601, 5, java.util.Calendar.getInstance()) },
+            "terremoti" to { Instruments.parseQuakes("1|2026-11-09T18:22:31.25|44.9|7.3|11.2|a||||ML|2.7|--|Pinerolo|earthquake") },
+            "alba" to { Instruments.sunTimes(45.07, 7.69, java.util.Calendar.getInstance()) },
+            "rifiuti" to { Waste.decode("3:🟤 Umido,🔵 Carta") },
             "aggiornamenti" to { UpdateLogic.codeFromTag("v7.4.1-b1200") }
         )
         var ok = true

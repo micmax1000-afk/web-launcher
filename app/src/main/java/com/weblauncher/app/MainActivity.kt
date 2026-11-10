@@ -327,6 +327,7 @@ class MainActivity : AppCompatActivity() {
         runCatching { Updater.schedule(this) }
         runCatching { Stocks.schedule(this) }
         runCatching { Brief.schedule(this) }
+        runCatching { Evening.schedule(this) }
         if (android.os.Build.VERSION.SDK_INT < 29 || ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED)
             runCatching { if (Steps.available(this)) { Steps.schedule(this); io.execute { runCatching { Steps.sampleNow(this) } } } }
         io.execute { runCatching { Reminders.rescheduleAll(this) } }
@@ -974,6 +975,16 @@ class MainActivity : AppCompatActivity() {
             }
             "voice" -> { intent.removeExtra(EXTRA_WIDGET); requestMicAndListen(); return }
             "stocks" -> { intent.removeExtra(EXTRA_WIDGET); showStocksPage(); return }
+            "waste" -> { intent.removeExtra(EXTRA_WIDGET); showWastePage(); return }
+            "instruments" -> { intent.removeExtra(EXTRA_WIDGET); showInstrumentsPage(); return }
+            "tabata" -> { intent.removeExtra(EXTRA_WIDGET); showTabata(); return }
+            "altimeter" -> { intent.removeExtra(EXTRA_WIDGET); showAltimeter(); return }
+            "ruler" -> { intent.removeExtra(EXTRA_WIDGET); showRuler(); return }
+            "metal" -> { intent.removeExtra(EXTRA_WIDGET); showMetalDetector(); return }
+            "split" -> { intent.removeExtra(EXTRA_WIDGET); showSplitBill(); return }
+            "finance" -> { intent.removeExtra(EXTRA_WIDGET); showFinancePage(); return }
+            "weekly" -> { intent.removeExtra(EXTRA_WIDGET); showWeeklySummary(); return }
+            "quakes" -> { intent.removeExtra(EXTRA_WIDGET); showQuakes(); return }
             "news" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_NEWS); return }
             "reminders" -> { intent.removeExtra(EXTRA_WIDGET); showRemindersPage(); return }
             "recorder" -> { intent.removeExtra(EXTRA_WIDGET); showRecorderPage(); return }
@@ -1792,6 +1803,12 @@ class MainActivity : AppCompatActivity() {
 
     // ======================= System voice commands =======================
 
+    /** One-shot permission request for the measuring tools: runs [pendingPermAction] when everything is granted. */
+    var pendingPermAction: (() -> Unit)? = null
+    val toolPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
+        val go = pendingPermAction; pendingPermAction = null
+        if (r.values.any { it }) go?.invoke() else toast("Permesso negato: lo strumento non può funzionare")
+    }
     var pendingContactCommand: String? = null
     val contactsPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         val cmd = pendingContactCommand; pendingContactCommand = null

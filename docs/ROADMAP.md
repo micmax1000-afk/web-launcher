@@ -100,6 +100,11 @@ P1 = consigliate, P2 = utili, P3 = quando c'è tempo. In fondo le idee scartate 
 | 76 | ✅ Notiziario audio | Notizie → «Il punto» → 🎧 Ascolta |
 | 77 | ✅ Menu della settimana | Ricette → 📅 Menu: una lista della spesa unica, ingredienti uniti |
 
+## Fatto nella 7.7
+Scelta di cosa cercare · riepilogo della settimana (domenica alle 19) · raccolta rifiuti con avviso la sera prima ·
+«Misure e sensori»: altimetro, tachimetro GPS, Tabata, fonometro, metal detector, lente d'ingrandimento, righello e goniometro,
+alba/tramonto/luna, aria e pollini, terremoti INGV con avviso, mancia e conto diviso.
+
 ## Viaggi
 | # | Cosa | Note |
 |---|------|------|

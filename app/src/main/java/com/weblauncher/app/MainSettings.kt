@@ -1,5 +1,7 @@
 package com.weblauncher.app
 
+import android.content.Context.MODE_PRIVATE
+
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
@@ -166,6 +168,17 @@ internal fun MainActivity.renderSettings() {
     row("Aggiungi web app", "Nome, indirizzo e categoria") { showAddEditDialog(null) }
     row("Browser predefinito", "Apri qui i link di WhatsApp, email…", value = if (isDefaultBrowser()) "Sì" else "No") { requestDefaultBrowser() }
     row("Motore di ricerca", value = engine.label) { showSearchEnginePicker() }
+    row("🔎 Cosa cercare nei tuoi dati", "Scegli cosa mostrare sotto la barra di ricerca") {
+        val sp = getSharedPreferences("wl_search", MODE_PRIVATE)
+        val keys = listOf("note" to "📝 Note e liste", "spese" to "💰 Spese", "scadenze" to "📆 Scadenze", "biglietti" to "🎫 Biglietti e documenti",
+            "carte" to "💳 Carte fedeltà", "luoghi" to "📍 Luoghi", "libri" to "📖 Libri", "leggi" to "🔖 Leggi dopo", "cronologia" to "🕘 Cronologia")
+        val off = sp.getStringSet("off", emptySet()).orEmpty()
+        val checked = BooleanArray(keys.size) { keys[it].first !in off }
+        MaterialAlertDialogBuilder(this).setTitle("Cosa cercare")
+            .setMultiChoiceItems(keys.map { it.second }.toTypedArray(), checked) { _, i, on -> checked[i] = on }
+            .setPositiveButton("Salva") { _, _ -> sp.edit().putStringSet("off", keys.filterIndexed { i, _ -> !checked[i] }.map { it.first }.toSet()).apply() }
+            .setNegativeButton("Annulla", null).show()
+    }
     row("Suggerimenti di ricerca", "Mentre scrivi l'indirizzo (dal motore scelto)", switch = repo.searchSuggestions()) {
         repo.setSearchSuggestions(!repo.searchSuggestions()); renderSettings()
     }
