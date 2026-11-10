@@ -237,7 +237,8 @@ private fun MainActivity.reportData(from: Long, to: Long): Report.Data {
         all.filter { it.type == "glicemia" }.map { it.time to it.v1 },
         Hc.avg(days.filter { it.steps > 0 }) { it.steps.toDouble() }.toLong(), Hc.avg(days.filter { it.sleepMin > 0 }) { it.sleepMin.toDouble() }.toLong(), Hc.avg(days.filter { it.restHr > 0 }) { it.restHr.toDouble() }.toLong(),
         Fitness.allTimes(this).count { it in from..to },
-        Meds.load(this).map { it.name + if (it.dose.isNotBlank()) " (${it.dose})" else "" }, e.allergies, e.conditions)
+        Meds.load(this).map { it.name + if (it.dose.isNotBlank()) " (${it.dose})" else "" }, e.allergies, e.conditions,
+        Symptoms.reportLines(Symptoms.load(this).filter { it.time in from..to }))
 }
 
 private fun MainActivity.sharePdf(data: Report.Data) {

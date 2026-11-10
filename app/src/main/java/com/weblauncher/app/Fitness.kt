@@ -10,7 +10,7 @@ import java.util.Locale
 import java.util.UUID
 
 /** One recorded GPS point. */
-data class Pt(val lat: Double, val lon: Double, val t: Long, val alt: Double = 0.0)
+data class Pt(val lat: Double, val lon: Double, val t: Long, val alt: Double = 0.0, val hr: Int = 0)
 
 /** Accumulates a GPS track: filters bad fixes and measures distance, moving time, top speed and climb. Pure (unit-tested). */
 class Track {
@@ -22,10 +22,10 @@ class Track {
     private var lastAlt = Double.NaN
 
     /** Returns true if the point was used. [maxSpeedMs] drops impossible jumps (a bad fix). */
-    fun add(lat: Double, lon: Double, timeMs: Long, accuracyM: Float, alt: Double = 0.0, maxSpeedMs: Double = 14.0): Boolean {
+    fun add(lat: Double, lon: Double, timeMs: Long, accuracyM: Float, alt: Double = 0.0, maxSpeedMs: Double = 14.0, hr: Int = 0): Boolean {
         if (accuracyM > 30f) return false
         val last = points.lastOrNull()
-        if (last == null) { points += Pt(lat, lon, timeMs, alt); lastAlt = alt; return true }
+        if (last == null) { points += Pt(lat, lon, timeMs, alt, hr); lastAlt = alt; return true }
         val dt = timeMs - last.t
         if (dt <= 0) return false
         val d = Instruments.haversineKm(last.lat, last.lon, lat, lon) * 1000
@@ -37,7 +37,7 @@ class Track {
         maxKmh = maxOf(maxKmh, speed * 3.6)
         if (alt != 0.0 && !lastAlt.isNaN() && alt - lastAlt > 0.8) gainM += alt - lastAlt
         if (alt != 0.0) lastAlt = alt
-        points += Pt(lat, lon, timeMs, alt)
+        points += Pt(lat, lon, timeMs, alt, hr)
         return true
     }
 
@@ -46,7 +46,8 @@ class Track {
 
 data class Workout(
     val id: String, val kind: String, val start: Long, val end: Long, val distanceM: Double, val movingMs: Long,
-    val kcal: Double, val gainM: Double, val maxKmh: Double
+    val kcal: Double, val gainM: Double, val maxKmh: Double,
+    val avgHr: Int = 0, val maxHr: Int = 0, val startLat: Double = 0.0, val startLon: Double = 0.0
 )
 
 data class Ex(val name: String, val sets: Int, val reps: Int, val restSec: Int, val kg: Double = 0.0, val seconds: Int = 0)
@@ -104,6 +105,16 @@ object Fitness {
         times.sorted().forEach { t -> if (out.isEmpty() || t - out.last() > windowMs) out += t }
         return out
     }
+
+    /** Workouts of the same kind that start in the same place (within [startM]) and have a similar length: "the same route". */
+    fun similar(all: List<Workout>, w: Workout, startOf: (Workout) -> Pair<Double, Double>?, startM: Double = 300.0, tol: Double = 0.15): List<Workout> {
+        val s0 = startOf(w) ?: return emptyList()
+        return all.filter { o ->
+            o.id != w.id && o.kind == w.kind && w.distanceM > 0 && Math.abs(o.distanceM - w.distanceM) <= w.distanceM * tol &&
+                startOf(o)?.let { Instruments.haversineKm(s0.first, s0.second, it.first, it.second) * 1000 <= startM } == true
+        }.sortedByDescending { it.start }
+    }
+    fun paceSec(w: Workout) = if (w.distanceM > 0) (w.movingMs / 1000.0 / (w.distanceM / 1000.0)).toInt() else 0
 
     // ---------- storage ----------
 
