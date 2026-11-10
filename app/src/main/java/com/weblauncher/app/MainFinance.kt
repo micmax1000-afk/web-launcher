@@ -16,14 +16,14 @@ import java.util.Calendar
 import java.util.Locale
 import java.util.UUID
 
-private fun MainActivity.form(vararg fields: EditText): LinearLayout {
+internal fun MainActivity.form(vararg fields: EditText): LinearLayout {
     val d = resources.displayMetrics.density
     return LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL; setPadding((20 * d).toInt(), (8 * d).toInt(), (20 * d).toInt(), 0)
         fields.forEach { addView(it) }
     }
 }
-private fun MainActivity.field(hint: String, value: String? = null, number: Boolean = false) = EditText(this).apply {
+internal fun MainActivity.field(hint: String, value: String? = null, number: Boolean = false) = EditText(this).apply {
     this.hint = hint; setText(value.orEmpty()); setSingleLine()
     inputType = if (number) InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL else InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
 }

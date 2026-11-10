@@ -84,6 +84,8 @@ object Evening {
         val now = Calendar.getInstance()
         val out = Waste.tomorrow(waste(c), now, wasteDates(c))
         if (out.isNotEmpty()) notify(c, 7801, "🗑 Domani passa la raccolta", "Stasera metti fuori: " + out.joinToString(", "), "waste")
+        val low = Meds.lowStock(c)
+        if (low.isNotEmpty()) notify(c, 7803, "💊 Scorte di farmaci", low.joinToString("\n") { it.name + if (it.stock <= 0) ": finito" else ": restano ${it.stock} (~${Meds.daysLeft(it)} giorni)" }, "meds")
         if (weekly(c) && now.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) {
             val t = runCatching { composeWeekly(c) }.getOrNull() ?: return
             prefs(c).edit().putString("weeklyText", t).apply()

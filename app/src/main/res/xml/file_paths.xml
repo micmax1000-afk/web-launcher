@@ -5,4 +5,5 @@
     <cache-path name="scan" path="scan/" />
     <files-path name="deadlines" path="deadlines/" />
     <cache-path name="update" path="update/" />
+    <cache-path name="report" path="report/" />
 </paths>
