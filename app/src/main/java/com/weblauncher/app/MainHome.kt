@@ -102,7 +102,7 @@ internal fun MainActivity.renderTools() {
         if (items.isEmpty()) return
         sectionLabel(list, title)
         val grid = android.widget.GridLayout(this).apply { columnCount = 4 }
-        items.forEach { (emoji, label, action) ->
+        items.forEach { (_, label, action) ->
             grid.addView(android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER
                 setPadding(dp(2), dp(10), dp(2), dp(8))
@@ -114,7 +114,12 @@ internal fun MainActivity.renderTools() {
                     columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
                     setMargins(dp(4), dp(4), dp(4), dp(4))
                 }
-                addView(TextView(this@renderTools).apply { text = emoji; textSize = 26f; gravity = android.view.Gravity.CENTER })
+                addView(ImageView(this@renderTools).apply {
+                    setImageResource(toolIcon(label))
+                    setColorFilter(palette.text)
+                    scaleType = ImageView.ScaleType.FIT_CENTER
+                    layoutParams = android.widget.LinearLayout.LayoutParams(dp(28), dp(28))
+                })
                 addView(TextView(this@renderTools).apply {
                     text = label; textSize = 12f; gravity = android.view.Gravity.CENTER; setTextColor(palette.text)
                     maxLines = 2; setPadding(0, dp(4), 0, 0)
@@ -290,6 +295,48 @@ internal fun MainActivity.capturePhoto(target: java.io.File, done: (java.io.File
     else cameraPermission.launch(Manifest.permission.CAMERA)
 }
 
+private fun toolIcon(label: String): Int = when (label) {
+    "Note" -> R.drawable.ic_tool_note
+    "Lista spesa" -> R.drawable.ic_tool_shop
+    "Registratore" -> R.drawable.ic_tool_record
+    "Chiedi a voce" -> R.drawable.ic_tool_voice
+    "Ricette" -> R.drawable.ic_tool_recipe
+    "Modalità auto" -> R.drawable.ic_tool_car
+    "Buongiorno" -> R.drawable.ic_tool_sun
+    "Passi" -> R.drawable.ic_tool_steps
+    "Salute" -> R.drawable.ic_tool_heart
+    "Avvisi" -> R.drawable.ic_tool_bell
+    "Spese" -> R.drawable.ic_tool_spend
+    "Finanze" -> R.drawable.ic_tool_finance
+    "Chiedi ai tuoi dati" -> R.drawable.ic_tool_brain
+    "Compleanni" -> R.drawable.ic_tool_cake
+    "Scadenze" -> R.drawable.ic_tool_calendar
+    "Abbonamenti" -> R.drawable.ic_tool_repeat
+    "Garanzie" -> R.drawable.ic_tool_warranty
+    "Parcheggio e luoghi" -> R.drawable.ic_tool_pin
+    "Scanner" -> R.drawable.ic_tool_scan
+    "Apri PDF" -> R.drawable.ic_tool_pdf
+    "Biglietti" -> R.drawable.ic_tool_ticket
+    "Carte fedeltà" -> R.drawable.ic_tool_loyalty
+    "Libri" -> R.drawable.ic_tool_book
+    "Leggi dopo" -> R.drawable.ic_tool_bookmark
+    "Cassaforte" -> R.drawable.ic_tool_lock
+    "QR code" -> R.drawable.ic_tool_qr
+    "Torcia e bussola" -> R.drawable.ic_tool_torch
+    "Borsa" -> R.drawable.ic_tool_chart
+    "Pacchi" -> R.drawable.ic_tool_box
+    "Meteo" -> R.drawable.ic_tool_weather
+    "Tempo di utilizzo" -> R.drawable.ic_tool_usage
+    "Calcoli" -> R.drawable.ic_tool_calc
+    "Catalogo app" -> R.drawable.ic_tool_catalog
+    "Profilo 2" -> R.drawable.ic_tool_mask
+    "Download" -> R.drawable.ic_tool_download
+    "Cronologia" -> R.drawable.ic_tool_history
+    "Mia AI" -> R.drawable.ic_tool_spark
+    "Impostazioni" -> R.drawable.ic_tool_settings
+    else -> R.drawable.ic_nav_tools
+}
+
 /** ✏️ in Strumenti: show/hide tiles and choose the favourites shown first. */
 internal fun MainActivity.customizeTools() {
     val tp = getSharedPreferences("wl_tools", MODE_PRIVATE)
@@ -303,7 +350,7 @@ internal fun MainActivity.customizeTools() {
                     val labels = all.map { it.first }
                     val checked = BooleanArray(labels.size) { labels[it] !in hidden }
                     MaterialAlertDialogBuilder(this).setTitle("Strumenti visibili")
-                        .setMultiChoiceItems(all.map { "${it.second}  ${it.first}" }.toTypedArray(), checked) { _, i, on -> checked[i] = on }
+                        .setMultiChoiceItems(labels.toTypedArray(), checked) { _, i, on -> checked[i] = on }
                         .setPositiveButton("Salva") { _, _ ->
                             tp.edit().putStringSet("hidden", labels.filterIndexed { i, _ -> !checked[i] }.toSet()).apply(); renderTools()
                         }.setNegativeButton("Annulla", null).show()
@@ -313,7 +360,7 @@ internal fun MainActivity.customizeTools() {
                     val labels = all.map { it.first }
                     val checked = BooleanArray(labels.size) { labels[it] in favs }
                     MaterialAlertDialogBuilder(this).setTitle("Preferiti (in alto, nell'ordine scelto)")
-                        .setMultiChoiceItems(all.map { "${it.second}  ${it.first}" }.toTypedArray(), checked) { _, i, on ->
+                        .setMultiChoiceItems(labels.toTypedArray(), checked) { _, i, on ->
                             checked[i] = on; if (on) favs.add(labels[i]) else favs.remove(labels[i])
                         }
                         .setPositiveButton("Salva") { _, _ -> tp.edit().putString("favs", favs.distinct().joinToString("|")).apply(); renderTools() }
