@@ -86,15 +86,55 @@ internal fun MainActivity.renderSettings() {
         setTextColor(palette.text)
         setPadding(dp(4), dp(12), dp(4), dp(8))
     })
+    // ricerca + pulsanti per saltare alle sezioni
+    val search = EditText(this).apply {
+        hint = "🔎  Cerca nelle impostazioni"; setSingleLine(); textSize = 16f; setText(settingsQuery)
+        setTextColor(palette.text); setHintTextColor(palette.textMuted)
+        setPadding(dp(18), dp(12), dp(18), dp(12))
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 26 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
+        importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+    }
+    settingsList.addView(search)
+    val jump = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding(0, dp(10), 0, 0) }
+    val jumpScroll = android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(jump) }
+    settingsList.addView(jumpScroll)
+    val sectionLook = mapOf(
+        "BROWSER E RICERCA" to ("🌐" to 0xFF3B82F6.toInt()), "INTELLIGENZA ARTIFICIALE" to ("✨" to 0xFF8B5CF6.toInt()),
+        "COMODITÀ" to ("👍" to 0xFF0EA5E9.toInt()), "NOTIZIE" to ("📰" to 0xFFEF4444.toInt()), "YOUTUBE" to ("▶️" to 0xFFDC2626.toInt()),
+        "APP INTEGRATE" to ("🧩" to 0xFF14B8A6.toInt()), "SICUREZZA E PRIVACY" to ("🛡" to 0xFF16A34A.toInt()),
+        "BACKUP E SINCRONIZZAZIONE" to ("📦" to 0xFFD97706.toInt()), "AGGIORNAMENTI" to ("⬆️" to 0xFF6366F1.toInt()), "HOME" to ("🏠" to 0xFFF59E0B.toInt()))
+    val shortNames = mapOf("BROWSER E RICERCA" to "Browser", "INTELLIGENZA ARTIFICIALE" to "AI", "COMODITÀ" to "Comodità", "NOTIZIE" to "Notizie",
+        "YOUTUBE" to "YouTube", "APP INTEGRATE" to "App", "SICUREZZA E PRIVACY" to "Privacy", "BACKUP E SINCRONIZZAZIONE" to "Backup",
+        "AGGIORNAMENTI" to "Aggiornamenti", "HOME" to "Home")
+    /** (section header, card, rows of that card as (row view, divider before it, searchable text)) */
+    class Sec(val head: View, val card: View) { val rows = mutableListOf<Triple<View, View?, String>>() }
+    val secs = mutableListOf<Sec>()
     var group: android.widget.LinearLayout? = null
     fun section(title: String) {
-        settingsList.addView(TextView(this).apply {
+        val (emoji, color) = sectionLook[title] ?: ("⚙️" to accent)
+        val head = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(22), dp(8), dp(10))
+        }
+        head.addView(TextView(this).apply {
+            text = emoji; textSize = 16f; gravity = android.view.Gravity.CENTER
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 11 * d; setColor((color and 0x00FFFFFF) or 0x2E000000) }
+            layoutParams = android.widget.LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(10) }
+        })
+        head.addView(TextView(this).apply {
             text = title
-            setTextColor(accent)
+            setTextColor(palette.text)
             textSize = 13f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             letterSpacing = 0.06f
-            setPadding(dp(8), dp(20), dp(8), dp(8))
+        })
+        settingsList.addView(head)
+        jump.addView(TextView(this).apply {
+            text = "$emoji ${shortNames[title] ?: title}"; textSize = 14f; setTextColor(palette.text)
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 20 * d; setColor((color and 0x00FFFFFF) or 0x26000000) }
+            layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(8) }
+            setOnClickListener { (settingsPanel as? android.widget.ScrollView)?.smoothScrollTo(0, head.top - dp(4)) }
         })
         val card = com.google.android.material.card.MaterialCardView(this).apply {
             radius = dp(20).toFloat()
@@ -107,16 +147,21 @@ internal fun MainActivity.renderSettings() {
         card.addView(inner)
         settingsList.addView(card)
         group = inner
+        secs += Sec(head, card)
     }
     fun row(label: String, sub: String? = null, value: String? = null, danger: Boolean = false,
             switch: Boolean? = null, onClick: () -> Unit) {
         val g = group ?: return
-        if (g.childCount > 0) g.addView(View(this).apply {
-            setBackgroundColor(palette.stroke)
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, d.toInt().coerceAtLeast(1)
-            ).apply { marginStart = dp(18) }
-        })
+        var divider: View? = null
+        if (g.childCount > 0) {
+            divider = View(this).apply {
+                setBackgroundColor(palette.stroke)
+                layoutParams = android.widget.LinearLayout.LayoutParams(
+                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT, d.toInt().coerceAtLeast(1)
+                ).apply { marginStart = dp(18) }
+            }
+            g.addView(divider)
+        }
         val r = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
@@ -162,7 +207,28 @@ internal fun MainActivity.renderSettings() {
         })
         r.setOnClickListener { onClick() }
         g.addView(r)
+        secs.lastOrNull()?.rows?.add(Triple(r, divider, (label + " " + sub.orEmpty()).lowercase(Locale.ITALIAN)))
     }
+    fun applyFilter(q: String) {
+        val query = q.trim().lowercase(Locale.ITALIAN)
+        jumpScroll.visibility = if (query.isEmpty()) View.VISIBLE else View.GONE
+        secs.forEach { sec ->
+            var shown = 0
+            sec.rows.forEach { (row, div, text) ->
+                val ok = query.isEmpty() || text.contains(query)
+                row.visibility = if (ok) View.VISIBLE else View.GONE
+                div?.visibility = if (ok && shown > 0) View.VISIBLE else View.GONE
+                if (ok) shown++
+            }
+            sec.head.visibility = if (shown > 0) View.VISIBLE else View.GONE
+            sec.card.visibility = if (shown > 0) View.VISIBLE else View.GONE
+        }
+    }
+    search.addTextChangedListener(object : android.text.TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun afterTextChanged(s: android.text.Editable?) { settingsQuery = s?.toString().orEmpty(); applyFilter(settingsQuery) }
+    })
 
     section("BROWSER E RICERCA")
     row("Aggiungi web app", "Nome, indirizzo e categoria") { showAddEditDialog(null) }
@@ -390,6 +456,7 @@ internal fun MainActivity.renderSettings() {
         setTextColor(palette.textMuted)
         setPadding(0, dp(24), 0, dp(8))
     })
+    if (settingsQuery.isNotBlank()) applyFilter(settingsQuery)
 }
 
 internal fun MainActivity.showSearchEnginePicker() {

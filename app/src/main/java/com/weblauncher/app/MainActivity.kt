@@ -1560,6 +1560,7 @@ class MainActivity : AppCompatActivity() {
     var cookieScript: androidx.webkit.ScriptHandler? = null
     @Volatile var pageHost: String? = null
     /** Tools page tiles by group: (group, [(label, emoji)]) — filled by renderTools, used by customizeTools. */
+    var settingsQuery = ""
     var toolsCatalog: List<Pair<String, List<Pair<String, String>>>> = emptyList()
     var ytPlaying = false
     var ytTranscriptCallback: ((org.json.JSONObject) -> Unit)? = null
