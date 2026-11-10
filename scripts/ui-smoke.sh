@@ -65,6 +65,16 @@ shot 19-pdf-nell-app 7
 alive || { echo "::error::L'app si e' chiusa aprendo il PDF"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -60; exit 1; }
 adb shell input keyevent KEYCODE_BACK
 
+# estrazione del testo da un PDF (e' quello che l'AI legge per il calendario dei rifiuti)
+adb shell am start -W -n $PKG/.MainActivity --es widget_action pdftext >/dev/null
+sleep 14
+PT=$(adb logcat -d -s WL_SELFTEST:* | grep -o 'PDF_TEXT=.*' | tail -1)
+echo "Testo del PDF: $PT"
+case "$PT" in
+  *Umido*Plastica*Carta*Vetro*) ;;
+  *) echo "::error::L'estrazione del testo dal PDF non funziona ($PT)"; adb logcat -d -s WL_PDF:* | tail -5; exit 1;;
+esac
+
 # riconoscitori di testo sul motore regex di Android (diverso da quello dei test JVM)
 adb shell am start -W -n $PKG/.MainActivity --ez wl_selftest true >/dev/null
 sleep 5

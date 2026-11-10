@@ -1044,6 +1044,21 @@ class MainActivity : AppCompatActivity() {
             "stocks" -> { intent.removeExtra(EXTRA_WIDGET); showStocksPage(); return }
             "waste" -> { intent.removeExtra(EXTRA_WIDGET); showWastePage(); return }
             "birthdays" -> { intent.removeExtra(EXTRA_WIDGET); showBirthdaysPage(); return }
+            "pdftext" -> {          // automatic test: text extraction of a PDF made on the spot (the AI reads this text)
+                intent.removeExtra(EXTRA_WIDGET)
+                val f = java.io.File(cacheDir, "prova-testo.pdf")
+                runCatching {
+                    val doc = android.graphics.pdf.PdfDocument()
+                    val page = doc.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, 1).create())
+                    val paint = android.graphics.Paint().apply { textSize = 24f }
+                    page.canvas.drawText("Calendario raccolta rifiuti 2026", 50f, 100f, paint)
+                    page.canvas.drawText("Lunedi: Umido e Plastica", 50f, 150f, paint)
+                    page.canvas.drawText("Giovedi: Carta e Vetro", 50f, 200f, paint)
+                    doc.finishPage(page); f.outputStream().use { doc.writeTo(it) }; doc.close()
+                }
+                extractPdfText(f, 40_000) { t -> android.util.Log.i(SelfTest.TAG, "PDF_TEXT=" + (t?.replace("\n", " | ") ?: "NULL")) }
+                return
+            }
             "pdfpage" -> {          // automatic test: a small PDF made on the spot, shown by the in-app viewer
                 intent.removeExtra(EXTRA_WIDGET)
                 val f = java.io.File(cacheDir, "prova.pdf")
