@@ -96,38 +96,72 @@ internal fun MainActivity.renderTools() {
         setOnClickListener { customizeTools() }
     }, 1)
     list.addView(header)
+    val search = android.widget.EditText(this).apply {
+        hint = "🔎  Cerca uno strumento"; setSingleLine(); textSize = 16f
+        setTextColor(palette.text); setHintTextColor(palette.textMuted)
+        setPadding(dp(18), dp(12), dp(18), dp(12))
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 26 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
+        layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(4), dp(4), dp(4), dp(6)) }
+        imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
+        importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+    }
+    list.addView(search)
+    val content = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+    list.addView(content)
+    val groupColors = mapOf("⭐ PREFERITI" to 0xFFF59E0B.toInt(), "ORGANIZZA" to 0xFF3B82F6.toInt(), "SOLDI" to 0xFF16A34A.toInt(),
+        "SALUTE E SPORT" to 0xFFEF4444.toInt(), "DOCUMENTI" to 0xFFD97706.toInt(), "UTILITÀ" to 0xFF0EA5E9.toInt(), "BROWSER E APP" to 0xFF8B5CF6.toInt(),
+        "RISULTATI" to 0xFF3B82F6.toInt())
     val groups = mutableListOf<Pair<String, List<Triple<String, String, () -> Unit>>>>()
-    fun group(title: String, items: List<Triple<String, String, () -> Unit>>) { groups += title to items }
+    val groupOf = mutableMapOf<String, String>()
+    fun group(title: String, items: List<Triple<String, String, () -> Unit>>) { groups += title to items; items.forEach { groupOf[it.second] = title } }
     fun renderGroup(title: String, items: List<Triple<String, String, () -> Unit>>) {
         if (items.isEmpty()) return
-        sectionLabel(list, title)
+        val color = groupColors[title] ?: 0xFF3B82F6.toInt()
+        val head = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(6), dp(18), dp(6), dp(8))
+        }
+        head.addView(View(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 3 * d; setColor(color) }
+            layoutParams = android.widget.LinearLayout.LayoutParams(dp(5), dp(18)).apply { marginEnd = dp(9) }
+        })
+        head.addView(TextView(this).apply {
+            text = title; textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD); letterSpacing = 0.06f; setTextColor(palette.text)
+        })
+        head.addView(TextView(this).apply { text = "  ${items.size}"; textSize = 12f; setTextColor(palette.textMuted) })
+        content.addView(head)
         val grid = android.widget.GridLayout(this).apply { columnCount = 4 }
         items.forEach { (_, label, action) ->
+            val c = groupColors[groupOf[label]] ?: color
             grid.addView(android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER
-                setPadding(dp(2), dp(10), dp(2), dp(8))
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    cornerRadius = 18 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
-                }
+                orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER_HORIZONTAL
+                setPadding(dp(2), dp(10), dp(2), dp(6))
+                val tv = android.util.TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, tv, true)
+                setBackgroundResource(tv.resourceId)
                 layoutParams = android.widget.GridLayout.LayoutParams().apply {
-                    width = 0; height = dp(92)
+                    width = 0; height = dp(104)
                     columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
-                    setMargins(dp(4), dp(4), dp(4), dp(4))
+                    setMargins(dp(2), dp(2), dp(2), dp(2))
                 }
                 addView(ImageView(this@renderTools).apply {
                     setImageResource(toolIcon(label))
-                    setColorFilter(palette.text)
-                    scaleType = ImageView.ScaleType.FIT_CENTER
-                    layoutParams = android.widget.LinearLayout.LayoutParams(dp(28), dp(28))
+                    setColorFilter(c)
+                    scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    setPadding(dp(14), dp(14), dp(14), dp(14))
+                    background = android.graphics.drawable.GradientDrawable().apply {
+                        cornerRadius = 18 * d; setColor((c and 0x00FFFFFF) or 0x26000000)
+                    }
+                    layoutParams = android.widget.LinearLayout.LayoutParams(dp(56), dp(56))
                 })
                 addView(TextView(this@renderTools).apply {
                     text = label; textSize = 12f; gravity = android.view.Gravity.CENTER; setTextColor(palette.text)
-                    maxLines = 2; setPadding(0, dp(4), 0, 0)
+                    maxLines = 2; setLineSpacing(0f, 0.95f); setPadding(0, dp(5), 0, 0)
                 })
                 setOnClickListener { action() }
             })
         }
-        list.addView(grid)
+        content.addView(grid)
     }
     group("ORGANIZZA", listOf(
         Triple("📝", "Note") { showNotesPage() },
@@ -140,17 +174,26 @@ internal fun MainActivity.renderTools() {
         Triple("🍝", "Ricette") { showRecipesPage() },
         Triple("🚘", "Modalità auto") { showCarMode() },
         Triple("☀️", "Buongiorno") { previewBrief() },
-        Triple("👟", "Passi") { showStepsPage() },
-        Triple("❤️", "Salute") { showHealthPage() },
         Triple("🔔", "Avvisi") { showAlertsPage() },
+        Triple("🎂", "Compleanni") { showBirthdaysPage() },
+        Triple("🗑", "Raccolta rifiuti") { showWastePage() },
+        Triple("📊", "La mia settimana") { showWeeklySummary() },
+        Triple("🚗", "Parcheggio e luoghi") { showPlacesPage() }
+    ))
+    group("SOLDI", listOf(
         Triple("💰", "Spese") { showExpensesPage() },
         Triple("💼", "Finanze") { showFinancePage() },
         Triple("🧠", "Chiedi ai tuoi dati") { askMyData() },
-        Triple("🎂", "Compleanni") { showBirthdaysPage() },
         Triple("📆", "Scadenze") { showDeadlinesPage(Deadlines.DEADLINE) },
         Triple("🔁", "Abbonamenti") { showDeadlinesPage(Deadlines.SUBSCRIPTION) },
         Triple("🧾", "Garanzie") { showDeadlinesPage(Deadlines.WARRANTY) },
-        Triple("🚗", "Parcheggio e luoghi") { showPlacesPage() }
+        Triple("📈", "Borsa") { showStocksPage() }
+    ))
+    group("SALUTE E SPORT", listOf(
+        Triple("👟", "Passi") { showStepsPage() },
+        Triple("❤️", "Salute") { showHealthPage() },
+        Triple("⏱", "Tabata") { showTabata() },
+        Triple("⛰", "Altimetro") { showAltimeter() }
     ))
     group("DOCUMENTI", listOf(
         Triple("📄", "Scanner") { scanDocument() },
@@ -163,14 +206,11 @@ internal fun MainActivity.renderTools() {
     ))
     group("UTILITÀ", listOf(
         Triple("📷", "QR code") { scanQr() },
-        Triple("🔦", "Torcia") { showUtilitiesPage("torcia") },
-        Triple("🧭", "Bussola") { showUtilitiesPage("bussola") },
-        Triple("📏", "Livella") { showUtilitiesPage("livella") },
-        Triple("⛰️", "Altimetro") { showUtilitiesPage("altimetro") },
-        Triple("📈", "Borsa") { showStocksPage() },
+        Triple("🧰", "Misure e sensori") { showInstrumentsPage() },
+        Triple("🔦", "Torcia e bussola") { showUtilitiesPage() },
         Triple("📦", "Pacchi") { showParcelsPage() },
         Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
-        Triple("⏱", "Tempo di utilizzo") { showUsagePage() },
+        Triple("⌛", "Tempo di utilizzo") { showUsagePage() },
         Triple("🧮", "Calcoli") {
             showTab(TAB_HOME); searchInput.requestFocus()
             toast("Scrivi nella ricerca: «15% di 230», «10 km in miglia», «50 dollari in euro»")
@@ -191,9 +231,23 @@ internal fun MainActivity.renderTools() {
     val all = groups.flatMap { it.second }
     toolsCatalog = groups.map { g -> g.first to g.second.map { it.second to it.first } }
     val favItems = favs.mapNotNull { f -> all.firstOrNull { it.second == f } }
-    renderGroup("⭐ PREFERITI", favItems)
-    groups.forEach { (t, items) -> renderGroup(t, items.filter { it.second !in hidden && it.second !in favs }) }
-    if (hidden.isNotEmpty()) emptyLabel(list, "${hidden.size} strumenti nascosti · tocca ✏️ in alto per mostrarli")
+    fun draw(q: String) {
+        content.removeAllViews()
+        if (q.isNotBlank()) {
+            val hits = all.filter { it.second.lowercase(Locale.ITALIAN).contains(q.trim().lowercase(Locale.ITALIAN)) }
+            if (hits.isEmpty()) emptyLabel(content, "Nessuno strumento con «${q.trim()}»") else renderGroup("RISULTATI", hits)
+            return
+        }
+        renderGroup("⭐ PREFERITI", favItems)
+        groups.forEach { (t, items) -> renderGroup(t, items.filter { it.second !in hidden && it.second !in favs }) }
+        if (hidden.isNotEmpty()) emptyLabel(content, "${hidden.size} strumenti nascosti · tocca ✏️ in alto per mostrarli")
+    }
+    search.addTextChangedListener(object : android.text.TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+        override fun afterTextChanged(s: android.text.Editable?) = draw(s?.toString().orEmpty())
+    })
+    draw("")
 }
 
 internal fun MainActivity.applyHomeLook() {
@@ -329,6 +383,11 @@ private fun toolIcon(label: String): Int = when (label) {
     "Bussola" -> R.drawable.ic_tool_compass
     "Livella" -> R.drawable.ic_tool_level
     "Altimetro" -> R.drawable.ic_tool_altitude
+    "Tabata" -> R.drawable.ic_tool_usage
+    "Raccolta rifiuti" -> R.drawable.ic_tool_box
+    "La mia settimana" -> R.drawable.ic_tool_chart
+    "Misure e sensori" -> R.drawable.ic_tool_level
+    "Torcia e bussola" -> R.drawable.ic_tool_torch
     "Borsa" -> R.drawable.ic_tool_chart
     "Pacchi" -> R.drawable.ic_tool_box
     "Meteo" -> R.drawable.ic_tool_weather
