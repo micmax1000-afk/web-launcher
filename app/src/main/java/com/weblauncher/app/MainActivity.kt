@@ -951,9 +951,15 @@ class MainActivity : AppCompatActivity() {
         }
         if (intent?.getBooleanExtra(SelfTest.EXTRA_DIALOG, false) == true) {
             intent.removeExtra(SelfTest.EXTRA_DIALOG)
+            val probe = com.google.android.material.textfield.TextInputEditText(this).apply { hint = "Suggerimento di prova" }
             MaterialAlertDialogBuilder(this).setTitle("Prova del tema")
-                .setMessage("Questa finestra deve avere i colori del tema scelto nell'app.\n".repeat(8))
-                .setPositiveButton("OK", null).show()
+                .setMessage("Questa finestra deve avere i colori del tema scelto nell'app.\n".repeat(6))
+                .setView(probe).setPositiveButton("OK", null).show()
+            probe.post {
+                val h = probe.currentHintTextColor; val t = probe.currentTextColor
+                fun lum(c: Int) = (0.299 * android.graphics.Color.red(c) + 0.587 * android.graphics.Color.green(c) + 0.114 * android.graphics.Color.blue(c)).toInt()
+                android.util.Log.i(SelfTest.TAG, "HINT_LUM=${lum(h)} HINT_ALPHA=${android.graphics.Color.alpha(h)} TEXT_LUM=${lum(t)}")
+            }
             return
         }
         if (intent?.getBooleanExtra(SelfTest.EXTRA, false) == true) {

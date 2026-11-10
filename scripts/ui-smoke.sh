@@ -88,6 +88,13 @@ print("luminosità media della finestra: %.0f" % lum)
 if lum < 150:
     print("::error::Con il tema chiaro la finestra è scura (luminosità %.0f)" % lum); sys.exit(1)
 PY
+# i suggerimenti nei campi devono leggersi sul fondo chiaro (non quasi bianchi, non trasparenti)
+HINT=$(adb logcat -d -s WL_SELFTEST:* | grep -o "HINT_LUM=[0-9]* HINT_ALPHA=[0-9]* TEXT_LUM=[0-9]*" | tail -1)
+echo "campo di prova: $HINT"
+HL=$(echo "$HINT" | sed -n 's/.*HINT_LUM=\([0-9]*\).*/\1/p'); HA=$(echo "$HINT" | sed -n 's/.*HINT_ALPHA=\([0-9]*\).*/\1/p'); TL=$(echo "$HINT" | sed -n 's/.*TEXT_LUM=\([0-9]*\).*/\1/p')
+if [ -z "$HL" ] || [ "$HL" -gt 170 ] || [ "$HA" -lt 150 ] || [ "$TL" -gt 120 ]; then
+  echo "::error::Con il tema chiaro i suggerimenti o il testo dei campi non si leggono ($HINT)"; exit 1
+fi
 adb shell input keyevent KEYCODE_BACK
 adb shell am start -W -n $PKG/.MainActivity --es wl_theme_check dark >/dev/null
 adb shell cmd uimode night no

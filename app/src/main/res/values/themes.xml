@@ -13,6 +13,8 @@
         <item name="colorOnSurface">@color/text</item>
         <item name="android:textColorPrimary">@color/text</item>
         <item name="android:textColorSecondary">@color/text_muted</item>
+        <item name="android:textColorHint">@color/hint_neutral</item>
+        <item name="android:editTextColor">@color/text</item>
         <!-- finestre e menu Material 3: stessi colori dell'app, chiari o scuri insieme -->
         <item name="colorSurfaceContainerLowest">@color/bg_elevated</item>
         <item name="colorSurfaceContainerLow">@color/bg_elevated</item>

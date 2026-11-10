@@ -18,4 +18,6 @@
     <color name="icon_tile">#F7F8FC</color>
     <color name="accent_amber">#E2A15A</color>
     <color name="accent_green">#2FBF71</color>
+    <!-- suggerimenti nei campi: un grigio leggibile sia su fondo chiaro sia su fondo scuro -->
+    <color name="hint_neutral">#7C8799</color>
 </resources>
