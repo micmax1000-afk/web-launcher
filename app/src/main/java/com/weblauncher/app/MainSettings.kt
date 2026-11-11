@@ -258,7 +258,6 @@ internal fun MainActivity.renderSettings() {
     }
 
     section("BROWSER")
-    row("Aggiungi web app", "Nome, indirizzo e categoria") { showAddEditDialog(null) }
     row("Browser predefinito", "Apri qui i link di WhatsApp, email…", value = if (isDefaultBrowser()) "Sì" else "No") { requestDefaultBrowser() }
     row("Motore di ricerca", value = engine.label) { showSearchEnginePicker() }
     row("🔎 Cosa cercare nei tuoi dati", "Scegli cosa mostrare sotto la barra di ricerca") {
@@ -337,8 +336,7 @@ internal fun MainActivity.renderSettings() {
     row("Canali seguiti", "${ytChannels().size} · in Ascolta → Video") { audioTab = "video"; showTab(TAB_AUDIO) }
 
     section("PRIVACY")
-    row("🛡 Report privacy", "Pubblicità e tracciatori bloccati, sito per sito") { showPrivacyReport() }
-    row("🧹 Siti da dimenticare", "Cookie cancellati alla chiusura: ${SiteCookies.list(this).size} siti") { showForgetSites() }
+    row("🛡 Privacy e pulizia", "Report, siti da dimenticare, pulizia (anche in Strumenti)") { showPrivacyTools() }
     row("🔒 Blocca l'app con impronta", if (lockEnabled()) "Attivo · " + listOf("subito", "dopo 1 minuto", "dopo 5 minuti", "dopo 15 minuti")[listOf(0, 1, 5, 15).indexOf(lockPrefs.getInt("delayMin", 1)).coerceAtLeast(0)]
         else "Impronta o PIN all'apertura", switch = lockEnabled()) { toggleAppLock() }
     if (lockEnabled()) row("Quando bloccare", "Dopo quanto tempo fuori dall'app") {
@@ -354,11 +352,6 @@ internal fun MainActivity.renderSettings() {
     row("Cancella dati del profilo 2", danger = true) {
         confirmClear("Cancellare cookie e login del profilo 2?") { IsolatedBrowserActivity.clear(); toast("Profilo 2 pulito") }
     }
-    row("🧹 Pulizia automatica", "Ogni settimana cancella cookie e dati dei siti non visitati da 30 giorni (non delle tue app)",
-        switch = toolsPrefs.getBoolean("autoClean", true)) {
-        toolsPrefs.edit().putBoolean("autoClean", !toolsPrefs.getBoolean("autoClean", true)).apply(); renderSettings()
-    }
-    row("🧹 Pulisci ora") { val n = autoCleanup(force = true); toast(if (n == 0) "Niente da pulire" else "Puliti i dati di $n siti") }
     row("Blocca pubblicità e tracker", "Pagine più veloci, meno dati consumati", switch = repo.blockAds()) {
         repo.setBlockAds(!repo.blockAds()); blockAdsOn = repo.blockAds()
         if (browserHasPage) webView.reload()
@@ -381,14 +374,7 @@ internal fun MainActivity.renderSettings() {
     row("Cancella tutti i dati", "Recenti, cronologia, cookie, cache", danger = true) { confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
 
     section("BACKUP")
-    row("📦 Backup completo", syncPrefs.getLong("fullLast", 0L).let { if (it > 0) "Ultimo ${NewsAdapter.ago(it)}" + (if (syncPrefs.getString("fullUri", null) != null) " · ogni notte" else "") else "Tutto in un file: libri, registrazioni, biglietti…" }) { showFullBackupMenu() }
-    row("🔄 Sincronizza tra dispositivi", if (repo.getAutoBackupUri() != null) "Collegato a un file di backup" else "Tramite un file su Google Drive") { showSyncHelp() }
-    val autoOn = repo.getAutoBackupUri() != null
-    row("Backup", if (autoOn) "Automatico attivo" else "Su file, Drive o condivisione") { showBackupMenu() }
-    row("Importa preferiti da Chrome", "Da un file bookmarks.html") { showBookmarkImportHelp() }
-    row("Ripristina", "Da un file di backup") {
-        importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-    }
+    row("📦 Backup e ripristino", "Backup completo, sincronizzazione, preferiti di Chrome (anche in Strumenti)") { showBackupTools() }
 
     section("AGGIORNAMENTI")
     row("⬆️ Controlla aggiornamenti", "Versione ${Updater.installedName(this)} (build ${Updater.installedCode(this)})" +
@@ -544,4 +530,38 @@ internal fun MainActivity.showAccentPicker() {
         }
         .setNegativeButton("Annulla", null)
         .show()
+}
+
+
+// ======================= Privacy and backup pages (from Strumenti and Impostazioni) =======================
+
+internal fun MainActivity.showPrivacyTools() {
+    openPage("Privacy e pulizia") { _, body, dialog ->
+        fun render() {
+            body.removeAllViews()
+            sectionLabel(body, "CONTROLLA")
+            listRow(body, "🛡 Report privacy", "Pubblicità e tracciatori bloccati, sito per sito", onClick = { showPrivacyReport() })
+            listRow(body, "🧹 Siti da dimenticare", "Cookie cancellati alla chiusura: ${SiteCookies.list(this).size} siti", onClick = { showForgetSites() })
+            sectionLabel(body, "PULISCI")
+            val auto = toolsPrefs.getBoolean("autoClean", true)
+            listRow(body, if (auto) "✅ Pulizia automatica attiva" else "☐ Pulizia automatica spenta", "Ogni settimana cancella cookie e dati dei siti non visitati da 30 giorni (non delle tue app)",
+                onClick = { toolsPrefs.edit().putBoolean("autoClean", !auto).apply(); render() })
+            listRow(body, "🧹 Pulisci ora", "Siti non visitati da 30 giorni", onClick = { val n = autoCleanup(force = true); toast(if (n == 0) "Niente da pulire" else "Puliti i dati di $n siti") })
+            listRow(body, "🕘 Cancella cronologia", "Recenti e cronologia del browser", onClick = { confirmClear("Cancellare cronologia e recenti?") { clearHistoryAndRecents(); toast("Cronologia cancellata") } })
+            listRow(body, "⚙ Altre impostazioni di privacy", "Blocco con impronta, pubblicità, cookie, siti truffa", onClick = {
+                dialog.dismiss(); settingsPage = "PRIVACY"; settingsQuery = ""; showTab(MainActivity.TAB_SETTINGS)
+            })
+        }
+        render()
+    }
+}
+
+internal fun MainActivity.showBackupTools() {
+    openPage("Backup e ripristino") { _, body, _ ->
+        listRow(body, "📦 Backup completo", syncPrefs.getLong("fullLast", 0L).let { if (it > 0) "Ultimo ${NewsAdapter.ago(it)}" + (if (syncPrefs.getString("fullUri", null) != null) " · ogni notte" else "") else "Tutto in un file: libri, registrazioni, biglietti…" }, onClick = { showFullBackupMenu() })
+        listRow(body, "🔄 Sincronizza tra dispositivi", if (repo.getAutoBackupUri() != null) "Collegato a un file di backup" else "Tramite un file su Google Drive", onClick = { showSyncHelp() })
+        listRow(body, "💾 Backup delle impostazioni", if (repo.getAutoBackupUri() != null) "Automatico attivo" else "Su file, Drive o condivisione", onClick = { showBackupMenu() })
+        listRow(body, "📥 Ripristina", "Da un file di backup", onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) })
+        listRow(body, "⭐ Importa preferiti da Chrome", "Da un file bookmarks.html", onClick = { showBookmarkImportHelp() })
+    }
 }

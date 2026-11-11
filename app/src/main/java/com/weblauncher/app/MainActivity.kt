@@ -1067,6 +1067,8 @@ class MainActivity : AppCompatActivity() {
             "report" -> { intent.removeExtra(EXTRA_WIDGET); showReportPage(); return }
             "music" -> { intent.removeExtra(EXTRA_WIDGET); showMusicPage(); return }
             "nowplaying" -> { intent.removeExtra(EXTRA_WIDGET); showNowPlayingFull(); return }
+            "privacytools" -> { intent.removeExtra(EXTRA_WIDGET); showPrivacyTools(); return }
+            "backuptools" -> { intent.removeExtra(EXTRA_WIDGET); showBackupTools(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
             "body" -> { intent.removeExtra(EXTRA_WIDGET); showBodyPage(); return }

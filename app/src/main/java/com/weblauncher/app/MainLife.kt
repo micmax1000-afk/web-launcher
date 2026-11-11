@@ -323,10 +323,10 @@ internal fun MainActivity.showCarMode() {
     val dark = 0xFF1C2230.toInt()
     tile(R.drawable.ic_tool_record, "Comando vocale", accent) { requestMicAndListen() }
     tile(R.drawable.ic_car_play, "Play / Pausa", dark) {
-        val c = controller
-        if (c?.currentMediaItem != null) { if (c.isPlaying) c.pause() else c.play() }
+        if (nowPlaying() != null) musicAction("toggle")
         else audio.favoriteStations().firstOrNull()?.let { playRadio(it) } ?: toast("Scegli una radio preferita in Ascolta")
     }
+    tile(R.drawable.ic_tool_music, "Musica a schermo intero", dark) { showNowPlayingFull() }
     tile(R.drawable.ic_car_radio, "Radio preferita", dark) {
         val favs = audio.favoriteStations()
         if (favs.isEmpty()) toast("Aggiungi una radio preferita (⭐) in Ascolta → Radio")
@@ -342,8 +342,8 @@ internal fun MainActivity.showCarMode() {
     val tick = object : Runnable {
         override fun run() {
             clock.text = java.text.SimpleDateFormat("HH:mm", Locale.ITALIAN).format(java.util.Date())
-            val md = controller?.currentMediaItem?.mediaMetadata
-            now.text = if (md != null) (if (controller?.isPlaying == true) "▶ " else "⏸ ") + (md.title ?: "") + (md.artist?.let { " · $it" } ?: "") else "Niente in riproduzione"
+            val n = nowPlaying()
+            now.text = if (n != null) (if (n.playing) "▶ " else "⏸ ") + n.title + (if (n.sub.isNotBlank()) " · ${n.sub}" else "") else "Niente in riproduzione"
             uiHandler.postDelayed(this, 1000)
         }
     }
