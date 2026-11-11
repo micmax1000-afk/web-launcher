@@ -82,7 +82,7 @@ class TrainingTest {
 class MusicTest {
     @Test fun appDalLink() {
         assertEquals("spotify", Music.appFor("https://open.spotify.com/playlist/37i9dQ")); assertEquals("spotify", Music.appFor("spotify:playlist:abc"))
-        assertEquals("ytmusic", Music.appFor("https://music.youtube.com/playlist?list=PL1")); assertEquals("ytmusic", Music.appFor("https://youtu.be/abc"))
+        assertEquals("ytmusic", Music.appFor("https://music.youtube.com/playlist?list=PL1")); assertEquals("youtube", Music.appFor("https://youtu.be/abc")); assertEquals("youtube", Music.appFor("https://m.youtube.com/watch?v=abc"))
         assertEquals(null, Music.appFor("https://example.com"))
     }
 
@@ -93,6 +93,7 @@ class MusicTest {
         assertEquals(MusicCmd.Find("musica per correre", null), Music.parseVoice("Metti musica per correre"))
         assertEquals(MusicCmd.Find("vasco rossi", "spotify"), Music.parseVoice("ascolta Vasco Rossi su Spotify"))
         assertEquals(MusicCmd.Find("la mia playlist", "ytmusic"), Music.parseVoice("metti la mia playlist su YouTube Music"))
+        assertEquals(MusicCmd.Find("concerto dei queen", "youtube"), Music.parseVoice("metti concerto dei queen su youtube"))
         assertEquals(MusicCmd.Find("coldplay", null), Music.parseVoice("riproduci coldplay"))
         // non devono essere scambiati per musica
         assertEquals(null, Music.parseVoice("metti dentista martedì alle 10")); assertEquals(null, Music.parseVoice("metti la sveglia alle 7"))
@@ -105,6 +106,9 @@ class MusicTest {
         assertEquals("Albachiara", w.title); assertEquals("Vasco Rossi", w.artist); assertTrue(w.playing); assertEquals(5L, w.at)
         assertEquals(null, Music.parseWebState("\"{}\"")); assertEquals(null, Music.parseWebState("null")); assertEquals(null, Music.parseWebState(null))
         assertEquals("https://music.youtube.com/search?q=musica%20per%20correre", Music.searchUri("ytmusic", "musica per correre"))
+        assertEquals("https://m.youtube.com/results?search_query=gatti%20buffi", Music.searchUri("youtube", "gatti buffi"))
+        val yt = Music.parseWebState("\"{\\\"t\\\":\\\"Video\\\",\\\"p\\\":false,\\\"has\\\":true,\\\"mu\\\":false}\"", 1)!!
+        assertFalse(yt.music); assertFalse(yt.playing)
         assertTrue(Music.controlJs("next'); alert(1); ('").endsWith("('nextalert')"))
     }
 }

@@ -14,13 +14,14 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /** Opens a link in the music app (Spotify / YouTube Music open their own links); falls back to the browser. */
 internal fun MainActivity.openMusicLink(url: String) {
-    if (Music.appFor(url) == "ytmusic" && Music.ytInApp(this)) { openInBrowser(url); return }
+    if (Music.appFor(url) == "youtube" || Music.appFor(url) == "ytmusic" && Music.ytInApp(this)) { openInBrowser(url); return }
     val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     Music.packageOf(Music.appFor(url))?.takeIf { Music.installed(this, it) }?.let { i.setPackage(it) }
     try { startActivity(i) } catch (_: Exception) { if (url.startsWith("http")) openInBrowser(url) else toast("Non trovo l'app per aprire questo link") }
 }
 
 internal fun MainActivity.openMusicApp(app: String?) {
+    if (app == "youtube") { openInBrowser("https://m.youtube.com/"); return }
     if (app == "ytmusic" && Music.ytInApp(this)) { openInBrowser("https://music.youtube.com/"); return }
     val pkg = Music.packageOf(app) ?: return toast("Nessuna app di musica trovata")
     val i = packageManager.getLaunchIntentForPackage(pkg) ?: return toast("${Music.appName(app)} non è installata")
@@ -70,7 +71,7 @@ class MusicBar(private val a: MainActivity, private val large: Boolean = false) 
         val w = Music.web
         if (w != null && Music.webActive()) {           // YouTube Music inside the app
             cover.visibility = View.VISIBLE; controls.visibility = View.VISIBLE
-            title.text = w.title; sub.text = listOf(w.artist, "YouTube Music").filter { it.isNotBlank() }.joinToString(" · ")
+            title.text = w.title.ifBlank { "Video in riproduzione" }; sub.text = listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · ")
             play.text = if (w.playing) "⏸" else "▶"
             if (w.art != artUrl) { artUrl = w.art; cover.setImageDrawable(null)
                 if (w.art.startsWith("http")) a.io.execute { runCatching { java.net.URL(w.art).openStream().use { android.graphics.BitmapFactory.decodeStream(it) } }.getOrNull()?.let { bmp -> a.runOnUiThread { if (artUrl == w.art) cover.setImageBitmap(bmp) } } } }
@@ -101,12 +102,14 @@ internal fun MainActivity.showMusicPage() {
             body.removeAllViews()
             sectionLabel(body, "ORA IN ASCOLTO")
             body.addView(MusicBar(this, large = true).view)
-            hintLabel(body, "Con YouTube Music aperto qui dentro vedi titolo e copertina e usi i tasti senza alcun permesso di Android.")
+            hintLabel(body, "Con YouTube o YouTube Music aperti qui dentro vedi titolo e copertina e usi i tasti senza alcun permesso di Android.")
 
             sectionLabel(body, "APRI")
             val ytApp = Music.installed(this, Music.YTMUSIC)
             listRow(body, "🔴 YouTube Music", if (Music.ytInApp(this)) "Si apre qui dentro, nel Browser di Web Launcher: suona anche a schermo spento" + (if (ytApp) ". Tieni premuto per usare l'app separata" else "") else "Apre l'app YouTube Music. Tieni premuto per usarlo dentro Web Launcher",
                 onClick = { dialog.dismiss(); openMusicApp("ytmusic") }, onLong = { if (ytApp) { Music.setYtInApp(this, !Music.ytInApp(this)); render() } })
+            listRow(body, "▶️ YouTube", "Video e musica, qui dentro: pubblicità saltate e audio anche a schermo spento" + if (Music.preferred(this) == "youtube") " · usato per le ricerche" else "",
+                onClick = { dialog.dismiss(); openMusicApp("youtube") }, onLong = { Music.setPreferred(this, if (Music.preferred(this) == "youtube") "ytmusic" else "youtube"); toast(if (Music.preferred(this) == "youtube") "Le ricerche vanno su YouTube" else "Le ricerche vanno su YouTube Music"); render() })
             if (Music.installed(this, Music.SPOTIFY)) listRow(body, "🟢 Spotify", if (Music.preferred(this) == "spotify") "App preferita per le ricerche: tieni premuto per tornare a YouTube Music" else "Tocca per aprire, tieni premuto per usarla nelle ricerche",
                 onClick = { openMusicApp("spotify") }, onLong = { Music.setPreferred(this, if (Music.preferred(this) == "spotify") "ytmusic" else "spotify"); render() })
 
@@ -120,10 +123,10 @@ internal fun MainActivity.showMusicPage() {
 
             sectionLabel(body, "LE MIE PLAYLIST")
             Music.playlists(this).forEach { p ->
-                listRow(body, (if (Music.appFor(p.url) == "spotify") "🟢 " else if (Music.appFor(p.url) == "ytmusic") "🔴 " else "🎵 ") + p.name, Music.appName(Music.appFor(p.url)) + " · tocca per aprirla", onClick = { if (Music.appFor(p.url) == "ytmusic" && Music.ytInApp(this)) dialog.dismiss(); openMusicLink(p.url) },
+                listRow(body, (if (Music.appFor(p.url) == "spotify") "🟢 " else if (Music.appFor(p.url) == "ytmusic") "🔴 " else if (Music.appFor(p.url) == "youtube") "▶️ " else "🎵 ") + p.name, Music.appName(Music.appFor(p.url)) + " · tocca per aprirla", onClick = { if (Music.appFor(p.url) == "youtube" || Music.appFor(p.url) == "ytmusic" && Music.ytInApp(this)) dialog.dismiss(); openMusicLink(p.url) },
                     onRemove = { Music.removePlaylist(this, p.id); render() })
             }
-            listRow(body, "➕ Aggiungi playlist o album", "Incolla il link da Spotify o YouTube Music (Condividi → Copia link)", onClick = {
+            listRow(body, "➕ Aggiungi playlist o album", "Incolla il link da Spotify, YouTube Music o YouTube (Condividi → Copia link)", onClick = {
                 val clip = (getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString().orEmpty().trim()
                 val name = field("Nome (es. Corsa)", null); val url = field("Link", clip.takeIf { Music.appFor(it) != null })
                 MaterialAlertDialogBuilder(this).setTitle("Nuova playlist").setView(form(name, url)).setPositiveButton("Salva") { _, _ ->
