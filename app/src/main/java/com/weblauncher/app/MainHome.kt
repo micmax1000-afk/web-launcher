@@ -163,6 +163,14 @@ internal fun MainActivity.renderTools() {
                 setOnClickListener { action() }
             })
         }
+        // riempie l'ultima riga con spazi vuoti: le icone restano in 4 colonne anche nei gruppi corti
+        repeat((4 - items.size % 4) % 4) {
+            grid.addView(View(this).apply {
+                layoutParams = android.widget.GridLayout.LayoutParams().apply {
+                    width = 0; height = dp(104); columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f); setMargins(dp(2), dp(2), dp(2), dp(2))
+                }
+            })
+        }
         content.addView(grid)
     }
     group("ORGANIZZA", listOf(
