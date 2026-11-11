@@ -28,11 +28,11 @@ data class NowPlaying(val title: String, val artist: String, val app: String, va
 /** What was asked by voice about the music. */
 sealed class MusicCmd {
     data class Control(val action: String) : MusicCmd()          // pause | play | next | prev
-    data class Find(val query: String, val app: String?) : MusicCmd()   // app: "spotify" | "ytmusic" | null
+    data class Find(val query: String, val app: String?) : MusicCmd()   // app: "spotify" | "ytmusic" | "youtube" | null
 }
 
 /** What the YouTube Music page inside the app's browser is playing. */
-data class WebPlaying(val title: String, val artist: String, val art: String, val playing: Boolean, val at: Long)
+data class WebPlaying(val title: String, val artist: String, val art: String, val playing: Boolean, val at: Long, val music: Boolean = true)
 
 object Music {
     /** The YouTube Music player inside the app: its state and a way to command it (set by the main screen). */
@@ -42,7 +42,9 @@ object Music {
 
     const val STATE_JS = "(function(){try{var v=document.querySelector('video');var m=navigator.mediaSession&&navigator.mediaSession.metadata;var art='';" +
         "if(m&&m.artwork&&m.artwork.length)art=m.artwork[m.artwork.length-1].src||'';" +
-        "return JSON.stringify({t:m?(m.title||''):'',a:m?(m.artist||''):'',art:art,p:!!(v&&!v.paused&&!v.ended),has:!!v});}catch(e){return '{}';}})()"
+        "var t=m?(m.title||''):'';if(!t)t=(document.title||'').replace(/^\\(\\d+\\)\\s*/,'').replace(/\\s*-\\s*YouTube( Music)?$/,'');" +
+        "var id=(location.href.match(/[?&]v=([\\w-]{11})/)||[])[1];if(!art&&id)art='https://i.ytimg.com/vi/'+id+'/hqdefault.jpg';" +
+        "return JSON.stringify({t:t,a:m?(m.artist||''):'',art:art,p:!!(v&&!v.paused&&!v.ended),has:!!v,mu:location.hostname.indexOf('music.')==0});}catch(e){return '{}';}})()"
     fun controlJs(action: String) = "(function(a){try{var v=document.querySelector('video');function c(s){for(var i=0;i<s.length;i++){var e=document.querySelector(s[i]);if(e){e.click();return true;}}return false;}" +
         "if(a=='pause'){v&&v.pause();}else if(a=='play'){v&&v.play();}else if(a=='toggle'){v&&(v.paused?v.play():v.pause());}" +
         "else if(a=='next'){c(['ytmusic-player-bar .next-button','.next-button','a.ytp-next-button','button[aria-label*=\\'Succ\\']','button[aria-label*=\\'Next\\']'])||(v&&v.duration&&(v.currentTime=v.duration));}" +
@@ -53,7 +55,7 @@ object Music {
         val inner = com.google.gson.JsonParser.parseString(raw).asString
         val o = com.google.gson.JsonParser.parseString(inner).asJsonObject
         if (o.get("has")?.asBoolean != true) return null
-        WebPlaying(o.get("t")?.asString.orEmpty(), o.get("a")?.asString.orEmpty(), o.get("art")?.asString.orEmpty(), o.get("p")?.asBoolean == true, now)
+        WebPlaying(o.get("t")?.asString.orEmpty(), o.get("a")?.asString.orEmpty(), o.get("art")?.asString.orEmpty(), o.get("p")?.asBoolean == true, now, o.get("mu")?.asBoolean != false)
     }.getOrNull()
 
     const val SPOTIFY = "com.spotify.music"
@@ -66,13 +68,18 @@ object Music {
         val u = url.lowercase()
         return when {
             u.startsWith("spotify:") || u.contains("spotify.com") || u.contains("spoti.fi") -> "spotify"
-            u.contains("music.youtube.com") || u.contains("youtube.com") || u.contains("youtu.be") -> "ytmusic"
+            u.contains("music.youtube.com") -> "ytmusic"
+            u.contains("youtube.com") || u.contains("youtu.be") -> "youtube"
             else -> null
         }
     }
-    fun appName(app: String?) = when (app) { "spotify" -> "Spotify"; "ytmusic" -> "YouTube Music"; else -> "Musica" }
+    fun appName(app: String?) = when (app) { "spotify" -> "Spotify"; "ytmusic" -> "YouTube Music"; "youtube" -> "YouTube"; else -> "Musica" }
     fun packageOf(app: String?) = when (app) { "spotify" -> SPOTIFY; "ytmusic" -> YTMUSIC; else -> null }
-    fun searchUri(app: String, q: String): String = if (app == "spotify") "spotify:search:" + enc(q) else "https://music.youtube.com/search?q=" + enc(q)
+    fun searchUri(app: String, q: String): String = when (app) {
+        "spotify" -> "spotify:search:" + enc(q)
+        "youtube" -> "https://m.youtube.com/results?search_query=" + enc(q)
+        else -> "https://music.youtube.com/search?q=" + enc(q)
+    }
     private fun enc(q: String) = java.net.URLEncoder.encode(q, "UTF-8").replace("+", "%20")
 
     private val APP_WORDS = Regex("\\s+(?:su|con|in|da|tramite)\\s+(spotify|youtube music|youtube|you tube|yt music)\\s*$", RegexOption.IGNORE_CASE)
@@ -88,7 +95,7 @@ object Music {
         val m = Regex("^(metti|ascolta|fai\\s+partire|fammi\\s+ascoltare|riproduci|suona|cerca)\\s+(.+)$").find(t) ?: return null
         val verb = m.groupValues[1]; var rest = m.groupValues[2].trim()
         var app: String? = null
-        APP_WORDS.find(rest)?.let { am -> app = if (am.groupValues[1].contains("spotify", true)) "spotify" else "ytmusic"; rest = rest.removeRange(am.range).trim() }
+        APP_WORDS.find(rest)?.let { am -> app = if (am.groupValues[1].contains("spotify", true)) "spotify" else if (am.groupValues[1].contains("music", true)) "ytmusic" else "youtube"; rest = rest.removeRange(am.range).trim() }
         if (rest.isEmpty()) return null
         val musical = verb != "metti" && verb != "cerca" || MUSIC_WORDS.containsMatchIn(rest) || app != null
         if (!musical) return null
@@ -115,7 +122,7 @@ object Music {
     /** Where searches go: the preferred one; Spotify only if its app is there; otherwise YouTube Music (always available inside the app). */
     fun defaultApp(c: Context): String {
         val p = preferred(c)
-        if (p == "ytmusic" || p == "spotify" && installed(c, SPOTIFY)) return p!!
+        if (p == "ytmusic" || p == "youtube" || p == "spotify" && installed(c, SPOTIFY)) return p!!
         return "ytmusic"
     }
 
