@@ -56,6 +56,7 @@ for page in instruments tabata altimeter ruler metal split waste finance stocks 
   shot "$n-$page" 3
   alive || { echo "::error::L'app si è chiusa aprendo $page"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -60; exit 1; }
   adb shell input keyevent KEYCODE_BACK
+  if [ "$page" = carweb ]; then sleep 1; adb shell input keyevent KEYCODE_BACK; sleep 1; adb shell input keyevent KEYCODE_BACK; fi   # pagina -> preferiti -> esci
   n=$((n+1))
 done
 
