@@ -38,20 +38,20 @@ internal fun MainActivity.askMusicAccess() {
 }
 
 /** What is playing now, wherever it comes from: YouTube / YouTube Music in the app's browser, the app's own player, or another app. */
-data class NowView(val title: String, val sub: String, val artUrl: String?, val artBmp: android.graphics.Bitmap?, val playing: Boolean, val source: String)
+data class NowView(val title: String, val sub: String, val artUrl: String?, val artBmp: android.graphics.Bitmap?, val playing: Boolean, val source: String, val posMs: Long = 0, val durMs: Long = 0)
 
 internal fun MainActivity.nowPlaying(): NowView? {
     val w = Music.web
     if (w != null && Music.webActive())
-        return NowView(w.title.ifBlank { "Video in riproduzione" }, listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · "), w.art.takeIf { it.startsWith("http") }, null, w.playing, "web")
+        return NowView(w.title.ifBlank { "Video in riproduzione" }, listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · "), w.art.takeIf { it.startsWith("http") }, null, w.playing, "web", w.posMs + if (w.playing) System.currentTimeMillis() - w.at else 0L, w.durMs)
     val c = controller
     val item = c?.currentMediaItem
     if (c != null && item != null && c.playbackState != androidx.media3.common.Player.STATE_IDLE) {
         val md = item.mediaMetadata
-        return NowView(md.title?.toString().orEmpty().ifBlank { "In riproduzione" }, md.artist?.toString().orEmpty(), md.artworkUri?.toString(), null, c.isPlaying, "local")
+        return NowView(md.title?.toString().orEmpty().ifBlank { "In riproduzione" }, md.artist?.toString().orEmpty(), md.artworkUri?.toString(), null, c.isPlaying, "local", c.currentPosition, c.duration.takeIf { it > 0 } ?: 0L)
     }
     val n = Music.current(this) ?: return null
-    return NowView(n.title, listOf(n.artist, n.app).filter { it.isNotBlank() }.joinToString(" · "), null, n.art, n.playing, "system")
+    return NowView(n.title, listOf(n.artist, n.app).filter { it.isNotBlank() }.joinToString(" · "), null, n.art, n.playing, "system", n.posMs, n.durMs)
 }
 
 /** Pause / play / next / previous on whatever is playing. */
@@ -130,6 +130,9 @@ class MusicBar(private val a: MainActivity, private val large: Boolean = false) 
 }
 
 internal fun MainActivity.showArtPublic(iv: ImageView, n: NowView?) = showArt(iv, n)
+
+/** Where the music comes from, for the car screen header. */
+internal fun NowView.sourceLabel() = when (source) { "local" -> "Web Launcher"; else -> sub.substringAfterLast(" · ", "") }
 
 /** Full screen «now playing», for the car: big cover, big text, huge buttons, the screen stays on. */
 internal fun MainActivity.showNowPlayingFull() {

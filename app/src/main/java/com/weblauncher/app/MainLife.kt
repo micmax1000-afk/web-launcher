@@ -105,12 +105,73 @@ internal fun MainActivity.saveRecipeFromPage() {
     }
 }
 
+/** Giallo Zafferano: search page and recognising a recipe page (to offer «save»). */
+object GialloZafferano {
+    fun searchUrl(q: String) = "https://www.giallozafferano.it/ricerca-ricette/" + java.net.URLEncoder.encode(q.trim(), "UTF-8").replace("+", "%20") + "/"
+    fun isRecipePage(url: String?): Boolean {
+        val u = runCatching { android.net.Uri.parse(url) }.getOrNull() ?: return false
+        val host = u.host.orEmpty(); val path = u.path.orEmpty()
+        return host == "ricette.giallozafferano.it" && path.endsWith(".html") ||
+            host == "blog.giallozafferano.it" && path.trim('/').count { it == '/' } >= 1
+    }
+}
+
+/** «Crea con l'AI»: a recipe written by the AI from what you want, the people, the time and what is in the fridge. */
+internal fun MainActivity.createRecipeWithAi(done: () -> Unit) {
+    if (!aiReady()) return
+    val what = field("Cosa vuoi? (es. cena veloce con zucchine)", null)
+    val people = field("Per quante persone", "2", number = true)
+    val time = field("Tempo massimo in minuti (facoltativo)", null, number = true)
+    val have = field("Cosa hai in casa (facoltativo)", null)
+    val avoid = Food.avoid(this)
+    val box = form(what, people, time, have)
+    if (avoid.isNotEmpty()) box.addView(TextView(this).apply { text = "Senza: " + avoid.joinToString(", ") + " (dal tuo profilo)"; textSize = 12f; setPadding(0, 12, 0, 0) })
+    MaterialAlertDialogBuilder(this).setTitle("✨ Crea con l'AI").setView(box).setPositiveButton("Crea") { _, _ ->
+        val w = what.text.toString().trim(); val hv = have.text.toString().trim()
+        if (w.isBlank() && hv.isBlank()) { toast("Scrivi cosa vuoi cucinare o cosa hai in casa"); return@setPositiveButton }
+        val n = people.text.toString().toIntOrNull()?.coerceIn(1, 20) ?: 2
+        val prompt = buildString {
+            append("Crea una ricetta italiana chiara e realistica")
+            if (w.isNotBlank()) append(": $w")
+            append(". Per $n persone.")
+            time.text.toString().toIntOrNull()?.let { append(" Pronta in massimo $it minuti.") }
+            if (hv.isNotBlank()) append(" Usa soprattutto questi ingredienti che ho in casa: $hv.")
+            if (avoid.isNotEmpty()) append(" NON usare ingredienti con: ${avoid.joinToString(", ")}.")
+            append(" Rispondi SOLO con JSON: {\"titolo\":\"...\",\"porzioni\":\"$n\",\"tempo\":\"30 minuti\",\"ingredienti\":[\"200 g di pasta\",...],\"passaggi\":[\"...\",...]}. Quantità precise, passaggi brevi in italiano.")
+        }
+        toast("✨ L'AI sta scrivendo la ricetta…")
+        ai.ask(listOf("user" to prompt), "Rispondi solo con JSON valido.", object : AiBridge.Listener {
+            override fun onDone(text: String, model: String) {
+                val o = runCatching { org.json.JSONObject(Regex("\\{[\\s\\S]*\\}").find(text)!!.value) }.getOrNull()
+                val ing = o?.optJSONArray("ingredienti"); val steps = o?.optJSONArray("passaggi")
+                if (o == null || ing == null || ing.length() == 0) { toast("L'AI non ha scritto una ricetta valida: riprova"); return }
+                val r = Recipe(UUID.randomUUID().toString(), o.optString("titolo").ifBlank { w.ifBlank { "Ricetta" } }, "", null,
+                    o.optString("porzioni").ifBlank { "$n" }, o.optString("tempo"),
+                    (0 until ing.length()).map { ing.optString(it) }, (0 until (steps?.length() ?: 0)).map { steps!!.optString(it) }, System.currentTimeMillis())
+                Recipes.save(this@createRecipeWithAi, listOf(r) + Recipes.load(this@createRecipeWithAi))
+                done(); showRecipe(r)
+            }
+            override fun onError(message: String, noKey: Boolean) { toast(if (noKey) "Configura prima l'AI in Mia AI" else message) }
+        })
+    }.setNegativeButton("Annulla", null).show()
+}
+
 internal fun MainActivity.showRecipesPage() {
     openPage("Ricette", "Menu", { _ -> weeklyMenu() }) { _, body, dialog ->
         fun render() {
             body.removeAllViews()
             val list = Recipes.load(this)
-            if (list.isEmpty()) { emptyLabel(body, "Nessuna ricetta.\nApri una ricetta in un sito → menu ⋮ → «🍝 Salva ricetta»."); return }
+            sectionLabel(body, "NUOVA RICETTA")
+            listRow(body, "✨ Crea con l'AI", "Dimmi cosa vuoi o cosa hai in frigo: l'AI scrive la ricetta", onClick = { createRecipeWithAi { dialog.dismiss(); showRecipesPage() } })
+            listRow(body, "🔎 Cerca su Giallo Zafferano", "Si apre qui: con un tocco la salvi nelle tue ricette", onClick = {
+                val et = field("Cosa vuoi cucinare? (es. carbonara)", null)
+                MaterialAlertDialogBuilder(this).setTitle("Giallo Zafferano").setView(form(et)).setPositiveButton("Cerca") { _, _ ->
+                    val q = et.text.toString().trim()
+                    dialog.dismiss(); openInBrowser(if (q.isBlank()) "https://www.giallozafferano.it/" else GialloZafferano.searchUrl(q))
+                }.setNegativeButton("Annulla", null).show()
+            })
+            if (list.isEmpty()) { hintLabel(body, "Puoi salvare una ricetta da qualsiasi sito: menu ⋮ → «🍝 Salva ricetta»."); return }
+            sectionLabel(body, "LE MIE RICETTE · ${list.size}")
             list.forEach { r ->
                 mediaRow(body, r.image, r.title, listOf(r.time, r.servings.takeIf { it.isNotBlank() }?.let { "$it porzioni" }).filterNotNull().filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "${r.ingredients.size} ingredienti" },
                     null, trailing = listOf(R.drawable.ic_web_close to {
@@ -282,80 +343,6 @@ internal fun MainActivity.setHomeAddress(then: (() -> Unit)? = null) {
             val a = et.text?.toString()?.trim().orEmpty()
             if (a.isNotEmpty()) { carPrefs.edit().putString("home", a).apply(); then?.invoke() }
         }.setNegativeButton("Annulla", null).show()
-}
-
-internal fun MainActivity.showCarMode() {
-    val d = resources.displayMetrics.density
-    fun dp(v: Int) = (v * d).toInt()
-    val dialog = androidx.appcompat.app.AppCompatDialog(this, AppRepository.accentStyle(this))
-    val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
-    val root = android.widget.LinearLayout(this).apply {
-        orientation = android.widget.LinearLayout.VERTICAL; setBackgroundColor(0xFF0B0D10.toInt()); setPadding(dp(14), dp(18), dp(14), dp(14))
-    }
-    val head = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL }
-    val clock = TextView(this).apply { textSize = 34f; setTextColor(android.graphics.Color.WHITE); setTypeface(typeface, android.graphics.Typeface.BOLD); layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f) }
-    head.addView(clock)
-    head.addView(com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
-        text = "Esci"; textSize = 18f; isAllCaps = false; setTextColor(android.graphics.Color.WHITE); setOnClickListener { dialog.dismiss() }
-    })
-    root.addView(head)
-    val now = TextView(this).apply { textSize = 18f; setTextColor(0xFFB8C0CC.toInt()); maxLines = 2; setPadding(dp(4), dp(8), dp(4), dp(10)) }
-    root.addView(now)
-    val grid = android.widget.GridLayout(this).apply { columnCount = 2; layoutParams = android.widget.LinearLayout.LayoutParams(-1, 0, 1f) }
-    fun tile(icon: Int, label: String, color: Int, onClick: () -> Unit) = grid.addView(android.widget.LinearLayout(this).apply {
-        orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER
-        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 24 * d; setColor(color) }
-        layoutParams = android.widget.GridLayout.LayoutParams().apply {
-            width = 0; height = 0
-            columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
-            rowSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
-            setMargins(dp(6), dp(6), dp(6), dp(6))
-        }
-        addView(ImageView(this@showCarMode).apply {
-            setImageResource(icon)
-            setColorFilter(android.graphics.Color.WHITE)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
-        })
-        addView(TextView(this@showCarMode).apply { text = label; textSize = 19f; setTextColor(android.graphics.Color.WHITE); gravity = android.view.Gravity.CENTER; setPadding(0, dp(6), 0, 0) })
-        setOnClickListener { onClick() }
-    })
-    val dark = 0xFF1C2230.toInt()
-    tile(R.drawable.ic_tool_record, "Comando vocale", accent) { requestMicAndListen() }
-    tile(R.drawable.ic_car_play, "Play / Pausa", dark) {
-        if (nowPlaying() != null) musicAction("toggle")
-        else audio.favoriteStations().firstOrNull()?.let { playRadio(it) } ?: toast("Scegli una radio preferita in Ascolta")
-    }
-    tile(R.drawable.ic_tool_music, "Musica a schermo intero", dark) { showNowPlayingFull() }
-    tile(R.drawable.ic_car_radio, "Radio preferita", dark) {
-        val favs = audio.favoriteStations()
-        if (favs.isEmpty()) toast("Aggiungi una radio preferita (⭐) in Ascolta → Radio")
-        else MaterialAlertDialogBuilder(this).setItems(favs.map { it.name }.toTypedArray()) { _, w -> playRadio(favs[w]) }.show()
-    }
-    tile(R.drawable.ic_car_podcast, "Riprendi podcast", dark) {
-        val eps = if (episodes.isEmpty()) audio.cachedEpisodes() else episodes
-        val e = eps.filter { AudioStore.position(this, it.id) > 0 && !AudioStore.isFinished(this, it.id) }.maxByOrNull { it.time }
-            ?: eps.firstOrNull { !AudioStore.isFinished(this, it.id) }
-        if (e != null) playEpisode(e) else toast("Nessun episodio: segui un podcast in Ascolta")
-    }
-    root.addView(grid)
-    val tick = object : Runnable {
-        override fun run() {
-            clock.text = java.text.SimpleDateFormat("HH:mm", Locale.ITALIAN).format(java.util.Date())
-            val n = nowPlaying()
-            now.text = if (n != null) (if (n.playing) "▶ " else "⏸ ") + n.title + (if (n.sub.isNotBlank()) " · ${n.sub}" else "") else "Niente in riproduzione"
-            uiHandler.postDelayed(this, 1000)
-        }
-    }
-    dialog.setContentView(root)
-    dialog.window?.apply {
-        setLayout(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
-        addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        statusBarColor = 0xFF0B0D10.toInt(); navigationBarColor = 0xFF0B0D10.toInt()
-    }
-    dialog.setOnDismissListener { uiHandler.removeCallbacks(tick) }
-    dialog.show()
-    uiHandler.post(tick)
 }
 
 // ======================= Share to Web Launcher =======================
