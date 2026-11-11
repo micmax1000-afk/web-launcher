@@ -78,3 +78,24 @@ class TrainingTest {
         assertFalse(nextWeekday(Calendar.TUESDAY, "08:00", now) <= now)
     }
 }
+
+class MusicTest {
+    @Test fun appDalLink() {
+        assertEquals("spotify", Music.appFor("https://open.spotify.com/playlist/37i9dQ")); assertEquals("spotify", Music.appFor("spotify:playlist:abc"))
+        assertEquals("ytmusic", Music.appFor("https://music.youtube.com/playlist?list=PL1")); assertEquals("ytmusic", Music.appFor("https://youtu.be/abc"))
+        assertEquals(null, Music.appFor("https://example.com"))
+    }
+
+    @Test fun comandiVocali() {
+        assertEquals(MusicCmd.Control("pause"), Music.parseVoice("Pausa")); assertEquals(MusicCmd.Control("pause"), Music.parseVoice("ferma la musica"))
+        assertEquals(MusicCmd.Control("play"), Music.parseVoice("riprendi la musica")); assertEquals(MusicCmd.Control("next"), Music.parseVoice("prossima canzone"))
+        assertEquals(MusicCmd.Control("prev"), Music.parseVoice("canzone precedente"))
+        assertEquals(MusicCmd.Find("musica per correre", null), Music.parseVoice("Metti musica per correre"))
+        assertEquals(MusicCmd.Find("vasco rossi", "spotify"), Music.parseVoice("ascolta Vasco Rossi su Spotify"))
+        assertEquals(MusicCmd.Find("la mia playlist", "ytmusic"), Music.parseVoice("metti la mia playlist su YouTube Music"))
+        assertEquals(MusicCmd.Find("coldplay", null), Music.parseVoice("riproduci coldplay"))
+        // non devono essere scambiati per musica
+        assertEquals(null, Music.parseVoice("metti dentista martedì alle 10")); assertEquals(null, Music.parseVoice("metti la sveglia alle 7"))
+        assertEquals(null, Music.parseVoice("apri il calendario")); assertEquals(null, Music.parseVoice("metti"))
+    }
+}

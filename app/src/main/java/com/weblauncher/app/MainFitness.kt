@@ -53,6 +53,7 @@ internal fun MainActivity.showWorkoutRecorder() {
         val d = resources.displayMetrics.density
         fun dp(v: Int) = (v * d).toInt()
         var kind = WorkoutState.kind
+        val musicBar = MusicBar(this)
         val h = android.os.Handler(android.os.Looper.getMainLooper())
         lateinit var render: () -> Unit
         val tick = object : Runnable { override fun run() { if (WorkoutState.running) { render(); h.postDelayed(this, 1000) } } }
@@ -76,7 +77,8 @@ internal fun MainActivity.showWorkoutRecorder() {
                 }
                 val fixAge = if (WorkoutState.lastFixAt == 0L) -1 else (System.currentTimeMillis() - WorkoutState.lastFixAt) / 1000
                 hintLabel(body, if (fixAge < 0) "📡 Cerco il segnale GPS… all'aperto è più veloce." else if (fixAge > 20) "📡 Segnale GPS debole da $fixAge secondi." else "📡 GPS ok")
-                body.addView(RouteView(this).apply { pts = t.points.toList(); layoutParams = LinearLayout.LayoutParams(-1, dp(220)).apply { setMargins(dp(8), dp(8), dp(8), dp(8)) } })
+                body.addView(RouteView(this).apply { pts = t.points.toList(); layoutParams = LinearLayout.LayoutParams(-1, dp(200)).apply { setMargins(dp(8), dp(8), dp(8), dp(8)) } })
+                body.addView(musicBar.view)
                 body.addView(MaterialButton(this).apply {
                     text = "⏹ Termina e salva"; isAllCaps = false; textSize = 17f
                     layoutParams = LinearLayout.LayoutParams(-1, dp(56)).apply { setMargins(dp(12), dp(8), dp(12), dp(8)) }

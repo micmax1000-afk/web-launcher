@@ -1064,6 +1064,7 @@ class MainActivity : AppCompatActivity() {
             "visits" -> { intent.removeExtra(EXTRA_WIDGET); showVisitsPage(); return }
             "emergency" -> { intent.removeExtra(EXTRA_WIDGET); showEmergencyPage(); return }
             "report" -> { intent.removeExtra(EXTRA_WIDGET); showReportPage(); return }
+            "music" -> { intent.removeExtra(EXTRA_WIDGET); showMusicPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
             "body" -> { intent.removeExtra(EXTRA_WIDGET); showBodyPage(); return }
             "symptoms" -> { intent.removeExtra(EXTRA_WIDGET); showSymptomsPage(); return }

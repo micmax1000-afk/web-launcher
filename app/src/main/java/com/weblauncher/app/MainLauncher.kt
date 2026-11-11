@@ -383,6 +383,7 @@ internal fun MainActivity.runSearchFromBox() {
 internal fun MainActivity.handleVoiceText(text: String) {
     toast("Hai detto: $text")
     if (systemVoiceCommand(text)) return
+    if (musicVoice(text)) return
     if (Regex("^(ho\\s+)?(speso|pagato)\\b", RegexOption.IGNORE_CASE).containsMatchIn(text.trim())) {
         Expenses.parseVoice(text)?.let { (amount, desc) -> addExpenseDialog(amount, desc); return }
     }

@@ -208,6 +208,7 @@ internal fun MainActivity.renderTools() {
         Triple("🔐", "Cassaforte") { showVault() }
     ))
     group("UTILITÀ", listOf(
+        Triple("🎵", "Musica") { showMusicPage() },
         Triple("📷", "QR code") { scanQr() },
         Triple("🧰", "Misure e sensori") { showInstrumentsPage() },
         Triple("🔦", "Torcia e bussola") { showUtilitiesPage() },
@@ -388,6 +389,7 @@ private fun toolIcon(label: String): Int = when (label) {
     "Altimetro" -> R.drawable.ic_tool_altitude
     "Tabata" -> R.drawable.ic_tool_dumbbell
     "Benessere" -> R.drawable.ic_tool_spark
+    "Musica" -> R.drawable.ic_tool_music
     "Raccolta rifiuti" -> R.drawable.ic_tool_trash
     "La mia settimana" -> R.drawable.ic_tool_chart
     "Misure e sensori" -> R.drawable.ic_tool_ruler
