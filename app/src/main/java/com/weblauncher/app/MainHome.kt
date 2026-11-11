@@ -191,6 +191,7 @@ internal fun MainActivity.renderTools() {
         Triple("📊", "La mia settimana") { showWeeklySummary() },
         Triple("🔔", "Avvisi") { showAlertsPage() },
         Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
+        Triple("⚽", "Sport") { showSportsPage() },
         Triple("🚘", "Modalità auto") { showCarMode() },
         Triple("⌛", "Tempo di utilizzo") { showUsagePage() }
     ))
@@ -198,8 +199,7 @@ internal fun MainActivity.renderTools() {
         Triple("💰", "Spese") { showExpensesPage() },
         Triple("💼", "Finanze") { showFinancePage() },
         Triple("📆", "Scadenze") { showDeadlinesPage() },
-        Triple("📈", "Borsa") { showStocksPage() },
-        Triple("🗞", "Volantini") { showFlyersPage() }
+        Triple("📈", "Borsa") { showStocksPage() }
     ))
     group("SALUTE E SPORT", listOf(
         Triple("💚", "Benessere") { showWellnessHub() },
@@ -426,8 +426,8 @@ private fun toolIcon(label: String): Int = when (label) {
     "Mia AI" -> R.drawable.ic_tool_spark
     "Impostazioni" -> R.drawable.ic_tool_settings
     "Privacy" -> R.drawable.ic_tool_shield
+    "Sport" -> R.drawable.ic_tool_ball
     "Password" -> R.drawable.ic_tool_key
-    "Volantini" -> R.drawable.ic_tool_flyer
     "Backup" -> R.drawable.ic_tool_cloud
     "Aggiungi web app" -> R.drawable.ic_tool_plus
     else -> R.drawable.ic_nav_tools

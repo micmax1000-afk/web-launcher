@@ -23,7 +23,7 @@ class MusicKeyReceiver : android.content.BroadcastReceiver() {
 }
 
 data class Playlist(val id: String, val name: String, val url: String)
-data class NowPlaying(val title: String, val artist: String, val app: String, val playing: Boolean, val art: Bitmap?, val controller: MediaController)
+data class NowPlaying(val title: String, val artist: String, val app: String, val playing: Boolean, val art: Bitmap?, val controller: MediaController, val posMs: Long = 0, val durMs: Long = 0)
 
 /** What was asked by voice about the music. */
 sealed class MusicCmd {
@@ -32,7 +32,7 @@ sealed class MusicCmd {
 }
 
 /** What the YouTube Music page inside the app's browser is playing. */
-data class WebPlaying(val title: String, val artist: String, val art: String, val playing: Boolean, val at: Long, val music: Boolean = true)
+data class WebPlaying(val title: String, val artist: String, val art: String, val playing: Boolean, val at: Long, val music: Boolean = true, val posMs: Long = 0, val durMs: Long = 0)
 
 object Music {
     /** The YouTube Music player inside the app: its state and a way to command it (set by the main screen). */
@@ -44,7 +44,7 @@ object Music {
         "if(m&&m.artwork&&m.artwork.length)art=m.artwork[m.artwork.length-1].src||'';" +
         "var t=m?(m.title||''):'';if(!t)t=(document.title||'').replace(/^\\(\\d+\\)\\s*/,'').replace(/\\s*-\\s*YouTube( Music)?$/,'');" +
         "var id=(location.href.match(/[?&]v=([\\w-]{11})/)||[])[1];if(!art&&id)art='https://i.ytimg.com/vi/'+id+'/hqdefault.jpg';" +
-        "return JSON.stringify({t:t,a:m?(m.artist||''):'',art:art,p:!!(v&&!v.paused&&!v.ended),has:!!v,mu:location.hostname.indexOf('music.')==0});}catch(e){return '{}';}})()"
+        "return JSON.stringify({t:t,a:m?(m.artist||''):'',art:art,p:!!(v&&!v.paused&&!v.ended),has:!!v,mu:location.hostname.indexOf('music.')==0,pos:v?Math.floor(v.currentTime*1000):0,dur:(v&&isFinite(v.duration))?Math.floor(v.duration*1000):0});}catch(e){return '{}';}})()"
     fun controlJs(action: String) = "(function(a){try{var v=document.querySelector('video');function c(s){for(var i=0;i<s.length;i++){var e=document.querySelector(s[i]);if(e){e.click();return true;}}return false;}" +
         "if(a=='pause'){v&&v.pause();}else if(a=='play'){v&&v.play();}else if(a=='toggle'){v&&(v.paused?v.play():v.pause());}" +
         "else if(a=='next'){c(['ytmusic-player-bar .next-button','.next-button','a.ytp-next-button','button[aria-label*=\\'Succ\\']','button[aria-label*=\\'Next\\']'])||(v&&v.duration&&(v.currentTime=v.duration));}" +
@@ -55,7 +55,7 @@ object Music {
         val inner = com.google.gson.JsonParser.parseString(raw).asString
         val o = com.google.gson.JsonParser.parseString(inner).asJsonObject
         if (o.get("has")?.asBoolean != true) return null
-        WebPlaying(o.get("t")?.asString.orEmpty(), o.get("a")?.asString.orEmpty(), o.get("art")?.asString.orEmpty(), o.get("p")?.asBoolean == true, now, o.get("mu")?.asBoolean != false)
+        WebPlaying(o.get("t")?.asString.orEmpty(), o.get("a")?.asString.orEmpty(), o.get("art")?.asString.orEmpty(), o.get("p")?.asBoolean == true, now, o.get("mu")?.asBoolean != false, o.get("pos")?.asLong ?: 0L, o.get("dur")?.asLong ?: 0L)
     }.getOrNull()
 
     const val SPOTIFY = "com.spotify.music"
@@ -142,7 +142,8 @@ object Music {
         val title = md?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: md?.getString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE) ?: return null
         val artist = md.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: md.getString(MediaMetadata.METADATA_KEY_ALBUM_ARTIST) ?: md.getString(MediaMetadata.METADATA_KEY_DISPLAY_SUBTITLE) ?: ""
         val art = md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) ?: md.getBitmap(MediaMetadata.METADATA_KEY_ART) ?: md.getBitmap(MediaMetadata.METADATA_KEY_DISPLAY_ICON)
-        return NowPlaying(title, artist, appLabel(c, ctl.packageName), ctl.playbackState?.state == PlaybackState.STATE_PLAYING, art, ctl)
+        return NowPlaying(title, artist, appLabel(c, ctl.packageName), ctl.playbackState?.state == PlaybackState.STATE_PLAYING, art, ctl,
+            ctl.playbackState?.position ?: 0L, md.getLong(MediaMetadata.METADATA_KEY_DURATION))
     }
 
     fun keyFor(action: String) = when (action) {

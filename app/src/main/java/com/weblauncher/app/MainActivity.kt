@@ -562,6 +562,11 @@ class MainActivity : AppCompatActivity() {
                 if (!ytDocStartSupported() && CookieBanners.enabled(this@MainActivity)) view?.evaluateJavascript(CookieBanners.SCRIPT, null)
                 io.execute { PrivacyStats.flush(this@MainActivity) }
                 runCatching { maybeSuggestPasswords(view) }
+                if (GialloZafferano.isRecipePage(url) && url != lastRecipeOffer) {
+                    lastRecipeOffer = url
+                    com.google.android.material.snackbar.Snackbar.make(findViewById(android.R.id.content), "🍝 Vuoi salvare questa ricetta?", 8000)
+                        .setAction("Salva") { saveRecipeFromPage() }.show()
+                }
                 val pageUrl = url.orEmpty()
                 val safeTitle = view?.title?.trim().orEmpty().takeIf { isRealPageTitle(it, pageUrl) }
                 if (safeTitle != null) webTitle.text = safeTitle
@@ -1084,7 +1089,10 @@ class MainActivity : AppCompatActivity() {
             "nowplaying" -> { intent.removeExtra(EXTRA_WIDGET); showNowPlayingFull(); return }
             "privacytools" -> { intent.removeExtra(EXTRA_WIDGET); showPrivacyTools(); return }
             "backuptools" -> { intent.removeExtra(EXTRA_WIDGET); showBackupTools(); return }
-            "flyers" -> { intent.removeExtra(EXTRA_WIDGET); showFlyersPage(); return }
+            "sport" -> { intent.removeExtra(EXTRA_WIDGET); showSportsPage(); return }
+            "carmode" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode(); return }
+            "recipes" -> { intent.removeExtra(EXTRA_WIDGET); showRecipesPage(); return }
+            "netcheck" -> { intent.removeExtra(EXTRA_WIDGET); sportsNetCheck(); return }
             "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
@@ -1936,6 +1944,7 @@ class MainActivity : AppCompatActivity() {
     var financeRefresh: (() -> Unit)? = null
     var birthdaysRefresh: (() -> Unit)? = null
     var wellnessRefresh: (() -> Unit)? = null
+    var lastRecipeOffer: String? = null
     var foodRefresh: (() -> Unit)? = null
     var hcRefresh: (() -> Unit)? = null
     /** Health Connect permission request: runs [hcRefresh] and a new reading when the user answers. */
