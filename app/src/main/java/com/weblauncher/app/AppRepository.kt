@@ -9,7 +9,7 @@ data class RecentSite(val title: String, val url: String)
 
 data class HistoryEntry(val title: String, val url: String, val time: Long)
 
-data class SavedTab(val url: String, val title: String, val desktop: Boolean = false)
+data class SavedTab(val url: String, val title: String, val desktop: Boolean = false, val group: String = "", val lastUsed: Long = 0)
 
 class AppRepository(context: Context) {
     private val prefs = context.getSharedPreferences("wl_prefs", Context.MODE_PRIVATE)

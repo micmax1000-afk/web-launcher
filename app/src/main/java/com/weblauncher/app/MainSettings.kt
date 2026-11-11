@@ -258,6 +258,20 @@ internal fun MainActivity.renderSettings() {
     }
 
     section("BROWSER")
+    row("Barra degli indirizzi in basso", "Più comoda da raggiungere con una mano", switch = homePrefs.getBoolean("barBottom", false)) {
+        homePrefs.edit().putBoolean("barBottom", !homePrefs.getBoolean("barBottom", false)).apply(); applyBarPosition(); renderSettings()
+    }
+    row("Scorri dal bordo per tornare indietro", "Da sinistra: pagina precedente · da destra: successiva", switch = homePrefs.getBoolean("edgeSwipe", true)) {
+        homePrefs.edit().putBoolean("edgeSwipe", !homePrefs.getBoolean("edgeSwipe", true)).apply(); renderSettings()
+    }
+    val tabDays = homePrefs.getInt("tabAutoCloseDays", 0)
+    row("Chiudi le schede non usate", value = if (tabDays == 0) "Mai" else "Dopo $tabDays giorni") {
+        val opts = intArrayOf(0, 1, 7, 30)
+        MaterialAlertDialogBuilder(this).setTitle("Chiudi le schede non usate")
+            .setSingleChoiceItems(arrayOf("Mai", "Dopo 1 giorno", "Dopo 7 giorni", "Dopo 30 giorni"), opts.indexOf(tabDays).coerceAtLeast(0)) { dl, w ->
+                homePrefs.edit().putInt("tabAutoCloseDays", opts[w]).apply(); dl.dismiss(); renderSettings()
+            }.show()
+    }
     row("Browser predefinito", "Apri qui i link di WhatsApp, email…", value = if (isDefaultBrowser()) "Sì" else "No") { requestDefaultBrowser() }
     row("Motore di ricerca", value = engine.label) { showSearchEnginePicker() }
     row("🔎 Cosa cercare nei tuoi dati", "Scegli cosa mostrare sotto la barra di ricerca") {

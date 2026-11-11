@@ -265,6 +265,11 @@ class MainActivity : AppCompatActivity() {
         return r
     }
 
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        runCatching { edgeSwipe(ev) }
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         CrashReporter.install(this)
         AppRepository.applySavedTheme(this)
@@ -352,6 +357,8 @@ class MainActivity : AppCompatActivity() {
         uiHandler.postDelayed({ runCatching { showNewsAfterUpdate() } }, 900)
         setupNav()
         setupBack()
+        applyBarPosition()
+        setupDownloadDone()
 
         searchInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -741,7 +748,7 @@ class MainActivity : AppCompatActivity() {
                     setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                     setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, name)
                 }
-                (getSystemService(DOWNLOAD_SERVICE) as android.app.DownloadManager).enqueue(req)
+                (getSystemService(DOWNLOAD_SERVICE) as android.app.DownloadManager).enqueue(req).let { myDownloads += it }
                 toast("Download avviato: $name")
             } catch (e: Exception) {
                 toast("Download non riuscito")
@@ -906,10 +913,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun restoreSavedTabs() {
-        val (saved, active) = repo.loadTabs()
+        val (all, active0) = repo.loadTabs()
+        // chiusura automatica delle schede non usate da tanto (scelta in Impostazioni → Browser)
+        val days = homePrefs.getInt("tabAutoCloseDays", 0)
+        val now = System.currentTimeMillis()
+        val activeUrl = all.getOrNull(active0)?.url
+        val saved = if (days <= 0) all else all.filter { it.lastUsed == 0L || now - it.lastUsed < days * 86_400_000L || it.url == activeUrl }
+        if (saved.size < all.size) uiHandler.postDelayed({ toast("Chiuse ${all.size - saved.size} schede non usate da più di $days giorni") }, 1500)
         if (saved.isEmpty()) return
+        val active = saved.indexOfFirst { it.url == activeUrl }.coerceAtLeast(0)
         webTabs.clear()
-        saved.forEach { webTabs.add(WebTab(title = it.title, url = it.url, desktop = it.desktop)) }
+        saved.forEach { webTabs.add(WebTab(title = it.title, url = it.url, desktop = it.desktop, group = it.group, lastUsed = if (it.lastUsed > 0) it.lastUsed else now)) }
         webTabIndex = active.coerceIn(0, webTabs.lastIndex)
         browserHasPage = true
     }
@@ -921,7 +935,7 @@ class MainActivity : AppCompatActivity() {
             !it.value.privateMode && it.value.url.startsWith("http") && !isLockedUrl(it.value.url)
         }
         val active = keep.indexOfFirst { it.index == webTabIndex }.coerceAtLeast(0)
-        repo.saveTabs(keep.map { SavedTab(it.value.url, it.value.title, it.value.desktop) }, active)
+        repo.saveTabs(keep.map { SavedTab(it.value.url, it.value.title, it.value.desktop, it.value.group, it.value.lastUsed) }, active)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -1157,6 +1171,7 @@ class MainActivity : AppCompatActivity() {
         tab.state = bundle
         webView.url?.let { if (it != "about:blank") tab.url = it }
         webView.title?.takeIf { it.isNotBlank() }?.let { tab.title = it }
+        tab.lastUsed = System.currentTimeMillis()
     }
 
     fun openNewTab(privateMode: Boolean) {
@@ -1271,7 +1286,20 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { sheet.dismiss(); openNewTab(false) }
         })
         root.addView(header)
-        webTabs.forEachIndexed { index, tab ->
+        val grouped = webTabs.any { it.group.isNotBlank() }
+        if (!grouped && webTabs.size > 1) root.addView(TextView(this).apply {
+            text = "Tieni premuta una scheda per metterla in un gruppo (Lavoro, Casa, Viaggi…)"; textSize = 12f; setTextColor(palette.textMuted); setPadding(dp(4), 0, dp(4), dp(10))
+        })
+        val order = webTabs.indices.sortedWith(compareBy({ if (webTabs[it].group.isBlank()) "\uFFFF" else webTabs[it].group.lowercase() }, { it }))
+        var lastGroup: String? = null
+        order.forEach { index -> val tab = webTabs[index]
+            if (grouped && tab.group != lastGroup) {
+                lastGroup = tab.group
+                root.addView(TextView(this).apply {
+                    text = (if (tab.group.isBlank()) "SENZA GRUPPO" else "📁 " + tab.group.uppercase()) + " · " + webTabs.count { it.group == tab.group }
+                    textSize = 12f; letterSpacing = 0.06f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.textMuted); setPadding(dp(4), dp(8), 0, dp(6))
+                })
+            }
             val active = index == webTabIndex
             val card = com.google.android.material.card.MaterialCardView(this).apply {
                 radius = dp(16).toFloat()
@@ -1287,6 +1315,7 @@ class MainActivity : AppCompatActivity() {
                     sheet.dismiss()
                     if (index == webTabIndex) showTab(TAB_BROWSER) else switchToTab(index)
                 }
+                setOnLongClickListener { sheet.dismiss(); chooseTabGroup(tab) { showTabSwitcher() }; true }
             }
             val row = android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
@@ -1412,6 +1441,7 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(palette.stroke)
             layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, d.toInt().coerceAtLeast(1))
         })
+        if (hasPage) menuQuickActions(root) { popup.dismiss() }
 
         fun item(label: String, enabled: Boolean = true, checked: Boolean? = null, action: () -> Unit) {
             val row = android.widget.LinearLayout(this).apply {
@@ -1451,10 +1481,6 @@ class MainActivity : AppCompatActivity() {
             item("⚙ Opzioni YouTube") { ytOptionsDialog() }
         }
         if (hostOf(webView.url) == "mail.google.com") item("📧 Riassumi email") { summarizeEmail() }
-        item("✨ Riassumi pagina", hasPage) { summarizePage() }
-        item("✨ Chiedi alla pagina", hasPage) { askThePage() }
-        item("📖 Modalità lettura", hasPage) { openReaderMode() }
-        item("🔊 Ascolta la pagina", hasPage) { openReaderMode(listen = true) }
         item("🔖 Leggi dopo", hasPage) { saveCurrentForLater() }
         item("📥 Salva pagina completa offline", hasPage) { saveOfflinePage() }
         item("🍪 Dimentica questo sito alla chiusura", hasPage, SiteCookies.has(this, pageHost ?: Uri.parse(webView.url ?: "").host)) {
@@ -1468,8 +1494,6 @@ class MainActivity : AppCompatActivity() {
         item("🍝 Salva ricetta", hasPage) { saveRecipeFromPage() }
         item("Cronologia") { showHistoryPage() }
         item("Download") { showDownloadsPage() }
-        item("Trova nella pagina", hasPage) { showFindDialog() }
-        item("Traduci con Google", hasPage) { translateCurrentPage() }
         item("📷 Scansiona QR code") { scanQr() }
         item("📸 Screenshot", hasPage) { screenshotPage() }
         item("📄 Salva come PDF", hasPage) { savePageAsPdf() }
@@ -2064,7 +2088,9 @@ class MainActivity : AppCompatActivity() {
         var url: String = "",
         var state: Bundle? = null,
         var privateMode: Boolean = false,
-        var desktop: Boolean = false
+        var desktop: Boolean = false,
+        var group: String = "",
+        var lastUsed: Long = System.currentTimeMillis()
     )
 
     companion object {
