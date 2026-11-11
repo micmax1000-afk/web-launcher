@@ -166,27 +166,6 @@ internal fun MainActivity.clearAllBrowsingData() {
     } catch (_: Exception) { }
 }
 
-internal fun MainActivity.showPasswordInfo() {
-    MaterialAlertDialogBuilder(this)
-        .setTitle("Password e login")
-        .setMessage(
-            "Web Launcher usa l'Autofill di Android.\n\n" +
-            "• Al login di un sito, il sistema può proporre di salvare la password.\n\n" +
-            "• Per gestire le password: Impostazioni Android → Autocompletamento.\n\n" +
-            "• Per cancellare i dati form: Impostazioni → Cancella tutti i dati di navigazione."
-        )
-        .setPositiveButton("OK", null)
-        .setNeutralButton("Apri Autofill") { _, _ ->
-            try {
-                startActivity(Intent(android.provider.Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE))
-            } catch (_: Exception) {
-                try { startActivity(Intent(android.provider.Settings.ACTION_SETTINGS)) }
-                catch (_: Exception) { toast("Apri Impostazioni → Autocompletamento") }
-            }
-        }
-        .show()
-}
-
 internal fun MainActivity.persistApps() {
     repo.saveApps(apps)
     autoBackupNow()

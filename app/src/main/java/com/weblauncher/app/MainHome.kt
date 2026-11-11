@@ -198,7 +198,8 @@ internal fun MainActivity.renderTools() {
         Triple("💰", "Spese") { showExpensesPage() },
         Triple("💼", "Finanze") { showFinancePage() },
         Triple("📆", "Scadenze") { showDeadlinesPage() },
-        Triple("📈", "Borsa") { showStocksPage() }
+        Triple("📈", "Borsa") { showStocksPage() },
+        Triple("🗞", "Volantini") { showFlyersPage() }
     ))
     group("SALUTE E SPORT", listOf(
         Triple("💚", "Benessere") { showWellnessHub() },
@@ -232,6 +233,7 @@ internal fun MainActivity.renderTools() {
         Triple("🕵️", "Profilo 2") { startActivity(Intent(this, IsolatedBrowserActivity::class.java)) },
         Triple("⬇", "Download") { showDownloadsPage() },
         Triple("🕘", "Cronologia") { showHistoryPage() },
+        Triple("🔑", "Password") { showPasswordInfo() },
         Triple("🛡", "Privacy") { showPrivacyTools() },
         Triple("📦", "Backup") { showBackupTools() }
     ))
@@ -424,6 +426,8 @@ private fun toolIcon(label: String): Int = when (label) {
     "Mia AI" -> R.drawable.ic_tool_spark
     "Impostazioni" -> R.drawable.ic_tool_settings
     "Privacy" -> R.drawable.ic_tool_shield
+    "Password" -> R.drawable.ic_tool_key
+    "Volantini" -> R.drawable.ic_tool_flyer
     "Backup" -> R.drawable.ic_tool_cloud
     "Aggiungi web app" -> R.drawable.ic_tool_plus
     else -> R.drawable.ic_nav_tools

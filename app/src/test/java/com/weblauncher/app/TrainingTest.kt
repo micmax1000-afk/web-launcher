@@ -112,3 +112,13 @@ class MusicTest {
         assertTrue(Music.controlJs("next'); alert(1); ('").endsWith("('nextalert')"))
     }
 }
+
+class FlyersTest {
+    @Test fun indirizzi() {
+        assertEquals("forli", Flyers.slug("Forlì")); assertEquals("reggio-nell-emilia", Flyers.slug(" Reggio nell'Emilia "))
+        assertEquals("https://www.doveconviene.it/milano/iper-e-super", Flyers.categoryUrl("Milano", "iper-e-super"))
+        assertEquals("https://www.doveconviene.it/san-dona-di-piave/volantino/lidl", Flyers.chainUrl("San Donà di Piave", "lidl"))
+        assertEquals("https://www.doveconviene.it/prodotti/caffe-macinato", Flyers.productUrl("Caffè macinato"))
+        assertEquals(listOf("Latte", "Pane integrale"), Flyers.shoppingItems("Lista della spesa\n☐ Latte\n☑ Uova\n  ☐ Pane integrale\n☐ "))
+    }
+}
