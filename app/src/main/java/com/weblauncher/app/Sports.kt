@@ -61,7 +61,18 @@ object Sports {
     }
     /** The first variant that answers; also says which one (for the automatic test). */
     fun fetchScoreboard(l: League): Pair<List<Match>, Int>? {
-        scoreboardUrls(l).forEachIndexed { i, u -> get(u)?.let { return parseScoreboard(it, l.id) to i } }
+        val urls = scoreboardUrls(l)
+        urls.forEachIndexed { i, u ->
+            val body = get(u) ?: return@forEachIndexed
+            var list = parseScoreboard(body, l.id)
+            if (i == urls.lastIndex) {
+                // only the current round came back (calcio, NBA): ask the next days one by one for the matches to come
+                val f = SimpleDateFormat("yyyyMMdd", Locale.ROOT); val now = System.currentTimeMillis()
+                val extra = (1..7).flatMap { d -> get(urls.last() + "?dates=" + f.format(Date(now + d * 86_400_000L)))?.let { parseScoreboard(it, l.id) }.orEmpty() }
+                list = (list + extra).distinctBy { it.id }.sortedBy { it.start }
+            }
+            return list to i
+        }
         return null
     }
     fun standingsUrl(l: League) = "https://site.api.espn.com/apis/v2/sports/${l.sport}/${l.code}/standings"
