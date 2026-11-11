@@ -26,9 +26,10 @@ internal fun MainActivity.openMusicApp(app: String?) {
 }
 
 internal fun MainActivity.askMusicAccess() {
-    MaterialAlertDialogBuilder(this).setTitle("Controllare la musica")
-        .setMessage("Per mostrare cosa stai ascoltando e usare pausa, avanti e indietro, Android richiede il permesso «Accesso alle notifiche».\n\nWeb Launcher usa il permesso solo per vedere titolo, artista e copertina del brano in corso: non legge le altre notifiche.\n\nNella lista che si apre, attiva «Web Launcher».")
-        .setPositiveButton("Apri le impostazioni") { _, _ -> runCatching { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.onFailure { toast("Impostazioni non disponibili") } }
+    MaterialAlertDialogBuilder(this).setTitle("Mostrare il brano in corso")
+        .setMessage("I tasti pausa, avanti e indietro funzionano già, anche a schermo spento. Il permesso «Accesso alle notifiche» serve solo per vedere titolo, artista e copertina: non legge le altre notifiche.\n\nSe Android risponde «accesso negato»:\n1. tocca «Info app»;\n2. in alto a destra tocca i tre puntini ⋮;\n3. scegli «Consenti impostazioni con restrizioni» e conferma;\n4. torna qui e tocca «Accesso notifiche», poi attiva Web Launcher.")
+        .setPositiveButton("Info app") { _, _ -> runCatching { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }.onFailure { toast("Impostazioni non disponibili") } }
+        .setNeutralButton("Accesso notifiche") { _, _ -> runCatching { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }.onFailure { toast("Impostazioni non disponibili") } }
         .setNegativeButton("Non ora", null).show()
 }
 
@@ -43,7 +44,7 @@ class MusicBar(private val a: MainActivity, private val large: Boolean = false) 
     private val sub = TextView(a).apply { textSize = if (large) 14f else 12f; setTextColor(palette.textMuted); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private fun btn(t: String, action: String) = TextView(a).apply {
         text = t; textSize = if (large) 30f else 22f; gravity = Gravity.CENTER; setTextColor(palette.text); setPadding(dp(8), dp(4), dp(8), dp(4))
-        setOnClickListener { if (!Music.control(a, action)) a.toast("Niente da controllare: avvia prima la musica"); h.postDelayed({ refresh() }, 400) }
+        setOnClickListener { Music.control(a, action); h.postDelayed({ refresh() }, 400) }
     }
     private val prev = btn("⏮", "prev"); private val play = btn("⏸", "toggle"); private val next = btn("⏭", "next")
     private val texts = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10); marginEnd = dp(6) }; addView(title); addView(sub) }
@@ -64,13 +65,13 @@ class MusicBar(private val a: MainActivity, private val large: Boolean = false) 
 
     fun refresh() {
         if (!Music.hasAccess(a)) {
-            title.text = "🎵 Controllo della musica"; sub.text = "Tocca per attivarlo"; cover.visibility = View.GONE; controls.visibility = View.GONE
+            title.text = "🎵 Comandi della musica"; sub.text = "Tocca qui per mostrare anche il brano"; cover.visibility = View.GONE; controls.visibility = View.VISIBLE; play.text = "⏯"
             view.setOnClickListener { a.askMusicAccess() }; return
         }
         val n = Music.current(a)
         cover.visibility = View.VISIBLE; controls.visibility = View.VISIBLE
         if (n == null) {
-            title.text = "🎵 Nessuna musica in corso"; sub.text = Music.defaultApp(a)?.let { "Tocca per aprire ${Music.appName(it)}" } ?: "Avvia Spotify o YouTube Music"; cover.visibility = View.GONE; controls.visibility = View.GONE
+            title.text = "🎵 Nessuna musica in corso"; sub.text = Music.defaultApp(a)?.let { "Tocca per aprire ${Music.appName(it)}" } ?: "Avvia Spotify o YouTube Music"; cover.visibility = View.GONE; controls.visibility = View.VISIBLE; play.text = "⏯"
             view.setOnClickListener { Music.defaultApp(a)?.let { a.openMusicApp(it) } }; return
         }
         title.text = n.title; sub.text = listOf(n.artist, n.app).filter { it.isNotBlank() }.joinToString(" · ")
@@ -87,7 +88,7 @@ internal fun MainActivity.showMusicPage() {
             body.removeAllViews()
             sectionLabel(body, "ORA IN ASCOLTO")
             body.addView(MusicBar(this, large = true).view)
-            if (!Music.hasAccess(this)) hintLabel(body, "Per vedere e comandare il brano serve il permesso «Accesso alle notifiche» (tocca la scheda qui sopra). Legge solo titolo, artista e copertina.")
+            if (!Music.hasAccess(this)) hintLabel(body, "I tasti funzionano anche senza permessi. Per vedere titolo, artista e copertina tocca la scheda qui sopra.")
 
             sectionLabel(body, "APRI L'APP")
             var any = false
@@ -142,8 +143,7 @@ internal fun MainActivity.musicVoice(text: String): Boolean {
     val cmd = Music.parseVoice(text) ?: return false
     when (cmd) {
         is MusicCmd.Control -> {
-            if (!Music.hasAccess(this)) { askMusicAccess(); return true }
-            if (!Music.control(this, cmd.action)) toast("Nessuna musica in corso")
+            Music.control(this, cmd.action)
         }
         is MusicCmd.Find -> searchMusic(cmd.query, cmd.app)
     }

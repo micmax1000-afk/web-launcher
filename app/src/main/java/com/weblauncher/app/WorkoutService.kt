@@ -114,6 +114,8 @@ class WorkoutService : Service() {
         return START_STICKY
     }
 
+    private fun musicIntent(action: String, code: Int) = PendingIntent.getBroadcast(this, code, Intent(this, MusicKeyReceiver::class.java).putExtra("a", action), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+
     private fun build(): Notification {
         val t = WorkoutState.track
         val open = PendingIntent.getActivity(this, 7820, Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_WIDGET, "workout")
@@ -122,7 +124,8 @@ class WorkoutService : Service() {
         return NotificationCompat.Builder(this, "allenamento").setSmallIcon(R.drawable.ic_nav_home)
             .setContentTitle("Allenamento in corso · " + Fitness.clock(WorkoutState.elapsedMs()))
             .setContentText(Fitness.dist(t.distanceM) + " · " + Fitness.pace(t.avgKmh()) + " /km" + HrBand.current().let { if (it > 0) " · ❤ $it" else "" })
-            .setOngoing(true).setOnlyAlertOnce(true).setContentIntent(open).addAction(0, "Termina", stop).build()
+            .setOngoing(true).setOnlyAlertOnce(true).setContentIntent(open)
+            .addAction(0, "⏯ Musica", musicIntent("toggle", 7822)).addAction(0, "⏭ Avanti", musicIntent("next", 7823)).addAction(0, "Termina", stop).build()
     }
 
     /** Stops tracking; a workout with some distance is saved. */
