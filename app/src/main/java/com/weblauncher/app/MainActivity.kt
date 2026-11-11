@@ -561,6 +561,7 @@ class MainActivity : AppCompatActivity() {
                 if (YouTube.isYouTube(url) && !ytDocStartSupported()) view?.evaluateJavascript(YouTube.script(ytConfig()), null)
                 if (!ytDocStartSupported() && CookieBanners.enabled(this@MainActivity)) view?.evaluateJavascript(CookieBanners.SCRIPT, null)
                 io.execute { PrivacyStats.flush(this@MainActivity) }
+                runCatching { maybeSuggestPasswords(view) }
                 val pageUrl = url.orEmpty()
                 val safeTitle = view?.title?.trim().orEmpty().takeIf { isRealPageTitle(it, pageUrl) }
                 if (safeTitle != null) webTitle.text = safeTitle
@@ -1083,6 +1084,8 @@ class MainActivity : AppCompatActivity() {
             "nowplaying" -> { intent.removeExtra(EXTRA_WIDGET); showNowPlayingFull(); return }
             "privacytools" -> { intent.removeExtra(EXTRA_WIDGET); showPrivacyTools(); return }
             "backuptools" -> { intent.removeExtra(EXTRA_WIDGET); showBackupTools(); return }
+            "flyers" -> { intent.removeExtra(EXTRA_WIDGET); showFlyersPage(); return }
+            "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
             "body" -> { intent.removeExtra(EXTRA_WIDGET); showBodyPage(); return }
