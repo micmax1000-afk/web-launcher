@@ -499,6 +499,7 @@ class MainActivity : AppCompatActivity() {
         applyDarkSites()
         setupMiaBridge()
         setupYouTube()
+        setupWebMusic()
         setupCookieBanners()
         webView.setOnScrollChangeListener { _, _, y, _, oldY -> onWebScroll(y, oldY) }
         webView.setOnLongClickListener {
@@ -1565,6 +1566,7 @@ class MainActivity : AppCompatActivity() {
      * (used to turn a lock on); otherwise the action runs anyway with a warning.
      */
     override fun onDestroy() {
+        Music.webControl = null; Music.web = null
         io.shutdown()
         controllerFuture?.let { androidx.media3.session.MediaController.releaseFuture(it) }
         runCatching { ai.destroy() }

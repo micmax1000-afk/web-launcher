@@ -111,6 +111,24 @@ object YouTube {
     }
   }
 
+  // ---------- interruptions: "are you still there?", premium / open-the-app prompts ----------
+  var lastNag = 0;
+  function nagCheck() {
+    if (!C.skipAds) return;
+    var now = Date.now(); if (now - lastNag < 1500) return;
+    // "Video in pausa. Continuare la riproduzione?" -> yes, keep playing
+    var still = document.querySelector('ytmusic-you-there-renderer button, ytmusic-you-there-renderer [role="button"],' +
+      'yt-confirm-dialog-renderer #confirm-button button, yt-confirm-dialog-renderer #confirm-button,' +
+      'ytm-confirm-dialog-renderer .confirm-button button, .ytm-you-there-renderer button');
+    if (still && still.offsetParent !== null) { lastNag = now; still.click(); var v = video(); if (v && v.paused) { try { v.play(); } catch (e) {} } toast('Continuo la riproduzione'); return; }
+    // promotions that cover the player: close with "No, grazie" / the dismiss button
+    var promo = document.querySelector('ytmusic-mealbar-promo-renderer #dismiss-button button, ytmusic-mealbar-promo-renderer .dismiss-button,' +
+      'ytm-mealbar-promo-renderer .mealbar-promo-dismiss-button button, yt-mealbar-promo-renderer #dismiss-button button,' +
+      'ytmusic-upsell-dialog-renderer #dismiss-button button, ytm-upsell-dialog-renderer .upsell-dialog-dismiss-button button,' +
+      'tp-yt-paper-dialog ytmusic-enforcement-message-view-model #dismiss-button button');
+    if (promo && promo.offsetParent !== null) { lastNag = now; promo.click(); }
+  }
+
   // ---------- speed & quality ----------
   var lastPrefVideo = null;
   function applyPrefs(force) {
@@ -222,7 +240,7 @@ object YouTube {
 
   // ---------- main loop ----------
   setInterval(function () {
-    try { adCheck(); loadSegments(); applyPrefs(false); sbCheck(); reportState(); } catch (e) {}
+    try { adCheck(); nagCheck(); loadSegments(); applyPrefs(false); sbCheck(); reportState(); } catch (e) {}
   }, 300);
 })();
 """.trimIndent()

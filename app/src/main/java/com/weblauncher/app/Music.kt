@@ -31,7 +31,31 @@ sealed class MusicCmd {
     data class Find(val query: String, val app: String?) : MusicCmd()   // app: "spotify" | "ytmusic" | null
 }
 
+/** What the YouTube Music page inside the app's browser is playing. */
+data class WebPlaying(val title: String, val artist: String, val art: String, val playing: Boolean, val at: Long)
+
 object Music {
+    /** The YouTube Music player inside the app: its state and a way to command it (set by the main screen). */
+    @Volatile var web: WebPlaying? = null
+    @Volatile var webControl: ((String) -> Unit)? = null
+    fun webActive() = web?.let { it.title.isNotBlank() && System.currentTimeMillis() - it.at < 8000 } == true
+
+    const val STATE_JS = "(function(){try{var v=document.querySelector('video');var m=navigator.mediaSession&&navigator.mediaSession.metadata;var art='';" +
+        "if(m&&m.artwork&&m.artwork.length)art=m.artwork[m.artwork.length-1].src||'';" +
+        "return JSON.stringify({t:m?(m.title||''):'',a:m?(m.artist||''):'',art:art,p:!!(v&&!v.paused&&!v.ended),has:!!v});}catch(e){return '{}';}})()"
+    fun controlJs(action: String) = "(function(a){try{var v=document.querySelector('video');function c(s){for(var i=0;i<s.length;i++){var e=document.querySelector(s[i]);if(e){e.click();return true;}}return false;}" +
+        "if(a=='pause'){v&&v.pause();}else if(a=='play'){v&&v.play();}else if(a=='toggle'){v&&(v.paused?v.play():v.pause());}" +
+        "else if(a=='next'){c(['ytmusic-player-bar .next-button','.next-button','a.ytp-next-button','button[aria-label*=\\'Succ\\']','button[aria-label*=\\'Next\\']'])||(v&&v.duration&&(v.currentTime=v.duration));}" +
+        "else if(a=='prev'){c(['ytmusic-player-bar .previous-button','.previous-button','button[aria-label*=\\'Prec\\']','button[aria-label*=\\'Prev\\']'])||(v&&(v.currentTime=0));}}catch(e){}})('" + action.filter { it.isLetter() } + "')"
+
+    /** The result of [STATE_JS] as WebView hands it over (a JSON string inside a JSON string). */
+    fun parseWebState(raw: String?, now: Long = System.currentTimeMillis()): WebPlaying? = runCatching {
+        val inner = com.google.gson.JsonParser.parseString(raw).asString
+        val o = com.google.gson.JsonParser.parseString(inner).asJsonObject
+        if (o.get("has")?.asBoolean != true) return null
+        WebPlaying(o.get("t")?.asString.orEmpty(), o.get("a")?.asString.orEmpty(), o.get("art")?.asString.orEmpty(), o.get("p")?.asBoolean == true, now)
+    }.getOrNull()
+
     const val SPOTIFY = "com.spotify.music"
     const val YTMUSIC = "com.google.android.apps.youtube.music"
 
@@ -48,7 +72,8 @@ object Music {
     }
     fun appName(app: String?) = when (app) { "spotify" -> "Spotify"; "ytmusic" -> "YouTube Music"; else -> "Musica" }
     fun packageOf(app: String?) = when (app) { "spotify" -> SPOTIFY; "ytmusic" -> YTMUSIC; else -> null }
-    fun searchUri(app: String, q: String): String = if (app == "spotify") "spotify:search:" + Uri.encode(q) else "https://music.youtube.com/search?q=" + Uri.encode(q)
+    fun searchUri(app: String, q: String): String = if (app == "spotify") "spotify:search:" + enc(q) else "https://music.youtube.com/search?q=" + enc(q)
+    private fun enc(q: String) = java.net.URLEncoder.encode(q, "UTF-8").replace("+", "%20")
 
     private val APP_WORDS = Regex("\\s+(?:su|con|in|da|tramite)\\s+(spotify|youtube music|youtube|you tube|yt music)\\s*$", RegexOption.IGNORE_CASE)
     private val MUSIC_WORDS = Regex("(musica|canzon|brano|brani|playlist|album|spotify|youtube|radio|disco)", RegexOption.IGNORE_CASE)
@@ -83,11 +108,15 @@ object Music {
     fun setPreferred(c: Context, app: String) = prefs(c).edit().putString("app", app).apply()
 
     fun installed(c: Context, pkg: String) = runCatching { c.packageManager.getPackageInfo(pkg, 0); true }.getOrDefault(false)
-    /** Preferred app if installed, else the one that is installed, else null. */
-    fun defaultApp(c: Context): String? {
+    /** YouTube Music opens inside Web Launcher (its own browser) unless the user chose the separate app. */
+    fun ytInApp(c: Context) = prefs(c).getBoolean("yt_inapp", true) || !installed(c, YTMUSIC)
+    fun setYtInApp(c: Context, on: Boolean) = prefs(c).edit().putBoolean("yt_inapp", on).apply()
+
+    /** Where searches go: the preferred one; Spotify only if its app is there; otherwise YouTube Music (always available inside the app). */
+    fun defaultApp(c: Context): String {
         val p = preferred(c)
-        if (p != null && installed(c, packageOf(p)!!)) return p
-        return listOf("spotify", "ytmusic").firstOrNull { installed(c, packageOf(it)!!) }
+        if (p == "ytmusic" || p == "spotify" && installed(c, SPOTIFY)) return p!!
+        return "ytmusic"
     }
 
     // ---------- the system's media sessions ----------
@@ -126,6 +155,8 @@ object Music {
 
     /** Sends a command to whatever is playing: through the media session if the app may see it, otherwise with the media key. */
     fun control(c: Context, action: String): Boolean {
+        val wc = webControl
+        if (wc != null && webActive()) { wc(action); return true }
         val n = current(c)
         if (n != null) {
             val t = n.controller.transportControls
