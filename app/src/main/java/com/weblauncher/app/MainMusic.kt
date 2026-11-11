@@ -1,6 +1,7 @@
 package com.weblauncher.app
 
 import android.content.Intent
+import coil.load
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -36,23 +37,68 @@ internal fun MainActivity.askMusicAccess() {
         .setNegativeButton("Non ora", null).show()
 }
 
+/** What is playing now, wherever it comes from: YouTube / YouTube Music in the app's browser, the app's own player, or another app. */
+data class NowView(val title: String, val sub: String, val artUrl: String?, val artBmp: android.graphics.Bitmap?, val playing: Boolean, val source: String)
+
+internal fun MainActivity.nowPlaying(): NowView? {
+    val w = Music.web
+    if (w != null && Music.webActive())
+        return NowView(w.title.ifBlank { "Video in riproduzione" }, listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · "), w.art.takeIf { it.startsWith("http") }, null, w.playing, "web")
+    val c = controller
+    val item = c?.currentMediaItem
+    if (c != null && item != null && c.playbackState != androidx.media3.common.Player.STATE_IDLE) {
+        val md = item.mediaMetadata
+        return NowView(md.title?.toString().orEmpty().ifBlank { "In riproduzione" }, md.artist?.toString().orEmpty(), md.artworkUri?.toString(), null, c.isPlaying, "local")
+    }
+    val n = Music.current(this) ?: return null
+    return NowView(n.title, listOf(n.artist, n.app).filter { it.isNotBlank() }.joinToString(" · "), null, n.art, n.playing, "system")
+}
+
+/** Pause / play / next / previous on whatever is playing. */
+internal fun MainActivity.musicAction(action: String) {
+    val w = Music.webControl
+    if (w != null && Music.webActive()) { w(action); return }
+    val c = controller
+    if (c != null && c.currentMediaItem != null && c.playbackState != androidx.media3.common.Player.STATE_IDLE) {
+        when (action) { "toggle" -> if (c.isPlaying) c.pause() else c.play(); "pause" -> c.pause(); "play" -> c.play(); "next" -> c.seekToNext(); "prev" -> c.seekToPrevious() }
+        return
+    }
+    Music.control(this, action)
+}
+
+/** Shows a cover (bitmap or link) in [iv], loading links only when they change. */
+private fun MainActivity.showArt(iv: ImageView, n: NowView?) {
+    val key = n?.artUrl ?: n?.artBmp?.hashCode()?.toString() ?: ""
+    if (iv.tag == key) return
+    iv.tag = key
+    when {
+        n?.artBmp != null -> iv.setImageBitmap(n.artBmp)
+        n?.artUrl != null -> iv.load(n.artUrl) { error(R.drawable.ic_nav_audio) }
+        else -> iv.setImageResource(R.drawable.ic_nav_audio)
+    }
+}
+
 /** A small player: cover, title, artist and three buttons. Refreshes itself while it is on screen. */
 class MusicBar(private val a: MainActivity, private val large: Boolean = false) {
     private val d = a.resources.displayMetrics.density
     private fun dp(v: Int) = (v * d).toInt()
     private val h = Handler(Looper.getMainLooper())
     private val palette = AppRepository.palette(a)
-    private val cover = ImageView(a).apply { scaleType = ImageView.ScaleType.CENTER_CROP; layoutParams = LinearLayout.LayoutParams(dp(if (large) 84 else 44), dp(if (large) 84 else 44)); setBackgroundColor(0x22888888) }
+    private val cover = ImageView(a).apply { scaleType = ImageView.ScaleType.CENTER_CROP; layoutParams = LinearLayout.LayoutParams(dp(if (large) 84 else 44), dp(if (large) 84 else 44)) }
     private val title = TextView(a).apply { textSize = if (large) 17f else 14f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private val sub = TextView(a).apply { textSize = if (large) 14f else 12f; setTextColor(palette.textMuted); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private fun btn(t: String, action: String) = TextView(a).apply {
-        text = t; textSize = if (large) 30f else 22f; gravity = Gravity.CENTER; setTextColor(palette.text); setPadding(dp(8), dp(4), dp(8), dp(4))
-        setOnClickListener { Music.control(a, action); h.postDelayed({ refresh() }, 400) }
+        text = t; textSize = if (large) 30f else 22f; gravity = Gravity.CENTER; setTextColor(palette.text); setPadding(dp(10), dp(4), dp(10), dp(4))
+        setOnClickListener { a.musicAction(action); h.postDelayed({ refresh() }, 500) }
     }
     private val prev = btn("⏮", "prev"); private val play = btn("⏸", "toggle"); private val next = btn("⏭", "next")
+    private val full = TextView(a).apply {
+        text = "⛶"; textSize = if (large) 26f else 20f; gravity = Gravity.CENTER; setTextColor(palette.text); setPadding(dp(10), dp(4), dp(6), dp(4))
+        contentDescription = "Schermo intero"; setOnClickListener { a.showNowPlayingFull() }
+    }
     private val texts = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10); marginEnd = dp(6) }; addView(title); addView(sub) }
     private val headRow = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; addView(cover); addView(texts) }
-    private val controls = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; addView(prev); addView(play); addView(next) }
+    private val controls = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; addView(prev); addView(play); addView(next); if (large) addView(full) }
     val view = LinearLayout(a).apply {
         orientation = if (large) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -66,79 +112,132 @@ class MusicBar(private val a: MainActivity, private val large: Boolean = false) 
         })
     }
 
-    private var artUrl = ""
     fun refresh() {
-        val w = Music.web
-        if (w != null && Music.webActive()) {           // YouTube Music inside the app
-            cover.visibility = View.VISIBLE; controls.visibility = View.VISIBLE
-            title.text = w.title.ifBlank { "Video in riproduzione" }; sub.text = listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · ")
-            play.text = if (w.playing) "⏸" else "▶"
-            if (w.art != artUrl) { artUrl = w.art; cover.setImageDrawable(null)
-                if (w.art.startsWith("http")) a.io.execute { runCatching { java.net.URL(w.art).openStream().use { android.graphics.BitmapFactory.decodeStream(it) } }.getOrNull()?.let { bmp -> a.runOnUiThread { if (artUrl == w.art) cover.setImageBitmap(bmp) } } } }
-            view.setOnClickListener { a.showTab(MainActivity.TAB_BROWSER) }; return
-        }
-        artUrl = ""
-        if (!Music.hasAccess(a)) {
-            title.text = "🎵 Comandi della musica"; sub.text = "Tocca qui per mostrare anche il brano"; cover.visibility = View.GONE; controls.visibility = View.VISIBLE; play.text = "⏯"
-            view.setOnClickListener { a.askMusicAccess() }; return
-        }
-        val n = Music.current(a)
-        cover.visibility = View.VISIBLE; controls.visibility = View.VISIBLE
+        val n = a.nowPlaying()
+        controls.visibility = View.VISIBLE
         if (n == null) {
-            title.text = "🎵 Nessuna musica in corso"; sub.text = "Tocca per aprire ${Music.appName(Music.defaultApp(a))}"; cover.visibility = View.GONE; controls.visibility = View.VISIBLE; play.text = "⏯"
+            cover.visibility = View.GONE; play.text = "⏯"
+            if (!Music.hasAccess(a)) { title.text = "🎵 Nessuna musica dall'app"; sub.text = "Apri YouTube Music o YouTube qui sotto: titolo e tasti compaiono qui" }
+            else { title.text = "🎵 Nessuna musica in corso"; sub.text = "Tocca per aprire ${Music.appName(Music.defaultApp(a))}" }
             view.setOnClickListener { a.openMusicApp(Music.defaultApp(a)) }; return
         }
-        title.text = n.title; sub.text = listOf(n.artist, n.app).filter { it.isNotBlank() }.joinToString(" · ")
-        if (n.art != null) cover.setImageBitmap(n.art) else { cover.setImageDrawable(null) }
+        cover.visibility = View.VISIBLE
+        a.showArtPublic(cover, n)
+        title.text = n.title; sub.text = n.sub
         play.text = if (n.playing) "⏸" else "▶"
-        view.setOnClickListener(null); view.isClickable = false
+        view.setOnClickListener { a.showNowPlayingFull() }
     }
 }
 
-internal fun MainActivity.showMusicPage() {
-    openPage("Musica") { _, body, dialog ->
-        val palette = AppRepository.palette(this)
-        fun render() {
-            body.removeAllViews()
-            sectionLabel(body, "ORA IN ASCOLTO")
-            body.addView(MusicBar(this, large = true).view)
-            hintLabel(body, "Con YouTube o YouTube Music aperti qui dentro vedi titolo e copertina e usi i tasti senza alcun permesso di Android.")
+internal fun MainActivity.showArtPublic(iv: ImageView, n: NowView?) = showArt(iv, n)
 
-            sectionLabel(body, "APRI")
-            val ytApp = Music.installed(this, Music.YTMUSIC)
-            listRow(body, "🔴 YouTube Music", if (Music.ytInApp(this)) "Si apre qui dentro, nel Browser di Web Launcher: suona anche a schermo spento" + (if (ytApp) ". Tieni premuto per usare l'app separata" else "") else "Apre l'app YouTube Music. Tieni premuto per usarlo dentro Web Launcher",
-                onClick = { dialog.dismiss(); openMusicApp("ytmusic") }, onLong = { if (ytApp) { Music.setYtInApp(this, !Music.ytInApp(this)); render() } })
-            listRow(body, "▶️ YouTube", "Video e musica, qui dentro: pubblicità saltate e audio anche a schermo spento" + if (Music.preferred(this) == "youtube") " · usato per le ricerche" else "",
-                onClick = { dialog.dismiss(); openMusicApp("youtube") }, onLong = { Music.setPreferred(this, if (Music.preferred(this) == "youtube") "ytmusic" else "youtube"); toast(if (Music.preferred(this) == "youtube") "Le ricerche vanno su YouTube" else "Le ricerche vanno su YouTube Music"); render() })
-            if (Music.installed(this, Music.SPOTIFY)) listRow(body, "🟢 Spotify", if (Music.preferred(this) == "spotify") "App preferita per le ricerche: tieni premuto per tornare a YouTube Music" else "Tocca per aprire, tieni premuto per usarla nelle ricerche",
-                onClick = { openMusicApp("spotify") }, onLong = { Music.setPreferred(this, if (Music.preferred(this) == "spotify") "ytmusic" else "spotify"); render() })
-
-            sectionLabel(body, "CERCA E METTI")
-            listRow(body, "🎤 Di' cosa vuoi ascoltare", "Per esempio «metti musica per correre» o «ascolta Vasco Rossi su Spotify»", onClick = { dialog.dismiss(); requestMicAndListen() })
-            listRow(body, "🔎 Scrivi cosa cercare", "Artista, canzone, genere o umore", onClick = {
-                val et = field("Cosa vuoi ascoltare?", null)
-                MaterialAlertDialogBuilder(this).setTitle("Cerca nella musica").setView(form(et)).setPositiveButton("Cerca") { _, _ -> if (et.text.toString().isNotBlank()) { dialog.dismiss(); searchMusic(et.text.toString().trim(), null) } }.setNegativeButton("Annulla", null).show()
-            })
-            listRow(body, "⏯ Comandi vocali", "«pausa», «prossima canzone», «canzone precedente», «riprendi la musica»", onClick = {})
-
-            sectionLabel(body, "LE MIE PLAYLIST")
-            Music.playlists(this).forEach { p ->
-                listRow(body, (if (Music.appFor(p.url) == "spotify") "🟢 " else if (Music.appFor(p.url) == "ytmusic") "🔴 " else if (Music.appFor(p.url) == "youtube") "▶️ " else "🎵 ") + p.name, Music.appName(Music.appFor(p.url)) + " · tocca per aprirla", onClick = { if (Music.appFor(p.url) == "youtube" || Music.appFor(p.url) == "ytmusic" && Music.ytInApp(this)) dialog.dismiss(); openMusicLink(p.url) },
-                    onRemove = { Music.removePlaylist(this, p.id); render() })
-            }
-            listRow(body, "➕ Aggiungi playlist o album", "Incolla il link da Spotify, YouTube Music o YouTube (Condividi → Copia link)", onClick = {
-                val clip = (getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString().orEmpty().trim()
-                val name = field("Nome (es. Corsa)", null); val url = field("Link", clip.takeIf { Music.appFor(it) != null })
-                MaterialAlertDialogBuilder(this).setTitle("Nuova playlist").setView(form(name, url)).setPositiveButton("Salva") { _, _ ->
-                    val u = url.text.toString().trim()
-                    if (name.text.toString().isBlank() || (!u.startsWith("http") && !u.startsWith("spotify:"))) toast("Scrivi un nome e incolla un link valido")
-                    else { Music.addPlaylist(this, name.text.toString().trim(), u); render() }
-                }.setNegativeButton("Annulla", null).show()
-            })
-            hintLabel(body, "Il catalogo resta dentro Spotify e YouTube Music: qui comandi quello che già suona e apri con un tocco le tue playlist.")
-        }
-        render()
+/** Full screen «now playing», for the car: big cover, big text, huge buttons, the screen stays on. */
+internal fun MainActivity.showNowPlayingFull() {
+    val dlg = android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+    val d = resources.displayMetrics.density
+    fun dp(v: Int) = (v * d).toInt()
+    val h = Handler(Looper.getMainLooper())
+    val root = android.widget.FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
+    val cover = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; clipToOutline = true
+        outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(18).toFloat()) } } }
+    val title = TextView(this).apply { textSize = 30f; setTextColor(0xFFFFFFFF.toInt()); setTypeface(typeface, android.graphics.Typeface.BOLD); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; gravity = Gravity.CENTER }
+    val sub = TextView(this).apply { textSize = 20f; setTextColor(0xFFB8BCC8.toInt()); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, dp(10)) }
+    fun big(t: String, size: Int, onClick: () -> Unit) = TextView(this).apply {
+        text = t; textSize = size.toFloat(); gravity = Gravity.CENTER; setTextColor(0xFFFFFFFF.toInt())
+        background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(0x22FFFFFF) }
+        setOnClickListener { onClick() }
     }
+    val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+    lateinit var refresh: () -> Unit
+    val play = big("⏸", 54) { musicAction("toggle"); h.postDelayed({ refresh() }, 500) }
+    val prev = big("⏮", 40) { musicAction("prev"); h.postDelayed({ refresh() }, 600) }
+    val next = big("⏭", 40) { musicAction("next"); h.postDelayed({ refresh() }, 600) }
+    val volDown = big("🔉", 26) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI) }
+    val volUp = big("🔊", 26) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_RAISE, android.media.AudioManager.FLAG_SHOW_UI) }
+    val close = TextView(this).apply { text = "✕"; textSize = 28f; setTextColor(0xFFFFFFFF.toInt()); setPadding(dp(18), dp(14), dp(18), dp(14)); setOnClickListener { dlg.dismiss() } }
+    var landscape: Boolean? = null
+    fun build() {
+        val land = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        if (land == landscape) return
+        landscape = land
+        root.removeAllViews()
+        listOf(cover, title, sub, play, prev, next, volDown, volUp).forEach { (it.parent as? android.view.ViewGroup)?.removeView(it) }
+        val w = resources.displayMetrics.widthPixels; val hh = resources.displayMetrics.heightPixels
+        val coverSize = if (land) (hh * 0.62).toInt() else (w * 0.78).toInt()
+        val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
+            addView(prev, LinearLayout.LayoutParams(dp(96), dp(96)).apply { marginEnd = dp(22) })
+            addView(play, LinearLayout.LayoutParams(dp(124), dp(124)))
+            addView(next, LinearLayout.LayoutParams(dp(96), dp(96)).apply { marginStart = dp(22) }) }
+        val volRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, dp(18), 0, 0)
+            addView(volDown, LinearLayout.LayoutParams(dp(64), dp(64)).apply { marginEnd = dp(40) }); addView(volUp, LinearLayout.LayoutParams(dp(64), dp(64))) }
+        val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; addView(title); addView(sub); addView(btnRow); addView(volRow) }
+        val main = LinearLayout(this).apply {
+            orientation = if (land) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(24), dp(40), dp(24), dp(24))
+            addView(cover, LinearLayout.LayoutParams(coverSize, coverSize).apply { if (land) marginEnd = dp(32) else bottomMargin = dp(24) })
+            addView(info, if (land) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(-1, -2))
+        }
+        root.addView(main, android.widget.FrameLayout.LayoutParams(-1, -1))
+        root.addView(close, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END))
+        cover.tag = null
+    }
+    refresh = {
+        val n = nowPlaying()
+        if (n == null) { title.text = "Nessuna musica in corso"; sub.text = "Avvia YouTube Music o YouTube"; play.text = "▶"; showArt(cover, null) }
+        else { title.text = n.title; sub.text = n.sub; play.text = if (n.playing) "⏸" else "▶"; showArt(cover, n) }
+    }
+    val tick = object : Runnable { override fun run() { refresh(); h.postDelayed(this, 1000) } }
+    root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> val before = landscape; build(); if (before != landscape) refresh() }
+    build()
+    dlg.setContentView(root)
+    dlg.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    dlg.setOnDismissListener { h.removeCallbacksAndMessages(null) }
+    dlg.show()
+    h.post(tick)
+}
+
+/** The music player sections (used in Ascolta → Musica). [leave] is called before opening something in the browser. */
+internal fun MainActivity.musicSections(body: LinearLayout, leave: () -> Unit, rerender: () -> Unit) {
+    sectionLabel(body, "ORA IN ASCOLTO")
+    body.addView(MusicBar(this, large = true).view)
+    listRow(body, "🚗 Schermo intero", "Copertina e tasti grandi, lo schermo resta acceso: comodo in auto", onClick = { showNowPlayingFull() })
+
+    sectionLabel(body, "APRI")
+    val ytApp = Music.installed(this, Music.YTMUSIC)
+    listRow(body, "🔴 YouTube Music", if (Music.ytInApp(this)) "Qui dentro, anche a schermo spento" + (if (ytApp) ". Tieni premuto per usare l'app separata" else "") else "Apre l'app YouTube Music. Tieni premuto per usarlo dentro Web Launcher",
+        onClick = { leave(); openMusicApp("ytmusic") }, onLong = { if (ytApp) { Music.setYtInApp(this, !Music.ytInApp(this)); rerender() } })
+    listRow(body, "▶️ YouTube", "Video e musica, qui dentro: pubblicità saltate e audio anche a schermo spento" + if (Music.preferred(this) == "youtube") " · usato per le ricerche" else "",
+        onClick = { leave(); openMusicApp("youtube") }, onLong = { Music.setPreferred(this, if (Music.preferred(this) == "youtube") "ytmusic" else "youtube"); toast(if (Music.preferred(this) == "youtube") "Le ricerche vanno su YouTube" else "Le ricerche vanno su YouTube Music"); rerender() })
+    if (Music.installed(this, Music.SPOTIFY)) listRow(body, "🟢 Spotify", if (Music.preferred(this) == "spotify") "Usata per le ricerche: tieni premuto per tornare a YouTube Music" else "Tocca per aprire, tieni premuto per usarla nelle ricerche",
+        onClick = { openMusicApp("spotify") }, onLong = { Music.setPreferred(this, if (Music.preferred(this) == "spotify") "ytmusic" else "spotify"); rerender() })
+
+    sectionLabel(body, "CERCA E METTI")
+    listRow(body, "🎤 Di' cosa vuoi ascoltare", "«metti musica per correre», «ascolta Vasco Rossi», «pausa», «prossima canzone»", onClick = { requestMicAndListen() })
+    listRow(body, "🔎 Scrivi cosa cercare", "Artista, canzone, genere o umore", onClick = {
+        val et = field("Cosa vuoi ascoltare?", null)
+        MaterialAlertDialogBuilder(this).setTitle("Cerca nella musica").setView(form(et)).setPositiveButton("Cerca") { _, _ -> if (et.text.toString().isNotBlank()) { leave(); searchMusic(et.text.toString().trim(), null) } }.setNegativeButton("Annulla", null).show()
+    })
+
+    sectionLabel(body, "LE MIE PLAYLIST")
+    Music.playlists(this).forEach { p ->
+        val app = Music.appFor(p.url)
+        listRow(body, (when (app) { "spotify" -> "🟢 "; "ytmusic" -> "🔴 "; "youtube" -> "▶️ "; else -> "🎵 " }) + p.name, Music.appName(app) + " · tocca per aprirla",
+            onClick = { if (app == "youtube" || app == "ytmusic" && Music.ytInApp(this)) leave(); openMusicLink(p.url) },
+            onRemove = { Music.removePlaylist(this, p.id); rerender() })
+    }
+    listRow(body, "➕ Aggiungi playlist o album", "Incolla il link da YouTube Music, YouTube o Spotify (Condividi → Copia link)", onClick = {
+        val clip = (getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString().orEmpty().trim()
+        val name = field("Nome (es. Corsa)", null); val url = field("Link", clip.takeIf { Music.appFor(it) != null })
+        MaterialAlertDialogBuilder(this).setTitle("Nuova playlist").setView(form(name, url)).setPositiveButton("Salva") { _, _ ->
+            val u = url.text.toString().trim()
+            if (name.text.toString().isBlank() || (!u.startsWith("http") && !u.startsWith("spotify:"))) toast("Scrivi un nome e incolla un link valido")
+            else { Music.addPlaylist(this, name.text.toString().trim(), u); rerender() }
+        }.setNegativeButton("Annulla", null).show()
+    })
+}
+
+/** Strumenti → Musica and the voice/test shortcut: the player lives in Ascolta → Musica. */
+internal fun MainActivity.showMusicPage() {
+    audioTab = "music"; showTab(MainActivity.TAB_AUDIO); onAudioShown()
 }
 
 /** Opens a search in the chosen music app. */

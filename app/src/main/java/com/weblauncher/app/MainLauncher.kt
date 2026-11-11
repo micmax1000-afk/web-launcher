@@ -226,7 +226,36 @@ internal fun MainActivity.recentLabel(site: RecentSite): String {
     }
 }
 
+/** The empty browser: a clean start page. The list of recent pages has its own page (menu ⋮ → Recenti). */
 internal fun MainActivity.renderRecents() {
+    recentsList.removeAllViews()
+    val palette = AppRepository.palette(this)
+    val d = resources.displayMetrics.density
+    fun dp(v: Int) = (v * d).toInt()
+    recentsList.addView(TextView(this).apply {
+        text = "🔎"; textSize = 44f; gravity = android.view.Gravity.CENTER; setPadding(0, dp(56), 0, dp(8))
+    })
+    recentsList.addView(TextView(this).apply {
+        text = "Scrivi un indirizzo o cerca nella barra qui sopra"; textSize = 16f; gravity = android.view.Gravity.CENTER
+        setTextColor(palette.textMuted); setPadding(dp(16), 0, dp(16), dp(20))
+    })
+    val n = repo.loadRecents().size
+    if (n > 0) recentsList.addView(com.google.android.material.button.MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+        text = "🕘 Recenti ($n)"; isAllCaps = false
+        layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { gravity = android.view.Gravity.CENTER_HORIZONTAL }
+        setOnClickListener { showRecentsPage() }
+    })
+}
+
+internal fun MainActivity.showRecentsPage() {
+    openPage("Recenti") { _, body, dialog ->
+        fun r() { renderRecentsInto(body, open = { url -> dialog.dismiss(); openInBrowser(url) }, rerender = { r() }) }
+        r()
+        dialog.setOnDismissListener { if (!browserHasPage) renderRecents() }
+    }
+}
+
+internal fun MainActivity.renderRecentsInto(recentsList: android.widget.LinearLayout, open: (String) -> Unit, rerender: () -> Unit) {
     recentsList.removeAllViews()
     val d = resources.displayMetrics.density
     fun dp(v: Int) = (v * d).toInt()
@@ -238,7 +267,7 @@ internal fun MainActivity.renderRecents() {
     }
     header.addView(TextView(this).apply {
         text = "Recenti"
-        setTextColor(AppRepository.palette(this@renderRecents).text)
+        setTextColor(AppRepository.palette(this@renderRecentsInto).text)
         textSize = 20f
         setTypeface(typeface, android.graphics.Typeface.BOLD)
         layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -254,7 +283,7 @@ internal fun MainActivity.renderRecents() {
             setOnClickListener {
                 confirmClear("Eliminare tutti i recenti?") {
                     repo.clearRecents()
-                    renderRecents()
+                    rerender()
                     toast("Recenti eliminati")
                 }
             }
@@ -263,8 +292,8 @@ internal fun MainActivity.renderRecents() {
     recentsList.addView(header)
     if (items.isEmpty()) {
         recentsList.addView(TextView(this).apply {
-            text = "Nessuna pagina ancora. Apri un'app dalla Home."
-            setTextColor(AppRepository.palette(this@renderRecents).textMuted)
+            text = "Nessuna pagina ancora."
+            setTextColor(AppRepository.palette(this@renderRecentsInto).textMuted)
             textSize = 14f
             setPadding(dp(4), 0, dp(4), 0)
         })
@@ -273,9 +302,9 @@ internal fun MainActivity.renderRecents() {
     items.forEach { site ->
         val card = com.google.android.material.card.MaterialCardView(this).apply {
             radius = dp(14).toFloat()
-            setCardBackgroundColor(AppRepository.palette(this@renderRecents).card)
+            setCardBackgroundColor(AppRepository.palette(this@renderRecentsInto).card)
             strokeWidth = dp(1)
-            strokeColor = AppRepository.palette(this@renderRecents).stroke
+            strokeColor = AppRepository.palette(this@renderRecentsInto).stroke
             cardElevation = 0f
             val lp = android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
@@ -283,15 +312,15 @@ internal fun MainActivity.renderRecents() {
             )
             lp.bottomMargin = dp(8)
             layoutParams = lp
-            setOnClickListener { openInBrowser(site.url) }
+            setOnClickListener { open(site.url) }
             setOnLongClickListener {
-                MaterialAlertDialogBuilder(this@renderRecents)
+                MaterialAlertDialogBuilder(this@renderRecentsInto)
                     .setTitle(recentLabel(site))
                     .setItems(arrayOf("Apri", "Elimina")) { dlg, which ->
-                        if (which == 0) openInBrowser(site.url)
+                        if (which == 0) open(site.url)
                         else {
                             repo.removeRecent(site.url)
-                            renderRecents()
+                            rerender()
                         }
                         dlg.dismiss()
                     }
@@ -310,14 +339,14 @@ internal fun MainActivity.renderRecents() {
         }
         box.addView(TextView(this).apply {
             text = recentLabel(site)
-            setTextColor(AppRepository.palette(this@renderRecents).text)
+            setTextColor(AppRepository.palette(this@renderRecentsInto).text)
             textSize = 15f
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
         box.addView(TextView(this).apply {
             text = site.url
-            setTextColor(AppRepository.palette(this@renderRecents).textMuted)
+            setTextColor(AppRepository.palette(this@renderRecentsInto).textMuted)
             textSize = 12f
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
@@ -326,12 +355,12 @@ internal fun MainActivity.renderRecents() {
         row.addView(TextView(this).apply {
             text = "×"
             textSize = 20f
-            setTextColor(AppRepository.palette(this@renderRecents).textMuted)
+            setTextColor(AppRepository.palette(this@renderRecentsInto).textMuted)
             setPadding(dp(12), dp(8), dp(12), dp(8))
             contentDescription = "Elimina dai recenti"
             setOnClickListener {
                 repo.removeRecent(site.url)
-                renderRecents()
+                rerender()
             }
         })
         card.addView(row)
