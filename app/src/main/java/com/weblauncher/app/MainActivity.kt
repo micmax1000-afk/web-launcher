@@ -811,7 +811,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun showTab(tab: Int) {
-        if (!suppressLeavePrompt && currentTab == TAB_BROWSER && tab != TAB_BROWSER &&
+        if (!suppressLeavePrompt && homePrefs.getBoolean("askClearOnLeave", false) && currentTab == TAB_BROWSER && tab != TAB_BROWSER &&
             (browserHasPage || repo.loadHistory().isNotEmpty())
         ) {
             if (leavePromptShowing) return
@@ -1066,6 +1066,8 @@ class MainActivity : AppCompatActivity() {
             "emergency" -> { intent.removeExtra(EXTRA_WIDGET); showEmergencyPage(); return }
             "report" -> { intent.removeExtra(EXTRA_WIDGET); showReportPage(); return }
             "music" -> { intent.removeExtra(EXTRA_WIDGET); showMusicPage(); return }
+            "nowplaying" -> { intent.removeExtra(EXTRA_WIDGET); showNowPlayingFull(); return }
+            "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
             "body" -> { intent.removeExtra(EXTRA_WIDGET); showBodyPage(); return }
             "symptoms" -> { intent.removeExtra(EXTRA_WIDGET); showSymptomsPage(); return }
@@ -1486,6 +1488,7 @@ class MainActivity : AppCompatActivity() {
         }
         item("🎫 Salva nei biglietti", hasPage) { saveCurrentToWallet() }
         item("Apri in Chrome / altro browser", hasPage) { openExternally() }
+        item("🕘 Recenti") { showRecentsPage() }
         item("Chiudi scheda") { closeCurrentTab() }
         item("Impostazioni") { showTab(TAB_SETTINGS) }
         if (blockAdsOn && hasPage) root.addView(TextView(this).apply {

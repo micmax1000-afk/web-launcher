@@ -372,6 +372,9 @@ internal fun MainActivity.renderSettings() {
         renderSettings()
     }
     row("Password e compilazione", "Autofill di Android") { showPasswordInfo() }
+    row("Chiedi di cancellare la cronologia", "Quando esci dal browser", switch = homePrefs.getBoolean("askClearOnLeave", false)) {
+        homePrefs.edit().putBoolean("askClearOnLeave", !homePrefs.getBoolean("askClearOnLeave", false)).apply(); renderSettings()
+    }
     row("Cancella cronologia", "Recenti e cronologia del browser") { confirmClear("Cancellare cronologia e recenti?") { clearHistoryAndRecents(); toast("Cronologia cancellata") } }
     row("Cancella cookie", "Ti disconnette dai siti") { confirmClear("Cancellare tutti i cookie?") { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush(); toast("Cookie cancellati") } }
     row("Cancella cache") { confirmClear("Cancellare la cache?") { webView.clearCache(true); toast("Cache cancellata") } }

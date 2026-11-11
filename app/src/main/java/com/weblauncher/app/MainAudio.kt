@@ -750,10 +750,14 @@ internal fun MainActivity.renderMusic(list: android.widget.LinearLayout) {
     val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
     val d = resources.displayMetrics.density
     fun dp(v: Int) = (v * d).toInt()
+    if (musicFilter == null) {
+        musicSections(list, leave = {}, rerender = { renderAudio() })
+        sectionLabel(list, "SUL TELEFONO")
+    }
     if (ContextCompat.checkSelfPermission(this, musicPerm()) != PackageManager.PERMISSION_GRANTED) {
         list.addView(TextView(this).apply {
-            text = "Ascolta gli MP3 e la musica salvata sul telefono, anche a schermo spento."; textSize = 15f; setTextColor(palette.textMuted)
-            gravity = android.view.Gravity.CENTER; setPadding(dp(20), dp(30), dp(20), dp(12))
+            text = "Ascolta gli MP3 e la musica salvata sul telefono, anche a schermo spento."; textSize = 14f; setTextColor(palette.textMuted)
+            gravity = android.view.Gravity.CENTER; setPadding(dp(20), dp(8), dp(20), dp(8))
         })
         list.addView(com.google.android.material.button.MaterialButton(this).apply {
             text = "Consenti l'accesso alla musica"; isAllCaps = false; setOnClickListener { musicPermission.launch(musicPerm()) }
@@ -761,7 +765,7 @@ internal fun MainActivity.renderMusic(list: android.widget.LinearLayout) {
         return
     }
     val all = songs ?: loadSongs().also { songs = it }
-    if (all.isEmpty()) { emptyLabel(list, "Nessuna canzone trovata sul telefono.\nCopia degli MP3 nella cartella Music."); return }
+    if (all.isEmpty()) { hintLabel(list, "Nessuna canzone salvata sul telefono (cartella Music)."); return }
     val tabs = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; setPadding(dp(6), dp(4), 0, dp(4)) }
     listOf("songs" to "Brani", "albums" to "Album", "artists" to "Artisti").forEach { (k, l) ->
         val active = k == musicView && musicFilter == null
