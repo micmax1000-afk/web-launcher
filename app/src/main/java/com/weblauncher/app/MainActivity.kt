@@ -1090,6 +1090,7 @@ class MainActivity : AppCompatActivity() {
             "privacytools" -> { intent.removeExtra(EXTRA_WIDGET); showPrivacyTools(); return }
             "backuptools" -> { intent.removeExtra(EXTRA_WIDGET); showBackupTools(); return }
             "sport" -> { intent.removeExtra(EXTRA_WIDGET); showSportsPage(); return }
+            "carweb" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode("https://www.wikipedia.org/"); return }
             "carmode" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode(); return }
             "recipes" -> { intent.removeExtra(EXTRA_WIDGET); showRecipesPage(); return }
             "netcheck" -> { intent.removeExtra(EXTRA_WIDGET); sportsNetCheck(); return }
