@@ -149,9 +149,9 @@ internal fun MainActivity.showNowPlayingFull() {
     }
     val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
     lateinit var refresh: () -> Unit
-    val play = big("⏸", 54) { musicAction("toggle"); h.postDelayed({ refresh() }, 500) }
-    val prev = big("⏮", 40) { musicAction("prev"); h.postDelayed({ refresh() }, 600) }
-    val next = big("⏭", 40) { musicAction("next"); h.postDelayed({ refresh() }, 600) }
+    val play = big("⏸", 46) { musicAction("toggle"); h.postDelayed({ refresh() }, 500) }
+    val prev = big("⏮", 34) { musicAction("prev"); h.postDelayed({ refresh() }, 600) }
+    val next = big("⏭", 34) { musicAction("next"); h.postDelayed({ refresh() }, 600) }
     val volDown = big("🔉", 26) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI) }
     val volUp = big("🔊", 26) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_RAISE, android.media.AudioManager.FLAG_SHOW_UI) }
     val close = TextView(this).apply { text = "✕"; textSize = 28f; setTextColor(0xFFFFFFFF.toInt()); setPadding(dp(18), dp(14), dp(18), dp(14)); setOnClickListener { dlg.dismiss() } }
@@ -165,9 +165,9 @@ internal fun MainActivity.showNowPlayingFull() {
         val w = resources.displayMetrics.widthPixels; val hh = resources.displayMetrics.heightPixels
         val coverSize = if (land) (hh * 0.62).toInt() else (w * 0.78).toInt()
         val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
-            addView(prev, LinearLayout.LayoutParams(dp(96), dp(96)).apply { marginEnd = dp(22) })
-            addView(play, LinearLayout.LayoutParams(dp(124), dp(124)))
-            addView(next, LinearLayout.LayoutParams(dp(96), dp(96)).apply { marginStart = dp(22) }) }
+            addView(prev, LinearLayout.LayoutParams(dp(82), dp(82)).apply { marginEnd = dp(14) })
+            addView(play, LinearLayout.LayoutParams(dp(110), dp(110)))
+            addView(next, LinearLayout.LayoutParams(dp(82), dp(82)).apply { marginStart = dp(14) }) }
         val volRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, dp(18), 0, 0)
             addView(volDown, LinearLayout.LayoutParams(dp(64), dp(64)).apply { marginEnd = dp(40) }); addView(volUp, LinearLayout.LayoutParams(dp(64), dp(64))) }
         val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; addView(title); addView(sub); addView(btnRow); addView(volRow) }
