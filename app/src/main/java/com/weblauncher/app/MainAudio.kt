@@ -158,11 +158,14 @@ internal fun MainActivity.playMedia(id: String, uri: String, title: String, sub:
     updateMiniPlayer()
 }
 
-internal fun MainActivity.playEpisode(e: Episode) {
+internal fun MainActivity.playEpisode(e: Episode, showPlayer: Boolean = false) {
     val local = audio.localFile(e)
     val uri = if (audio.isDownloaded(e) && !isDownloading(e)) Uri.fromFile(local).toString() else e.audioUrl
     val start = if (AudioStore.isFinished(this, e.id)) 0L else AudioStore.position(this, e.id)
     playMedia(e.id, uri, e.title, e.podcastTitle, e.artwork, start)
+    AudioStore.addRecent(this, e)
+    if (currentTab == TAB_AUDIO && audioTab == "podcast") renderAudio()
+    if (showPlayer) uiHandler.postDelayed({ if (!isFinishing) showPlayerSheet() }, 350)   // the player opens on top, so you see what is playing
 }
 
 internal fun MainActivity.playRadio(s: RadioStation) {
@@ -293,8 +296,8 @@ internal fun MainActivity.episodeRow(parent: android.widget.LinearLayout, e: Epi
         fmtDur(e.durationSec).ifBlank { null }
     ).joinToString(" · ")
     mediaRow(parent, e.artwork, e.title, sub, episodeProgress(e),
-        trailing = listOf(R.drawable.ic_play to { playEpisode(e) }),
-        onLong = { episodeMenu(e) }) { playEpisode(e) }
+        trailing = listOf(R.drawable.ic_play to { playEpisode(e, showPlayer = true) }),
+        onLong = { episodeMenu(e) }) { playEpisode(e, showPlayer = true) }
 }
 
 internal fun MainActivity.episodeMenu(e: Episode) {
@@ -307,7 +310,7 @@ internal fun MainActivity.episodeMenu(e: Episode) {
     )
     MaterialAlertDialogBuilder(this).setTitle(e.title).setItems(opts) { _, w ->
         when (w) {
-            0 -> playEpisode(e)
+            0 -> playEpisode(e, showPlayer = true)
             1 -> if (downloaded) { audio.localFile(e).delete(); toast("Download eliminato"); renderAudio() } else downloadEpisode(e)
             2 -> {
                 if (AudioStore.isFinished(this, e.id)) getSharedPreferences("wl_audio", MODE_PRIVATE).edit().remove("done_" + e.id).apply()
@@ -353,10 +356,16 @@ internal fun MainActivity.renderAudio() {
     if (audioTab == "video") { renderVideos(list); return }
     if (audioTab == "music") { renderMusic(list); return }
 
+    // continua ad ascoltare: gli episodi iniziati e non finiti (anche di podcast non seguiti)
+    val resume = AudioStore.recent(this).filter { !AudioStore.isFinished(this, it.id) }.take(4)
+    if (resume.isNotEmpty()) {
+        sectionLabel(list, "CONTINUA AD ASCOLTARE")
+        resume.forEach { episodeRow(list, it) }
+    }
     val subs = audio.subscriptions()
     if (subs.isEmpty()) {
         list.addView(TextView(this).apply {
-            text = "Nessun podcast seguito.\nCerca per nome: è gratis e senza account."
+            text = "Nessun podcast seguito.\nCerca per nome, apri un podcast e tocca «Segui»: lo ritrovi qui con i nuovi episodi."
             textSize = 15f; gravity = android.view.Gravity.CENTER; setTextColor(palette.textMuted)
             setPadding(dp(20), dp(30), dp(20), dp(16))
         })

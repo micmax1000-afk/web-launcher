@@ -41,6 +41,13 @@ data class RadioStation(
 object AudioStore {
     private fun prefs(c: Context) = c.getSharedPreferences("wl_audio", Context.MODE_PRIVATE)
 
+    /** Episodes started recently, newest first (for «Continua ad ascoltare», even without followed podcasts). */
+    fun recent(c: Context): List<Episode> = runCatching {
+        com.google.gson.Gson().fromJson<List<Episode>>(prefs(c).getString("recentEps", null), object : com.google.gson.reflect.TypeToken<List<Episode>>() {}.type)
+    }.getOrNull().orEmpty().filterNotNull()
+    fun addRecent(c: Context, e: Episode) =
+        prefs(c).edit().putString("recentEps", com.google.gson.Gson().toJson((listOf(e) + recent(c).filter { it.id != e.id }).take(20))).apply()
+
     fun savePosition(c: Context, id: String, pos: Long, dur: Long) {
         val e = prefs(c).edit().putLong("pos_$id", pos).putLong("dur_$id", dur)
         if (dur > 0 && pos > dur - 30_000) e.putBoolean("done_$id", true)
