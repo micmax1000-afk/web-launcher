@@ -160,6 +160,16 @@ case "$AIS" in
   *) echo "::error::La finestra dell'AI si e' chiusa mentre si scorreva ($AIS)"; exit 1;;
 esac
 MAXY=$(echo "$AIS" | sed -n 's/.*maxScrollY=\([0-9]*\).*/\1/p')
+if [ -z "$MAXY" ] || [ "$MAXY" -lt 100 ]; then
+  # telefono virtuale lento: i primi trascinamenti possono arrivare prima che la finestra sia pronta. Riprovo una volta.
+  echo "Finestra AI: riprovo lo scorrimento"
+  adb shell input swipe 540 1700 540 700 300; sleep 1; adb shell input swipe 540 1700 540 700 300
+  sleep 16
+  AIS=$(adb logcat -d -s WL_SELFTEST:* | grep -o 'AI_SHEET .*' | tail -1)
+  echo "Finestra AI (seconda prova): $AIS"
+  case "$AIS" in *'shown=true'*) ;; *) echo "::error::La finestra dell'AI si e' chiusa mentre si scorreva ($AIS)"; exit 1;; esac
+  MAXY=$(echo "$AIS" | sed -n 's/.*maxScrollY=\([0-9]*\).*/\1/p')
+fi
 if [ -z "$MAXY" ] || [ "$MAXY" -lt 100 ]; then echo "::error::Il testo della finestra AI non scorre ($AIS)"; exit 1; fi
 adb shell input keyevent KEYCODE_BACK
 

@@ -329,7 +329,8 @@ internal fun MainActivity.showAiSheet(
         bubble(formatAi(previewAnswer), false)
         var maxY = 0
         scroll.setOnScrollChangeListener(androidx.core.widget.NestedScrollView.OnScrollChangeListener { _, _, y, _, _ -> maxY = maxOf(maxY, y) })
-        uiHandler.postDelayed({ android.util.Log.i(SelfTest.TAG, "AI_SHEET shown=${sheet.isShowing} maxScrollY=$maxY") }, 15000)
+        val report = Runnable { android.util.Log.i(SelfTest.TAG, "AI_SHEET shown=${sheet.isShowing} maxScrollY=$maxY range=${(scroll.getChildAt(0)?.height ?: 0) - scroll.height}") }
+        uiHandler.postDelayed(report, 15000); uiHandler.postDelayed(report, 32000)   // second report: the test may swipe again on a slow phone
     }
     if (firstQuestion != null) send(firstQuestion, showFirstQuestion)
     else if (previewAnswer == null) input.requestFocus()
