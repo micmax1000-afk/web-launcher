@@ -111,7 +111,7 @@ internal fun MainActivity.renderTools() {
     val content = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
     list.addView(content)
     val groupColors = mapOf("⭐ PREFERITI" to 0xFFF59E0B.toInt(), "ORGANIZZA" to 0xFF3B82F6.toInt(), "SOLDI" to 0xFF16A34A.toInt(),
-        "SALUTE E SPORT" to 0xFFEF4444.toInt(), "DOCUMENTI" to 0xFFD97706.toInt(), "UTILITÀ" to 0xFF0EA5E9.toInt(), "BROWSER E APP" to 0xFF8B5CF6.toInt(),
+        "SALUTE E SPORT" to 0xFFEF4444.toInt(), "LA TUA GIORNATA" to 0xFF0D9488.toInt(), "AI" to 0xFFDB2777.toInt(), "DOCUMENTI" to 0xFFD97706.toInt(), "UTILITÀ" to 0xFF0EA5E9.toInt(), "BROWSER E APP" to 0xFF8B5CF6.toInt(),
         "RISULTATI" to 0xFF3B82F6.toInt())
     val groups = mutableListOf<Pair<String, List<Triple<String, String, () -> Unit>>>>()
     val groupOf = mutableMapOf<String, String>()
@@ -172,31 +172,34 @@ internal fun MainActivity.renderTools() {
             showChecklist(n?.id, "Lista della spesa")
         },
         Triple("🎙", "Registratore") { showRecorderPage() },
-        Triple("🗣", "Chiedi a voce") { listenForQuestion() },
         Triple("🍝", "Ricette") { showRecipesPage() },
-        Triple("🚘", "Modalità auto") { showCarMode() },
-        Triple("☀️", "Buongiorno") { previewBrief() },
-        Triple("🔔", "Avvisi") { showAlertsPage() },
         Triple("🎂", "Compleanni") { showBirthdaysPage() },
         Triple("🗑", "Raccolta rifiuti") { showWastePage() },
+        Triple("🚗", "Parcheggio e luoghi") { showPlacesPage() },
+        Triple("📦", "Pacchi") { showParcelsPage() }
+    ))
+    group("LA TUA GIORNATA", listOf(
+        Triple("☀️", "Buongiorno") { previewBrief() },
         Triple("📊", "La mia settimana") { showWeeklySummary() },
-        Triple("🚗", "Parcheggio e luoghi") { showPlacesPage() }
+        Triple("🔔", "Avvisi") { showAlertsPage() },
+        Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
+        Triple("🚘", "Modalità auto") { showCarMode() },
+        Triple("⌛", "Tempo di utilizzo") { showUsagePage() }
     ))
     group("SOLDI", listOf(
         Triple("💰", "Spese") { showExpensesPage() },
         Triple("💼", "Finanze") { showFinancePage() },
-        Triple("🧠", "Chiedi ai tuoi dati") { askMyData() },
-        Triple("📆", "Scadenze") { showDeadlinesPage(Deadlines.DEADLINE) },
-        Triple("🔁", "Abbonamenti") { showDeadlinesPage(Deadlines.SUBSCRIPTION) },
-        Triple("🧾", "Garanzie") { showDeadlinesPage(Deadlines.WARRANTY) },
+        Triple("📆", "Scadenze") { showDeadlinesPage() },
         Triple("📈", "Borsa") { showStocksPage() }
     ))
     group("SALUTE E SPORT", listOf(
         Triple("💚", "Benessere") { showWellnessHub() },
-        Triple("👟", "Passi") { showStepsPage() },
-        Triple("❤️", "Salute") { showHealthPage() },
-        Triple("⏱", "Tabata") { showTabata() },
-        Triple("⛰", "Altimetro") { showAltimeter() }
+        Triple("⏱", "Tabata") { showTabata() }
+    ))
+    group("AI", listOf(
+        Triple("✨", "Mia AI") { openMiaAi() },
+        Triple("🗣", "Chiedi a voce") { listenForQuestion() },
+        Triple("🧠", "Chiedi ai tuoi dati") { askMyData() }
     ))
     group("DOCUMENTI", listOf(
         Triple("📄", "Scanner") { scanDocument() },
@@ -208,13 +211,8 @@ internal fun MainActivity.renderTools() {
         Triple("🔐", "Cassaforte") { showVault() }
     ))
     group("UTILITÀ", listOf(
-        Triple("🎵", "Musica") { showMusicPage() },
         Triple("📷", "QR code") { scanQr() },
         Triple("🧰", "Misure e sensori") { showInstrumentsPage() },
-        Triple("🔦", "Torcia e bussola") { showUtilitiesPage() },
-        Triple("📦", "Pacchi") { showParcelsPage() },
-        Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
-        Triple("⌛", "Tempo di utilizzo") { showUsagePage() },
         Triple("🧮", "Calcoli") {
             showTab(TAB_HOME); searchInput.requestFocus()
             toast("Scrivi nella ricerca: «15% di 230», «10 km in miglia», «50 dollari in euro»")
@@ -222,12 +220,24 @@ internal fun MainActivity.renderTools() {
     ))
     group("BROWSER E APP", listOf(
         Triple("📚", "Catalogo app") { showCatalogPage() },
+        Triple("➕", "Aggiungi web app") { showAddEditDialog(null) },
         Triple("🕵️", "Profilo 2") { startActivity(Intent(this, IsolatedBrowserActivity::class.java)) },
         Triple("⬇", "Download") { showDownloadsPage() },
         Triple("🕘", "Cronologia") { showHistoryPage() },
-        Triple("✨", "Mia AI") { openMiaAi() },
-        Triple("⚙", "Impostazioni") { showTab(TAB_SETTINGS) }
+        Triple("🛡", "Privacy") { showPrivacyTools() },
+        Triple("📦", "Backup") { showBackupTools() }
     ))
+    // trovati con la ricerca anche se non hanno un riquadro (sono dentro altre pagine)
+    val searchOnly = listOf<Triple<String, String, () -> Unit>>(
+        Triple("👟", "Passi") { showStepsPage() },
+        Triple("❤️", "Salute") { showHealthPage() },
+        Triple("⛰", "Altimetro") { showAltimeter() },
+        Triple("🔦", "Torcia e bussola") { showUtilitiesPage() },
+        Triple("🎵", "Musica") { showMusicPage() },
+        Triple("🔁", "Abbonamenti") { showDeadlinesPage(Deadlines.SUBSCRIPTION) },
+        Triple("🧾", "Garanzie") { showDeadlinesPage(Deadlines.WARRANTY) },
+        Triple("⚙", "Impostazioni") { showTab(TAB_SETTINGS) }
+    )
     // personalizzazione: tasselli nascosti e preferiti in alto
     val tp = getSharedPreferences("wl_tools", MODE_PRIVATE)
     val hidden = tp.getStringSet("hidden", emptySet()).orEmpty()
@@ -238,7 +248,7 @@ internal fun MainActivity.renderTools() {
     fun draw(q: String) {
         content.removeAllViews()
         if (q.isNotBlank()) {
-            val hits = all.filter { it.second.lowercase(Locale.ITALIAN).contains(q.trim().lowercase(Locale.ITALIAN)) }
+            val hits = (all + searchOnly).filter { it.second.lowercase(Locale.ITALIAN).contains(q.trim().lowercase(Locale.ITALIAN)) }
             if (hits.isEmpty()) emptyLabel(content, "Nessuno strumento con «${q.trim()}»") else renderGroup("RISULTATI", hits)
             return
         }
@@ -388,13 +398,13 @@ private fun toolIcon(label: String): Int = when (label) {
     "Livella" -> R.drawable.ic_tool_level
     "Altimetro" -> R.drawable.ic_tool_altitude
     "Tabata" -> R.drawable.ic_tool_dumbbell
-    "Benessere" -> R.drawable.ic_tool_spark
+    "Benessere" -> R.drawable.ic_tool_heart
     "Musica" -> R.drawable.ic_tool_music
     "Raccolta rifiuti" -> R.drawable.ic_tool_trash
     "La mia settimana" -> R.drawable.ic_tool_chart
     "Misure e sensori" -> R.drawable.ic_tool_ruler
     "Torcia e bussola" -> R.drawable.ic_tool_torch
-    "Borsa" -> R.drawable.ic_tool_chart
+    "Borsa" -> R.drawable.ic_tool_trend
     "Pacchi" -> R.drawable.ic_tool_box
     "Meteo" -> R.drawable.ic_tool_weather
     "Tempo di utilizzo" -> R.drawable.ic_tool_hourglass
@@ -405,6 +415,9 @@ private fun toolIcon(label: String): Int = when (label) {
     "Cronologia" -> R.drawable.ic_tool_history
     "Mia AI" -> R.drawable.ic_tool_spark
     "Impostazioni" -> R.drawable.ic_tool_settings
+    "Privacy" -> R.drawable.ic_tool_shield
+    "Backup" -> R.drawable.ic_tool_cloud
+    "Aggiungi web app" -> R.drawable.ic_tool_plus
     else -> R.drawable.ic_nav_tools
 }
 
