@@ -152,8 +152,8 @@ internal fun MainActivity.showNowPlayingFull() {
     val play = big("⏸", 46) { musicAction("toggle"); h.postDelayed({ refresh() }, 500) }
     val prev = big("⏮", 34) { musicAction("prev"); h.postDelayed({ refresh() }, 600) }
     val next = big("⏭", 34) { musicAction("next"); h.postDelayed({ refresh() }, 600) }
-    val volDown = big("🔉", 26) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI) }
-    val volUp = big("🔊", 26) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_RAISE, android.media.AudioManager.FLAG_SHOW_UI) }
+    val volDown = big("−", 40) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI) }
+    val volUp = big("+", 40) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_RAISE, android.media.AudioManager.FLAG_SHOW_UI) }
     val close = TextView(this).apply { text = "✕"; textSize = 28f; setTextColor(0xFFFFFFFF.toInt()); setPadding(dp(18), dp(14), dp(18), dp(14)); setOnClickListener { dlg.dismiss() } }
     var landscape: Boolean? = null
     fun build() {
