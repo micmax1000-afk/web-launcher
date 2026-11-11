@@ -98,4 +98,13 @@ class MusicTest {
         assertEquals(null, Music.parseVoice("metti dentista martedì alle 10")); assertEquals(null, Music.parseVoice("metti la sveglia alle 7"))
         assertEquals(null, Music.parseVoice("apri il calendario")); assertEquals(null, Music.parseVoice("metti"))
     }
+
+    @Test fun lettoreDentroLApp() {
+        val raw = "\"{\\\"t\\\":\\\"Albachiara\\\",\\\"a\\\":\\\"Vasco Rossi\\\",\\\"art\\\":\\\"https://x/y.jpg\\\",\\\"p\\\":true,\\\"has\\\":true}\""
+        val w = Music.parseWebState(raw, 5)!!
+        assertEquals("Albachiara", w.title); assertEquals("Vasco Rossi", w.artist); assertTrue(w.playing); assertEquals(5L, w.at)
+        assertEquals(null, Music.parseWebState("\"{}\"")); assertEquals(null, Music.parseWebState("null")); assertEquals(null, Music.parseWebState(null))
+        assertEquals("https://music.youtube.com/search?q=musica%20per%20correre", Music.searchUri("ytmusic", "musica per correre"))
+        assertTrue(Music.controlJs("next'); alert(1); ('").endsWith("('nextalert')"))
+    }
 }

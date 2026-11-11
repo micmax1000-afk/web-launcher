@@ -171,15 +171,6 @@
             </intent-filter>
         </service>
         <service
-            android:name=".MusicListener"
-            android:exported="true"
-            android:label="Web Launcher: controllo della musica"
-            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationListenerService" />
-            </intent-filter>
-        </service>
-        <service
             android:name=".WorkoutService"
             android:exported="false"
             android:foregroundServiceType="location|connectedDevice" />
