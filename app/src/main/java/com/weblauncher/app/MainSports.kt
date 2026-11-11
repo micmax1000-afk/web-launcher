@@ -70,12 +70,7 @@ internal fun MainActivity.showSportsPage() {
         }
         fun load() {
             io.execute {
-                val now = System.currentTimeMillis()
-                val from = Date(now - 4 * 86_400_000L); val to = Date(now + 7 * 86_400_000L)
-                val res = Sports.followed(this).associateWith { id ->
-                    val l = Sports.league(id)!!
-                    Sports.get(Sports.scoreboardUrl(l, from, to))?.let { Sports.parseScoreboard(it, id) }
-                }
+                val res = Sports.followed(this).associateWith { id -> Sports.fetchScoreboard(Sports.league(id)!!)?.first }
                 runOnUiThread {
                     if (!dialog.isShowing) return@runOnUiThread
                     data = res; render()
@@ -102,7 +97,7 @@ private fun MainActivity.showStandings(l: Sports.League) {
         val palette = AppRepository.palette(this)
         emptyLabel(body, "Carico la classifica…")
         io.execute {
-            val tables = Sports.get(Sports.standingsUrl(l))?.let { Sports.parseStandings(it) }
+            val tables = Sports.get(Sports.standingsUrl(l))?.let { Sports.parseStandings(it, l.sport) }
             runOnUiThread {
                 if (!dialog.isShowing) return@runOnUiThread
                 body.removeAllViews()
@@ -122,7 +117,7 @@ private fun MainActivity.showStandings(l: Sports.League) {
                         })
                     }
                 }
-                hintLabel(body, "Colonne: posizione, squadra, partite giocate, vinte-perse, punti (per l'NBA la percentuale di vittorie).")
+                hintLabel(body, if (l.sport == "basketball") "Colonne: posizione, squadra, partite, vinte-perse, percentuale di vittorie." else "Colonne: posizione, squadra, partite giocate, vinte-pareggiate-perse, punti.")
             }
         }
     }
@@ -131,13 +126,13 @@ private fun MainActivity.showStandings(l: Sports.League) {
 /** Automatic test on the virtual phone: does ESPN answer, and how many events/rows we read (logged, does not fail). */
 internal fun MainActivity.sportsNetCheck() {
     Thread {
-        val now = System.currentTimeMillis()
         listOf("ita.1", "uefa.champions", "nba", "atp", "f1").forEach { id ->
             val l = Sports.league(id)!!
-            val sb = Sports.get(Sports.scoreboardUrl(l, Date(now - 7 * 86_400_000L), Date(now + 7 * 86_400_000L)))
-            val ms = sb?.let { Sports.parseScoreboard(it, id) }
-            val st = if (l.table) Sports.get(Sports.standingsUrl(l))?.let { Sports.parseStandings(it) } else null
-            android.util.Log.i(SelfTest.TAG, "NETCHECK $id scoreboard=${if (sb == null) "ERR" else "ok"} matches=${ms?.size} sample=${ms?.firstOrNull()?.let { Sports.line(it) + " | " + it.detail }} tables=${st?.size} rows=${st?.firstOrNull()?.rows?.size} first=${st?.firstOrNull()?.rows?.firstOrNull()}")
+            // each address variant, to see which ones ESPN accepts
+            val codes = Sports.scoreboardUrls(l).map { u -> runCatching { (java.net.URL(u).openConnection() as java.net.HttpURLConnection).run { setRequestProperty("User-Agent", "Mozilla/5.0 (Android) WebLauncher"); responseCode.also { disconnect() } } }.getOrDefault(-1) }
+            val sb = Sports.fetchScoreboard(l)
+            val st = if (l.table) Sports.get(Sports.standingsUrl(l))?.let { Sports.parseStandings(it, l.sport) } else null
+            android.util.Log.i(SelfTest.TAG, "NETCHECK $id codes=$codes used=${sb?.second} matches=${sb?.first?.size} live=${sb?.first?.count { it.live }} sample=${sb?.first?.lastOrNull { it.done }?.let { Sports.line(it) + " | " + it.detail }} next=${sb?.first?.firstOrNull { it.state == "pre" }?.let { Sports.line(it) }} tables=${st?.size} first=${st?.firstOrNull()?.rows?.take(2)}")
         }
         val gz = runCatching {
             val c = java.net.URL(GialloZafferano.searchUrl("carbonara")).openConnection() as java.net.HttpURLConnection

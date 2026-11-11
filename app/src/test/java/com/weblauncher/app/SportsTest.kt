@@ -48,6 +48,11 @@ class SportsTest {
         val t = Sports.parseStandings(json)
         assertEquals(1, t.size); assertEquals("Napoli", t[0].rows[0].team); assertEquals("28", t[0].rows[0].points)
         assertEquals("Milan", t[0].rows[1].team); assertEquals("8-2", t[0].rows[1].extra); assertEquals("11", t[0].rows[1].played)
+        val nba = """{"children":[{"name":"Eastern","standings":{"entries":[
+          {"team":{"displayName":"Bucks"},"stats":[{"name":"wins","displayValue":"1"},{"name":"losses","displayValue":"10"},{"name":"winPercent","displayValue":".091"},{"name":"points","displayValue":"-4.5"}]},
+          {"team":{"displayName":"Celtics"},"stats":[{"name":"wins","displayValue":"9"},{"name":"losses","displayValue":"2"},{"name":"winPercent","displayValue":".818"}]}]}}]}"""
+        val b = Sports.parseStandings(nba, "basketball")[0].rows
+        assertEquals("Celtics", b[0].team); assertEquals(1, b[0].pos); assertEquals(".818", b[0].points); assertEquals("9-2", b[0].extra); assertEquals("11", b[0].played)
         assertTrue(Sports.scoreboardUrl(Sports.league("ita.1")!!, java.util.Date(0), java.util.Date(0)).startsWith("https://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard?dates="))
     }
 

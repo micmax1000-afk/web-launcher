@@ -47,6 +47,23 @@ object Sports {
         val f = SimpleDateFormat("yyyyMMdd", Locale.ROOT)
         return "https://site.api.espn.com/apis/site/v2/sports/${l.sport}/${l.code}/scoreboard?dates=${f.format(from)}-${f.format(to)}&limit=200&lang=it"
     }
+    /** Address variants, from the richest to the simplest: ESPN refuses some of them for some sports. */
+    fun scoreboardUrls(l: League, now: Long = System.currentTimeMillis()): List<String> {
+        val f = SimpleDateFormat("yyyyMMdd", Locale.ROOT)
+        val base = "https://site.api.espn.com/apis/site/v2/sports/${l.sport}/${l.code}/scoreboard"
+        fun d(days: Int) = f.format(Date(now + days * 86_400_000L))
+        return listOf(
+            "$base?dates=${d(-4)}-${d(7)}&limit=200&lang=it",
+            "$base?dates=${d(-4)}-${d(7)}&limit=200",
+            "$base?dates=${d(-2)}-${d(3)}",
+            base
+        )
+    }
+    /** The first variant that answers; also says which one (for the automatic test). */
+    fun fetchScoreboard(l: League): Pair<List<Match>, Int>? {
+        scoreboardUrls(l).forEachIndexed { i, u -> get(u)?.let { return parseScoreboard(it, l.id) to i } }
+        return null
+    }
     fun standingsUrl(l: League) = "https://site.api.espn.com/apis/v2/sports/${l.sport}/${l.code}/standings"
 
     private fun JsonObject.str(k: String): String = get(k)?.takeIf { it.isJsonPrimitive }?.asString.orEmpty()
@@ -108,7 +125,7 @@ object Sports {
         out.sortedBy { it.start }
     }.getOrDefault(emptyList())
 
-    fun parseStandings(json: String): List<Table> = runCatching {
+    fun parseStandings(json: String, sport: String = "soccer"): List<Table> = runCatching {
         val root = JsonParser.parseString(json).asJsonObject
         val groups = root.arr("children").ifEmpty { listOf(root) }
         groups.mapNotNull { g ->
@@ -116,13 +133,20 @@ object Sports {
             if (entries.isEmpty()) return@mapNotNull null
             fun stat(e: JsonObject, vararg names: String) = e.arr("stats").firstOrNull { s -> names.any { it.equals(s.str("name"), true) || it.equals(s.str("abbreviation"), true) || it.equals(s.str("type"), true) } }
                 ?.let { s -> s.str("displayValue").ifBlank { s.str("value").substringBefore(".0") } }.orEmpty()
+            val basket = sport == "basketball"
             val rows = entries.mapIndexed { i, e ->
                 val team = e.obj("team")?.let { it.str("shortDisplayName").ifBlank { it.str("displayName") } } ?: ""
-                val rank = stat(e, "rank").toIntOrNull() ?: (i + 1)
-                val pts = stat(e, "points", "PTS").ifBlank { stat(e, "winPercent", "PCT") }
-                val wl = listOf(stat(e, "wins", "W"), stat(e, "losses", "L")).takeIf { it.all { s -> s.isNotBlank() } }?.joinToString("-").orEmpty()
-                Row(rank, team, stat(e, "gamesPlayed", "GP"), pts, wl)
-            }.sortedBy { it.pos }
+                val w = stat(e, "wins", "W"); val l = stat(e, "losses", "L"); val dr = stat(e, "ties", "draws", "T", "D")
+                if (basket) {
+                    // NBA: ordered by winning percentage (the "points" there are a point difference, not standings points)
+                    val pct = stat(e, "winPercent", "PCT")
+                    Row(0, team, ((w.toIntOrNull() ?: 0) + (l.toIntOrNull() ?: 0)).toString(), pct, "$w-$l")
+                } else {
+                    val rank = stat(e, "rank").toIntOrNull() ?: (i + 1)
+                    val wdl = if (w.isNotBlank() && l.isNotBlank()) listOf(w, dr.ifBlank { null }, l).filterNotNull().joinToString("-") else ""
+                    Row(rank, team, stat(e, "gamesPlayed", "GP"), stat(e, "points", "PTS"), wdl)
+                }
+            }.let { rs -> if (basket) rs.sortedByDescending { it.points.replace(",", ".").toDoubleOrNull() ?: 0.0 }.mapIndexed { i, r -> r.copy(pos = i + 1) } else rs.sortedBy { it.pos } }
             Table(g.str("name").ifBlank { g.str("abbreviation") }, rows)
         }
     }.getOrDefault(emptyList())
