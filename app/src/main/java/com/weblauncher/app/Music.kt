@@ -17,6 +17,11 @@ import java.util.UUID
 /** Needed only so that Android lets the app see the active media sessions (Spotify, YouTube Music…). It reads no notifications. */
 class MusicListener : NotificationListenerService()
 
+/** Buttons in the workout notification (work with the screen off). */
+class MusicKeyReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: android.content.Intent) { Music.control(context, intent.getStringExtra("a") ?: return) }
+}
+
 data class Playlist(val id: String, val name: String, val url: String)
 data class NowPlaying(val title: String, val artist: String, val app: String, val playing: Boolean, val art: Bitmap?, val controller: MediaController)
 
@@ -104,15 +109,33 @@ object Music {
         return NowPlaying(title, artist, appLabel(c, ctl.packageName), ctl.playbackState?.state == PlaybackState.STATE_PLAYING, art, ctl)
     }
 
-    /** Sends a command to whatever is playing. Returns false if nothing can be controlled. */
+    fun keyFor(action: String) = when (action) {
+        "pause" -> android.view.KeyEvent.KEYCODE_MEDIA_PAUSE; "play" -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY; "toggle" -> android.view.KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+        "next" -> android.view.KeyEvent.KEYCODE_MEDIA_NEXT; "prev" -> android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS; else -> 0
+    }
+
+    /** The same as pressing the media key of a headset: needs no permission and works with the screen off. */
+    fun pressKey(c: Context, action: String): Boolean {
+        val code = keyFor(action); if (code == 0) return false
+        val am = c.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+        return runCatching {
+            am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, code))
+            am.dispatchMediaKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, code)); true
+        }.getOrDefault(false)
+    }
+
+    /** Sends a command to whatever is playing: through the media session if the app may see it, otherwise with the media key. */
     fun control(c: Context, action: String): Boolean {
-        val n = current(c) ?: return false
-        val t = n.controller.transportControls
-        when (action) {
-            "pause" -> t.pause(); "play" -> t.play(); "next" -> t.skipToNext(); "prev" -> t.skipToPrevious()
-            "toggle" -> if (n.playing) t.pause() else t.play()
-            else -> return false
+        val n = current(c)
+        if (n != null) {
+            val t = n.controller.transportControls
+            when (action) {
+                "pause" -> t.pause(); "play" -> t.play(); "next" -> t.skipToNext(); "prev" -> t.skipToPrevious()
+                "toggle" -> if (n.playing) t.pause() else t.play()
+                else -> return pressKey(c, action)
+            }
+            return true
         }
-        return true
+        return pressKey(c, action)
     }
 }
