@@ -109,6 +109,14 @@ class Coach(c: Context) {
     private var tts: TextToSpeech? = null
     private var ready = false
     private val pending = mutableListOf<Pair<String, Boolean>>()
+    private val am = c.applicationContext.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+    private val attrs = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build()
+    private var focus: android.media.AudioFocusRequest? = null
+    private var open = 0
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    /** The music is lowered (not stopped) while the voice speaks. */
+    private fun gain() { if (open++ == 0) { focus = android.media.AudioFocusRequest.Builder(android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs).build(); runCatching { am.requestAudioFocus(focus!!) } } }
+    private fun release() { main.post { if (open > 0 && --open == 0) focus?.let { runCatching { am.abandonAudioFocusRequest(it) } } } }
     init {
         tts = TextToSpeech(c.applicationContext) { st ->
             if (st == TextToSpeech.SUCCESS) {
@@ -116,6 +124,12 @@ class Coach(c: Context) {
                     tts?.language = Locale.ITALIAN
                     tts?.setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build())
                 }
+                tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(id: String?) {}
+                    override fun onDone(id: String?) { release() }
+                    @Deprecated("Deprecated in Java") override fun onError(id: String?) { release() }
+                    override fun onStop(id: String?, interrupted: Boolean) { release() }
+                })
                 ready = true
                 pending.toList().forEach { (t, f) -> say(t, f) }; pending.clear()
             }
@@ -123,9 +137,11 @@ class Coach(c: Context) {
     }
     fun say(text: String, flush: Boolean = false) {
         if (!ready) { pending += text to flush; return }
-        runCatching { tts?.speak(text, if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, UUID.randomUUID().toString()) }
+        gain()
+        val ok = runCatching { tts?.speak(text, if (flush) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD, null, UUID.randomUUID().toString()) }.getOrNull()
+        if (ok != TextToSpeech.SUCCESS) release()
     }
-    fun shutdown() { runCatching { tts?.stop(); tts?.shutdown() }; tts = null }
+    fun shutdown() { runCatching { tts?.stop(); tts?.shutdown() }; tts = null; main.post { open = 0; focus?.let { runCatching { am.abandonAudioFocusRequest(it) } } } }
 }
 
 fun vibrateNow(c: Context, ms: Long = 400) {

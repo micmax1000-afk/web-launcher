@@ -283,6 +283,7 @@ internal fun MainActivity.showTabata() {
             dialog.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             run(Instruments.tabata(prep, work, rest, rounds), 0)
         }
+        body.addView(MusicBar(this).view)
         var voiceBtn: MaterialButton? = null
         voiceBtn = button(body, if (WorkoutOpts.voiceTabata(this)) "🔊 Voce: sì" else "🔇 Voce: no") { b ->
             val on = !WorkoutOpts.voiceTabata(this); WorkoutOpts.setVoiceTabata(this, on)
