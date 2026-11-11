@@ -2,9 +2,13 @@ name: Build Native Android APK
 
 on:
   push:
-    branches: [ '**' ]
+    branches: [ main ]          # i rami di lavoro si provano con la richiesta di unione (niente verifiche doppie)
   pull_request:
   workflow_dispatch:
+
+concurrency:                    # una nuova verifica sullo stesso ramo ferma quella vecchia
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: write
