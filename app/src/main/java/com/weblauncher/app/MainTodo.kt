@@ -108,7 +108,7 @@ internal fun MainActivity.quickReminder() {
 
 /** The «+» button on the Home: shown only there. */
 internal fun MainActivity.setupQuickButton() {
-    val root = findViewById<androidx.constraintlayout.widget.ConstraintLayout>(R.id.homePanel).parent as? androidx.constraintlayout.widget.ConstraintLayout ?: return
+    val root = findViewById<View>(R.id.bottomBar).parent as? androidx.constraintlayout.widget.ConstraintLayout ?: return
     val d = resources.displayMetrics.density
     val fab = com.google.android.material.floatingactionbutton.FloatingActionButton(this).apply {
         id = View.generateViewId(); setImageResource(R.drawable.ic_tool_plus); contentDescription = "Aggiungi"
