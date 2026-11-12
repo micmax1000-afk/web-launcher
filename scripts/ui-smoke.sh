@@ -15,6 +15,7 @@ adb logcat -c
 
 shot() { sleep "${2:-4}"; adb exec-out screencap -p > "$OUT/$1.png"; echo "schermata: $1"; }
 alive() { adb shell pidof $PKG >/dev/null; }
+why() { why; echo "--- perché il processo è finito ---"; adb logcat -d | grep -iE "Fatal signal|ANR in|lowmemorykiller|Killing .*weblauncher|weblauncher.*(died|crash)|Force stopping|am_kill|am_proc_died" | tail -25; adb shell dumpsys meminfo | head -12; }
 pdfprobe() {   # diagnosi: la lettura del testo dei PDF funziona in questo momento? (non fa fallire la prova)
   adb logcat -c
   adb shell am start -W -n $PKG/.MainActivity --es widget_action pdftext >/dev/null
@@ -41,7 +42,7 @@ n=1
 for key in ASPETTO HOME BROWSER PRIVACY NOTIZIE BACKUP AI AGGIORNAMENTI; do
   adb shell am start -W -n $PKG/.MainActivity --es widget_action settings_$key >/dev/null
   shot "03b-imp-$n-$key" 3
-  alive || { echo "::error::L'app si è chiusa aprendo le impostazioni $key"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -60; exit 1; }
+  alive || { echo "::error::L'app si è chiusa aprendo le impostazioni $key"; why; exit 1; }
   n=$((n+1))
 done
 adb shell am start -W -n $PKG/.MainActivity --es widget_action settings >/dev/null
@@ -61,7 +62,7 @@ n=10
 for page in instruments tabata altimeter ruler metal split waste finance stocks birthdays wellness hc food water calc workout plans history sleep meds visits emergency report hr body symptoms music nowplaying recents privacytools backuptools passwords carmode carweb recipes todo quickadd appcheck foryou player sources bledevices queue podcasttools radioalarm portfolio; do
   adb shell am start -W -n $PKG/.MainActivity --es widget_action $page >/dev/null
   shot "$n-$page" 3
-  alive || { echo "::error::L'app si è chiusa aprendo $page"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -60; exit 1; }
+  alive || { echo "::error::L'app si è chiusa aprendo $page"; why; exit 1; }
   adb shell input keyevent KEYCODE_BACK
   if [ "$page" = carweb ]; then sleep 1; adb shell input keyevent KEYCODE_BACK; sleep 1; adb shell input keyevent KEYCODE_BACK; fi   # pagina -> preferiti -> esci
   n=$((n+1))
@@ -70,7 +71,7 @@ done
 # PDF dentro l'app (pagina con il visualizzatore, senza passare dal browser)
 adb shell am start -W -n $PKG/.MainActivity --es widget_action pdfpage >/dev/null
 shot 19-pdf-nell-app 7
-alive || { echo "::error::L'app si e' chiusa aprendo il PDF"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -60; exit 1; }
+alive || { echo "::error::L'app si e' chiusa aprendo il PDF"; why; exit 1; }
 adb shell input keyevent KEYCODE_BACK
 
 # estrazione del testo da un PDF (e' quello che l'AI legge per il calendario dei rifiuti)
