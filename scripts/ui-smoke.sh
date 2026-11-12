@@ -68,8 +68,9 @@ adb shell input keyevent KEYCODE_BACK
 
 # estrazione del testo da un PDF (e' quello che l'AI legge per il calendario dei rifiuti)
 adb shell am start -W -n $PKG/.MainActivity --es widget_action pdftext >/dev/null
-sleep 14
+for i in $(seq 1 24); do sleep 2; adb logcat -d -s WL_SELFTEST:* | grep -q 'PDF_TEXT=' && break; done
 PT=$(adb logcat -d -s WL_SELFTEST:* | grep -o 'PDF_TEXT=.*' | tail -1)
+[ -n "$PT" ] || { echo "Registro PDF:"; adb logcat -d | grep -E "WL_PDF|chromium|Console|extract" | tail -40; }
 echo "Testo del PDF: $PT"
 case "$PT" in
   *Umido*Plastica*Carta*Vetro*) ;;
