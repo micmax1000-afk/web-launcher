@@ -187,11 +187,11 @@ internal fun MainActivity.renderTools() {
         Triple("📦", "Pacchi") { showParcelsPage() }
     ))
     group("LA TUA GIORNATA", listOf(
+        Triple("✅", "Da fare") { showTodoPage() },
         Triple("☀️", "Buongiorno") { previewBrief() },
         Triple("📊", "La mia settimana") { showWeeklySummary() },
         Triple("🔔", "Avvisi") { showAlertsPage() },
         Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
-        Triple("⚽", "Sport") { showSportsPage() },
         Triple("🚘", "Modalità auto") { showCarMode() },
         Triple("⌛", "Tempo di utilizzo") { showUsagePage() }
     ))
@@ -233,6 +233,7 @@ internal fun MainActivity.renderTools() {
         Triple("🕵️", "Profilo 2") { startActivity(Intent(this, IsolatedBrowserActivity::class.java)) },
         Triple("⬇", "Download") { showDownloadsPage() },
         Triple("🕘", "Cronologia") { showHistoryPage() },
+        Triple("🩺", "Controllo dell'app") { showAppCheck() },
         Triple("🔑", "Password") { showPasswordInfo() },
         Triple("🛡", "Privacy") { showPrivacyTools() },
         Triple("📦", "Backup") { showBackupTools() }
@@ -266,6 +267,7 @@ internal fun MainActivity.renderTools() {
         groups.forEach { (t, items) -> renderGroup(t, items.filter { it.second !in hidden && it.second !in favs }) }
         if (hidden.isNotEmpty()) emptyLabel(content, "${hidden.size} strumenti nascosti · tocca ✏️ in alto per mostrarli")
     }
+    if (!tp.getBoolean("usesAsked", false)) uiHandler.postDelayed({ if (currentTab == MainActivity.TAB_TOOLS && !isFinishing) showWhatYouUse() }, 600)
     search.addTextChangedListener(object : android.text.TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
         override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -426,7 +428,8 @@ private fun toolIcon(label: String): Int = when (label) {
     "Mia AI" -> R.drawable.ic_tool_spark
     "Impostazioni" -> R.drawable.ic_tool_settings
     "Privacy" -> R.drawable.ic_tool_shield
-    "Sport" -> R.drawable.ic_tool_ball
+    "Da fare" -> R.drawable.ic_tool_check
+    "Controllo dell'app" -> R.drawable.ic_tool_pulse
     "Password" -> R.drawable.ic_tool_key
     "Backup" -> R.drawable.ic_tool_cloud
     "Aggiungi web app" -> R.drawable.ic_tool_plus
@@ -439,8 +442,9 @@ internal fun MainActivity.customizeTools() {
     val all = toolsCatalog.flatMap { it.second }
     if (all.isEmpty()) return
     MaterialAlertDialogBuilder(this).setTitle("Personalizza Strumenti")
-        .setItems(arrayOf("👁 Mostra o nascondi strumenti", "⭐ Scegli i preferiti (in alto)", "↺ Ripristina come all'inizio")) { _, w ->
+        .setItems(arrayOf("👁 Mostra o nascondi strumenti", "⭐ Scegli i preferiti (in alto)", "↺ Ripristina come all'inizio", "🧩 Cosa usi? (scegli per gruppi)")) { _, w ->
             when (w) {
+                3 -> showWhatYouUse()
                 0 -> {
                     val hidden = tp.getStringSet("hidden", emptySet()).orEmpty().toMutableSet()
                     val labels = all.map { it.first }

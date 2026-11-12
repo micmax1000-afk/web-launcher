@@ -112,3 +112,15 @@ class MusicTest {
         assertTrue(Music.controlJs("next'); alert(1); ('").endsWith("('nextalert')"))
     }
 }
+
+class TodoTest {
+    @Test fun righe() {
+        val noon = java.util.Calendar.getInstance().apply { set(2026, java.util.Calendar.NOVEMBER, 12, 12, 0, 0); set(java.util.Calendar.MILLISECOND, 0) }.timeInMillis
+        val day = Todo.startOfDay(noon)
+        assertEquals(java.util.Calendar.getInstance().apply { timeInMillis = noon; set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0) }.timeInMillis, day)
+        val at = java.util.Calendar.getInstance().apply { timeInMillis = day; set(java.util.Calendar.HOUR_OF_DAY, 14); set(java.util.Calendar.MINUTE, 30) }.timeInMillis
+        assertEquals("⏰ 14:30 Dentista", Todo.line(Todo.Item(at, false, "Dentista", "⏰", "rem"), noon))
+        assertEquals("🎂 domani Compleanno di Anna", Todo.line(Todo.Item(day + 86_400_000L, true, "Compleanno di Anna", "🎂", "bday"), noon))
+        assertEquals("💊 ieri 08:00 Pastiglia", Todo.line(Todo.Item(day - 86_400_000L + 8 * 3_600_000L, false, "Pastiglia", "💊", "med"), noon))
+    }
+}
