@@ -38,12 +38,12 @@ internal fun MainActivity.askMusicAccess() {
 }
 
 /** What is playing now, wherever it comes from: YouTube / YouTube Music in the app's browser, the app's own player, or another app. */
-data class NowView(val title: String, val sub: String, val artUrl: String?, val artBmp: android.graphics.Bitmap?, val playing: Boolean, val source: String, val posMs: Long = 0, val durMs: Long = 0)
+data class NowView(val title: String, val sub: String, val artUrl: String?, val artBmp: android.graphics.Bitmap?, val playing: Boolean, val source: String, val posMs: Long = 0, val durMs: Long = 0, val url: String = "", val music: Boolean = true)
 
 internal fun MainActivity.nowPlaying(): NowView? {
     val w = Music.web
     if (w != null && Music.webActive())
-        return NowView(w.title.ifBlank { "Video in riproduzione" }, listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · "), w.art.takeIf { it.startsWith("http") }, null, w.playing, "web", w.posMs + if (w.playing) System.currentTimeMillis() - w.at else 0L, w.durMs)
+        return NowView(w.title.ifBlank { "Video in riproduzione" }, listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · "), w.art.takeIf { it.startsWith("http") }, null, w.playing, "web", w.posMs + if (w.playing) System.currentTimeMillis() - w.at else 0L, w.durMs, runCatching { webView.url }.getOrNull().orEmpty(), w.music)
     val c = controller
     val item = c?.currentMediaItem
     if (c != null && item != null && c.playbackState != androidx.media3.common.Player.STATE_IDLE) {
@@ -245,6 +245,7 @@ internal fun MainActivity.showMusicPage() {
 
 /** Opens a search in the chosen music app. */
 internal fun MainActivity.searchMusic(query: String, appHint: String?) {
+    WebMedia.addSearch(this, query)
     var app = appHint ?: Music.defaultApp(this)
     if (app == "spotify" && !Music.installed(this, Music.SPOTIFY)) app = "ytmusic"
     toast("🎵 Cerco «$query» su ${Music.appName(app)}")
@@ -271,8 +272,13 @@ internal fun MainActivity.setupWebMusic() {
         override fun run() {
             if (isFinishing || isDestroyed) return
             runCatching {
-                if (YouTube.isYouTube(webView.url)) webView.evaluateJavascript(Music.STATE_JS) { raw -> Music.web = Music.parseWebState(raw) }
-                else Music.web = null
+                if (YouTube.isYouTube(webView.url)) webView.evaluateJavascript(Music.STATE_JS) { raw ->
+                    val st = Music.parseWebState(raw); Music.web = st
+                    val url = webView.url.orEmpty()
+                    if (st != null && st.playing && st.title.isNotBlank()) WebMedia.addRecent(this@setupWebMusic, WebMedia.Item(url, st.title, st.artist, st.art, st.music, System.currentTimeMillis()))
+                    if (st != null && !st.music && WebMedia.audioOnly(this@setupWebMusic)) applyAudioOnly(true)
+                    updateMiniPlayer()
+                } else if (Music.web != null) { Music.web = null; updateMiniPlayer() }
             }
             h.postDelayed(this, 2000)
         }

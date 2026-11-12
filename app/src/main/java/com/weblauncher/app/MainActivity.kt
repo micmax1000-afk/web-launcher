@@ -130,7 +130,7 @@ class MainActivity : AppCompatActivity() {
     val audio by lazy { AudioRepository(this) }
     var controller: androidx.media3.session.MediaController? = null
     var controllerFuture: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.MediaController>? = null
-    var audioTab = "podcast"
+    var audioTab = "foryou"
     var episodes: List<Episode> = emptyList()
     val radioCache = HashMap<String, List<RadioStation>>()
     var radioRegion = "Tutte"
@@ -860,6 +860,7 @@ class MainActivity : AppCompatActivity() {
         hideSuggestions()
         homePanel.isVisible = tab == TAB_HOME
         quickFab?.visibility = if (tab == TAB_HOME) View.VISIBLE else View.GONE
+        uiHandler.post { runCatching { updateMiniPlayer() } }
         findViewById<View>(R.id.homeWallpaper).isVisible = tab == TAB_HOME && homePrefs.getBoolean("wallpaper", false) &&
             java.io.File(filesDir, "wallpaper.jpg").exists()
         browserPanel.isVisible = tab == TAB_BROWSER
@@ -1101,6 +1102,8 @@ class MainActivity : AppCompatActivity() {
             "carweb" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode("https://www.wikipedia.org/"); return }
             "carmode" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode(); return }
             "recipes" -> { intent.removeExtra(EXTRA_WIDGET); showRecipesPage(); return }
+            "foryou" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "foryou"; showTab(TAB_AUDIO); return }
+            "player" -> { intent.removeExtra(EXTRA_WIDGET); showPlayerSheet(); return }
             "todo" -> { intent.removeExtra(EXTRA_WIDGET); showTodoPage(); return }
             "quickadd" -> { intent.removeExtra(EXTRA_WIDGET); showQuickAdd(); return }
             "quick_shop" -> { intent.removeExtra(EXTRA_WIDGET); quickShopping(); return }
@@ -1699,8 +1702,9 @@ class MainActivity : AppCompatActivity() {
     val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     var playerSheetUpdate: (() -> Unit)? = null
+    var miniClosedFor: String? = null
     var sleepAt = 0L
-    val sleepRunnable = Runnable { controller?.pause(); sleepAt = 0L; toast("Timer: riproduzione in pausa") }
+    val sleepRunnable = Runnable { runCatching { musicAction("pause") }; sleepAt = 0L; toast("Timer: riproduzione in pausa") }
 
     // ======================= Weather (Open-Meteo: free, no key) =======================
 
@@ -1791,6 +1795,7 @@ class MainActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && currentTab == TAB_HOME && toolsPrefs.getBoolean("smartClipboard", true)) checkClipboard()
+        if (hasFocus && currentTab == TAB_AUDIO && toolsPrefs.getBoolean("smartClipboard", true)) checkYoutubeClip()
     }
 
     // ======================= Phishing warning =======================

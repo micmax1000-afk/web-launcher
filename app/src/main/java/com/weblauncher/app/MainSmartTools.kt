@@ -107,7 +107,9 @@ internal fun MainActivity.checkClipboard() {
     if (hash == toolsPrefs.getInt("lastClip", 0)) return
     val urlMatch = Regex("https?://\\S+").find(text)?.value?.trimEnd('.', ',', ')', ';')
     val phone = Regex("^(\\+39\\s?)?[03]\\d[\\d\\s]{6,11}$").matches(text) && !Parcels.looksLikeTracking(text.replace(" ", ""))
+    val yt = WebMedia.youtubeLink(text)
     val action: Pair<String, () -> Unit>? = when {
+        yt != null -> "🎵 Ascolta il link di YouTube copiato" to { openMusicLink(yt) }
         urlMatch != null -> ("📋 Apri il link copiato: " + (hostOf(urlMatch) ?: urlMatch)) to { openInBrowser(urlMatch) }
         Parcels.looksLikeTracking(text) -> "📦 Traccia il pacco copiato: ${text.uppercase()}" to { trackParcel(text) }
         Regex("^(\\+39\\s?)?3\\d{2}[\\s]?\\d{6,7}$").matches(text) || (phone && text.length <= 16) ->
