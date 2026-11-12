@@ -15,6 +15,12 @@ adb logcat -c
 
 shot() { sleep "${2:-4}"; adb exec-out screencap -p > "$OUT/$1.png"; echo "schermata: $1"; }
 alive() { adb shell pidof $PKG >/dev/null; }
+pdfprobe() {   # diagnosi: la lettura del testo dei PDF funziona in questo momento? (non fa fallire la prova)
+  adb logcat -c
+  adb shell am start -W -n $PKG/.MainActivity --es widget_action pdftext >/dev/null
+  for i in $(seq 1 24); do sleep 2; adb logcat -d -s WL_SELFTEST:* | grep -q 'PDF_TEXT=' && break; done
+  echo "PROVA PDF ($1): $(adb logcat -d -s WL_SELFTEST:* | grep -o 'PDF_TEXT=.\{0,40\}' | tail -1)"
+}
 
 # le schermate si fanno con il tema chiaro, come lo usa chi guarda
 adb shell am start -W -n $PKG/.MainActivity --ez wl_noprompts true >/dev/null
@@ -23,6 +29,7 @@ adb shell am start -W -n $PKG/.MainActivity --es wl_theme_check light >/dev/null
 sleep 4
 adb shell am start -W -n $PKG/.MainActivity >/dev/null
 shot 01-home 6
+pdfprobe "dopo la home"
 # Strumenti (scorrendo) e ogni pagina delle Impostazioni
 adb shell am start -W -n $PKG/.MainActivity --es widget_action tools >/dev/null
 shot 02a-strumenti 3
@@ -52,6 +59,7 @@ shot 05-browser 8
 # pagine degli strumenti: si devono aprire senza crash
 n=10
 for page in instruments tabata altimeter ruler metal split waste finance stocks birthdays wellness hc food water calc workout plans history sleep meds visits emergency report hr body symptoms music nowplaying recents privacytools backuptools passwords carmode carweb recipes todo quickadd appcheck foryou player; do
+  case "$page" in instruments|foryou|player) pdfprobe "prima di $page";; esac
   adb shell am start -W -n $PKG/.MainActivity --es widget_action $page >/dev/null
   shot "$n-$page" 3
   alive || { echo "::error::L'app si è chiusa aprendo $page"; adb logcat -d | grep -A25 "FATAL EXCEPTION" | head -60; exit 1; }
