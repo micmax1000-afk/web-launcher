@@ -402,7 +402,7 @@ object Reminders {
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED || intent.action == "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED") {
-            Reminders.rescheduleAll(context); Brief.schedule(context); Evening.schedule(context); Emergency.sync(context); return
+            Reminders.rescheduleAll(context); Brief.schedule(context); RadioAlarm.schedule(context); PodcastAuto.schedule(context); Evening.schedule(context); Emergency.sync(context); return
         }
         Reminders.notify(context, intent.getIntExtra("id", 0), intent.getStringExtra("text").orEmpty())
     }

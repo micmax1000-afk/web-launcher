@@ -161,6 +161,7 @@
         </activity-alias>
 
         <receiver android:name=".MusicKeyReceiver" android:exported="false" />
+        <receiver android:name=".RadioAlarmReceiver" android:exported="false" />
         <service
             android:name=".MusicListener"
             android:exported="true"

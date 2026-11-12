@@ -140,10 +140,15 @@ internal fun MainActivity.playMedia(id: String, uri: String, title: String, sub:
 }
 
 internal fun MainActivity.playEpisode(e: Episode, showPlayer: Boolean = false) {
+    val c = controller ?: run { toast("Lettore non pronto, riprova tra un attimo"); return }
+    ensureNotificationPermission()
     val local = audio.localFile(e)
     val uri = if (audio.isDownloaded(e) && !isDownloading(e)) Uri.fromFile(local).toString() else e.audioUrl
-    val start = if (AudioStore.isFinished(this, e.id)) 0L else AudioStore.position(this, e.id)
-    playMedia(e.id, uri, e.title, e.podcastTitle, e.artwork, start)
+    AudioQueue.remove(this, e.id)
+    c.setMediaItem(episodeItem(this, e, uri), PodcastPrefs.startAt(this, e))
+    c.setPlaybackSpeed(PodcastPrefs.speed(this, e.feedUrl))
+    c.prepare(); c.play()
+    updateMiniPlayer()
     AudioStore.addRecent(this, e)
     if (currentTab == TAB_AUDIO && audioTab == "podcast") renderAudio()
     if (showPlayer) uiHandler.postDelayed({ if (!isFinishing) showPlayerSheet() }, 350)   // the player opens on top, so you see what is playing
@@ -289,8 +294,11 @@ internal fun MainActivity.episodeRow(parent: android.widget.LinearLayout, e: Epi
 
 internal fun MainActivity.episodeMenu(e: Episode) {
     val downloaded = audio.isDownloaded(e) && !isDownloading(e)
+    val queued = AudioQueue.list(this).any { it.id == e.id }
     val opts = arrayOf(
         "▶ Riproduci",
+        if (queued) "Togli dalla coda" else "➕ Aggiungi alla coda",
+        "⏭ Ascolta subito dopo",
         if (downloaded) "Elimina download" else "⬇ Scarica per ascoltare offline",
         if (AudioStore.isFinished(this, e.id)) "Segna come da ascoltare" else "Segna come ascoltato",
         "Descrizione", "Condividi"
@@ -298,15 +306,17 @@ internal fun MainActivity.episodeMenu(e: Episode) {
     MaterialAlertDialogBuilder(this).setTitle(e.title).setItems(opts) { _, w ->
         when (w) {
             0 -> playEpisode(e, showPlayer = true)
-            1 -> if (downloaded) { audio.localFile(e).delete(); toast("Download eliminato"); renderAudio() } else downloadEpisode(e)
-            2 -> {
+            1 -> { if (queued) AudioQueue.remove(this, e.id) else AudioQueue.add(this, e); toast(if (queued) "Tolto dalla coda" else "Aggiunto alla coda (${AudioQueue.list(this).size})"); renderAudio() }
+            2 -> { AudioQueue.add(this, e, first = true); toast("Parte appena finisce quello in ascolto"); renderAudio() }
+            3 -> if (downloaded) { audio.localFile(e).delete(); toast("Download eliminato"); renderAudio() } else downloadEpisode(e)
+            4 -> {
                 if (AudioStore.isFinished(this, e.id)) getSharedPreferences("wl_audio", MODE_PRIVATE).edit().remove("done_" + e.id).apply()
                 else AudioStore.markFinished(this, e.id)
                 renderAudio()
             }
-            3 -> MaterialAlertDialogBuilder(this).setTitle(e.title).setMessage(e.description.ifBlank { "Nessuna descrizione" })
+            5 -> MaterialAlertDialogBuilder(this).setTitle(e.title).setMessage(e.description.ifBlank { "Nessuna descrizione" })
                 .setPositiveButton("OK", null).show()
-            4 -> startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+            6 -> startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                 type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "${e.podcastTitle} — ${e.title}\n${e.audioUrl}")
             }, "Condividi episodio"))
         }
@@ -344,6 +354,9 @@ internal fun MainActivity.renderAudio() {
     if (audioTab == "music") { renderMusic(list); return }
     if (audioTab == "foryou") { renderForYou(list); return }
 
+    val qn = AudioQueue.list(this).size
+    listRow(list, "📋 Coda di ascolto" + if (qn > 0) " ($qn)" else "", if (qn > 0) "Partono uno dopo l'altro" else "Vuota: tieni premuto un episodio per aggiungerlo", onClick = { showQueuePage() })
+    listRow(list, "⚙️ Impostazioni podcast", "Link RSS, importa da altre app, download su Wi-Fi, salta i silenzi", onClick = { showPodcastTools() })
     // continua ad ascoltare: gli episodi iniziati e non finiti (anche di podcast non seguiti)
     val resume = AudioStore.recent(this).filter { !AudioStore.isFinished(this, it.id) }.take(4)
     if (resume.isNotEmpty()) {
@@ -405,6 +418,7 @@ internal fun MainActivity.renderAudio() {
 
 internal fun MainActivity.renderRadio(list: android.widget.LinearLayout) {
     val favs = audio.favoriteStations()
+    listRow(list, "⏰ Sveglia con la radio", if (RadioAlarm.enabled(this)) String.format(Locale.ITALIAN, "Attiva alle %02d:%02d · %s", RadioAlarm.hour(this), RadioAlarm.minute(this), RadioAlarm.station(this)?.name.orEmpty()) else "Svegliati con la tua radio preferita", onClick = { showRadioAlarmPage() })
     fun stationRows(target: android.widget.LinearLayout, stations: List<RadioStation>) {
         stations.forEach { s ->
             val fav = favs.any { it.id == s.id }
@@ -540,6 +554,9 @@ internal fun MainActivity.showPodcastDetail(p: Podcast) {
             text = p.author; textSize = 14f; gravity = android.view.Gravity.CENTER
             setTextColor(AppRepository.palette(this@showPodcastDetail).textMuted); setPadding(0, (8 * d).toInt(), 0, (6 * d).toInt())
         })
+        listRow(body, "⚙️ Velocità e salti", PodcastPrefs.get(this, p.feedUrl).let { o ->
+            listOfNotNull(o.speed.takeIf { it > 0f }?.let { String.format(Locale.ITALIAN, "%.2g×", it) }, o.introSec.takeIf { it > 0 }?.let { "salta ${it}s all'inizio" }, o.outroSec.takeIf { it > 0 }?.let { "${it}s alla fine" })
+                .joinToString(" · ").ifBlank { "Velocità preferita e sigla da saltare, solo per questo podcast" } }, onClick = { podcastSettingsDialog(p) })
         val listBox = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
         body.addView(listBox)
         emptyLabel(listBox, "Carico gli episodi…")
