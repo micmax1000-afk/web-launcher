@@ -135,3 +135,14 @@ class WebMediaTest {
         assertEquals(null, WebMedia.youtubeLink("https://www.repubblica.it/articolo"))
     }
 }
+
+class TitoliTest {
+    @Test fun titoliPuliti() {
+        assertEquals("Mi Fido Di Te", Music.cleanTitle("Mi Fido Di Te | YouTube Music"))
+        assertEquals("L'Estate Addosso", Music.cleanTitle("(3) L'Estate Addosso - YouTube"))
+        assertEquals("Come si fa il ragù", Music.cleanTitle("Come si fa il ragù – YouTube"))
+        assertEquals("", Music.cleanTitle("YouTube Music")); assertEquals("", Music.cleanTitle("YouTube")); assertEquals("", Music.cleanTitle(""))
+        assertEquals("Albachiara", Music.cleanTitle("Albachiara"))
+        assertEquals("YouTube e il ragù", Music.cleanTitle("YouTube e il ragù"))
+    }
+}

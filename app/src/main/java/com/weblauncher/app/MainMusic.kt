@@ -43,7 +43,7 @@ data class NowView(val title: String, val sub: String, val artUrl: String?, val 
 internal fun MainActivity.nowPlaying(): NowView? {
     val w = Music.web
     if (w != null && Music.webActive())
-        return NowView(w.title.ifBlank { "Video in riproduzione" }, listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · "), w.art.takeIf { it.startsWith("http") }, null, w.playing, "web", w.posMs + if (w.playing) System.currentTimeMillis() - w.at else 0L, w.durMs, runCatching { webView.url }.getOrNull().orEmpty(), w.music)
+        return NowView(w.title.ifBlank { "In riproduzione" }, listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · "), w.art.takeIf { it.startsWith("http") }, null, w.playing, "web", w.posMs + if (w.playing) System.currentTimeMillis() - w.at else 0L, w.durMs, runCatching { webView.url }.getOrNull().orEmpty(), w.music)
     val c = controller
     val item = c?.currentMediaItem
     if (c != null && item != null && c.playbackState != androidx.media3.common.Player.STATE_IDLE) {
@@ -198,36 +198,17 @@ internal fun MainActivity.showNowPlayingFull() {
     h.post(tick)
 }
 
-/** The music player sections (used in Ascolta → Musica). [leave] is called before opening something in the browser. */
+/** The «Musica» tab: what is playing, your playlists, then the songs on the phone. */
 internal fun MainActivity.musicSections(body: LinearLayout, leave: () -> Unit, rerender: () -> Unit) {
-    sectionLabel(body, "ORA IN ASCOLTO")
-    body.addView(MusicBar(this, large = true).view)
-    listRow(body, "🚗 Schermo intero", "Copertina e tasti grandi, lo schermo resta acceso: comodo in auto", onClick = { showNowPlayingFull() })
-
-    sectionLabel(body, "APRI")
-    val ytApp = Music.installed(this, Music.YTMUSIC)
-    listRow(body, "🔴 YouTube Music", if (Music.ytInApp(this)) "Qui dentro, anche a schermo spento" + (if (ytApp) ". Tieni premuto per usare l'app separata" else "") else "Apre l'app YouTube Music. Tieni premuto per usarlo dentro Web Launcher",
-        onClick = { leave(); openMusicApp("ytmusic") }, onLong = { if (ytApp) { Music.setYtInApp(this, !Music.ytInApp(this)); rerender() } })
-    listRow(body, "▶️ YouTube", "Video e musica, qui dentro: pubblicità saltate e audio anche a schermo spento" + if (Music.preferred(this) == "youtube") " · usato per le ricerche" else "",
-        onClick = { leave(); openMusicApp("youtube") }, onLong = { Music.setPreferred(this, if (Music.preferred(this) == "youtube") "ytmusic" else "youtube"); toast(if (Music.preferred(this) == "youtube") "Le ricerche vanno su YouTube" else "Le ricerche vanno su YouTube Music"); rerender() })
-    if (Music.installed(this, Music.SPOTIFY)) listRow(body, "🟢 Spotify", if (Music.preferred(this) == "spotify") "Usata per le ricerche: tieni premuto per tornare a YouTube Music" else "Tocca per aprire, tieni premuto per usarla nelle ricerche",
-        onClick = { openMusicApp("spotify") }, onLong = { Music.setPreferred(this, if (Music.preferred(this) == "spotify") "ytmusic" else "spotify"); rerender() })
-
-    sectionLabel(body, "CERCA E METTI")
-    listRow(body, "🎤 Di' cosa vuoi ascoltare", "«metti musica per correre», «ascolta Vasco Rossi», «pausa», «prossima canzone»", onClick = { requestMicAndListen() })
-    listRow(body, "🔎 Scrivi cosa cercare", "Artista, canzone, genere o umore", onClick = {
-        val et = field("Cosa vuoi ascoltare?", null)
-        MaterialAlertDialogBuilder(this).setTitle("Cerca nella musica").setView(form(et)).setPositiveButton("Cerca") { _, _ -> if (et.text.toString().isNotBlank()) { leave(); searchMusic(et.text.toString().trim(), null) } }.setNegativeButton("Annulla", null).show()
-    })
-
+    runCatching { nowPlaying() }.getOrNull()?.let { body.addView(playingCard(it)) }
     sectionLabel(body, "LE MIE PLAYLIST")
     Music.playlists(this).forEach { p ->
         val app = Music.appFor(p.url)
-        listRow(body, (when (app) { "spotify" -> "🟢 "; "ytmusic" -> "🔴 "; "youtube" -> "▶️ "; else -> "🎵 " }) + p.name, Music.appName(app) + " · tocca per aprirla",
+        listRow(body, (when (app) { "spotify" -> "🟢 "; "ytmusic" -> "🔴 "; "youtube" -> "▶️ "; else -> "🎵 " }) + p.name, Music.appName(app),
             onClick = { if (app == "youtube" || app == "ytmusic" && Music.ytInApp(this)) leave(); openMusicLink(p.url) },
             onRemove = { Music.removePlaylist(this, p.id); rerender() })
     }
-    listRow(body, "➕ Aggiungi playlist o album", "Incolla il link da YouTube Music, YouTube o Spotify (Condividi → Copia link)", onClick = {
+    listRow(body, "➕ Aggiungi playlist o album", "Incolla il link (Condividi → Copia link)", onClick = {
         val clip = (getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager).primaryClip?.getItemAt(0)?.text?.toString().orEmpty().trim()
         val name = field("Nome (es. Corsa)", null); val url = field("Link", clip.takeIf { Music.appFor(it) != null })
         MaterialAlertDialogBuilder(this).setTitle("Nuova playlist").setView(form(name, url)).setPositiveButton("Salva") { _, _ ->
@@ -275,7 +256,7 @@ internal fun MainActivity.setupWebMusic() {
                 if (YouTube.isYouTube(webView.url)) webView.evaluateJavascript(Music.STATE_JS) { raw ->
                     val st = Music.parseWebState(raw); Music.web = st
                     val url = webView.url.orEmpty()
-                    if (st != null && st.playing && st.title.isNotBlank()) WebMedia.addRecent(this@setupWebMusic, WebMedia.Item(url, st.title, st.artist, st.art, st.music, System.currentTimeMillis()))
+                    if (st != null && st.playing && Music.cleanTitle(st.title).isNotBlank()) WebMedia.addRecent(this@setupWebMusic, WebMedia.Item(url, st.title, st.artist, st.art, st.music, System.currentTimeMillis()))
                     if (st != null && !st.music && WebMedia.audioOnly(this@setupWebMusic)) applyAudioOnly(true)
                     updateMiniPlayer()
                 } else if (Music.web != null) { Music.web = null; updateMiniPlayer() }

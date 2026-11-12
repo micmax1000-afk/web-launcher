@@ -211,8 +211,34 @@ internal fun MainActivity.renderForYou(list: LinearLayout) {
     val palette = AppRepository.palette(this)
     val d = resources.displayMetrics.density
     fun dp(v: Int) = (v * d).toInt()
-    // search, with the recent searches
-    listRow(list, "🔎 Cerca musica o video", WebMedia.searches(this).take(3).joinToString(" · ").ifBlank { "Artista, canzone, genere o un video" }, onClick = { musicSearchDialog() })
+    val now = runCatching { nowPlaying() }.getOrNull()
+    // 1) what is playing: one compact card (cover, title, play/pause, full screen)
+    if (now != null) list.addView(playingCard(now))
+    // 2) one search box, with the microphone
+    list.addView(LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(12), dp(8), dp(12))
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(24).toFloat(); setColor(palette.card); setStroke(1, palette.stroke) }
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(8), dp(4), dp(8), dp(10)) }
+        addView(TextView(this@renderForYou).apply { text = "🔎  Cerca musica, podcast o radio"; textSize = 15f; setTextColor(palette.textMuted); setOnClickListener { musicSearchDialog() } }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(TextView(this@renderForYou).apply { text = "🎤"; textSize = 22f; setPadding(dp(12), dp(2), dp(12), dp(2)); contentDescription = "Cerca a voce"; setOnClickListener { requestMicAndListen() } })
+    })
+    // 3) nothing playing: four big tiles
+    if (now == null) {
+        val grid = android.widget.GridLayout(this).apply { columnCount = 2; layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(4), 0, dp(4), dp(4)) } }
+        fun tile(icon: String, label: String, onClick: () -> Unit) = grid.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(palette.card); setStroke(1, palette.stroke) }
+            addView(TextView(this@renderForYou).apply { text = icon; textSize = 32f; gravity = Gravity.CENTER })
+            addView(TextView(this@renderForYou).apply { text = label; textSize = 15f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); gravity = Gravity.CENTER; setPadding(0, dp(4), 0, 0) })
+            layoutParams = android.widget.GridLayout.LayoutParams().apply { width = 0; height = dp(100); columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f); setMargins(dp(4), dp(4), dp(4), dp(4)) }
+            setOnClickListener { onClick() }
+        })
+        tile("🔴", "YouTube Music") { openMusicApp("ytmusic") }
+        tile("▶️", "YouTube") { openMusicApp("youtube") }
+        tile("🎙", "Podcast") { audioTab = "podcast"; onAudioShown() }
+        tile("📻", "Radio") { audioTab = "radio"; onAudioShown() }
+        list.addView(grid)
+    }
     val resume = AudioStore.recent(this).filter { !AudioStore.isFinished(this, it.id) }.take(3)
     val radios = runCatching {
         com.google.gson.Gson().fromJson<List<RadioStation>>(getSharedPreferences("wl_audio", android.content.Context.MODE_PRIVATE).getString("recentRadio", null), object : com.google.gson.reflect.TypeToken<List<RadioStation>>() {}.type)
@@ -220,27 +246,46 @@ internal fun MainActivity.renderForYou(list: LinearLayout) {
     if (resume.isNotEmpty() || radios.isNotEmpty()) {
         sectionLabel(list, "CONTINUA AD ASCOLTARE")
         resume.forEach { episodeRow(list, it) }
-        radios.forEach { s -> mediaRow(list, s.favicon, s.name, "Radio · ascoltata di recente") { playRadio(s) } }
+        radios.forEach { s -> mediaRow(list, s.favicon, s.name, "Radio") { playRadio(s) } }
     }
     val favs = WebMedia.favorites(this)
     if (favs.isNotEmpty()) {
         sectionLabel(list, "⭐ I MIEI PREFERITI")
-        favs.take(12).forEach { i -> mediaRow(list, i.art.ifBlank { null }, i.title, listOf(i.sub, if (i.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · "),
+        favs.take(12).forEach { i -> mediaRow(list, i.art.ifBlank { null }, Music.cleanTitle(i.title).ifBlank { i.title }, i.sub.ifBlank { if (i.music) "YouTube Music" else "YouTube" },
             onLong = { MaterialAlertDialogBuilder(this).setTitle(i.title).setItems(arrayOf("Togli dai preferiti")) { _, _ -> WebMedia.toggleFavorite(this, i); renderAudio() }.show() }) { openMusicLink(i.url) } }
     }
-    val recent = WebMedia.recents(this).filter { r -> favs.none { WebMedia.key(it.url) == WebMedia.key(r.url) } }
+    val recent = WebMedia.recents(this).filter { r -> Music.cleanTitle(r.title).isNotBlank() && favs.none { WebMedia.key(it.url) == WebMedia.key(r.url) } }
     if (recent.isNotEmpty()) {
         sectionLabel(list, "🕘 ASCOLTATI DI RECENTE")
-        recent.take(8).forEach { i -> mediaRow(list, i.art.ifBlank { null }, i.title, listOf(i.sub, if (i.music) "YouTube Music" else "YouTube", NewsAdapter.ago(i.time)).filter { it.isNotBlank() }.joinToString(" · "),
+        recent.take(8).forEach { i -> mediaRow(list, i.art.ifBlank { null }, Music.cleanTitle(i.title), listOf(i.sub, NewsAdapter.ago(i.time)).filter { it.isNotBlank() }.joinToString(" · "),
             onLong = { MaterialAlertDialogBuilder(this).setTitle(i.title).setItems(arrayOf("⭐ Aggiungi ai preferiti", "Togli dai recenti")) { _, w ->
                 if (w == 0) WebMedia.toggleFavorite(this, i) else WebMedia.removeRecent(this, i.url); renderAudio() }.show() }) { openMusicLink(i.url) } }
     }
     if (episodes.isNotEmpty()) { sectionLabel(list, "NUOVI EPISODI"); episodes.take(4).forEach { episodeRow(list, it) } }
-    if (resume.isEmpty() && radios.isEmpty() && favs.isEmpty() && recent.isEmpty() && episodes.isEmpty())
-        list.addView(TextView(this).apply {
-            text = "Qui trovi quello che ascolti: cerca qui sopra, oppure scegli un podcast, una radio o la musica.\nI brani di YouTube e YouTube Music compaiono da soli in «Ascoltati di recente»; con ⭐ nel lettore li metti tra i preferiti."
-            textSize = 14f; setTextColor(palette.textMuted); setPadding(dp(12), dp(18), dp(12), dp(8))
-        })
+    if (ytChannels().isNotEmpty()) listRow(list, "▶ Canali di YouTube che segui", "${ytChannels().size} canali: gli ultimi video", onClick = { audioTab = "video"; onAudioShown() })
+}
+
+/** The compact «now playing» card: cover, title, artist, play/pause and full screen. */
+internal fun MainActivity.playingCard(n: NowView): View {
+    val palette = AppRepository.palette(this)
+    val d = resources.displayMetrics.density
+    fun dp(v: Int) = (v * d).toInt()
+    val cover = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+    showArtPublic(cover, n)
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(10), dp(8), dp(10))
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(palette.card); setStroke(1, palette.stroke) }
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(8), dp(4), dp(8), dp(10)) }
+        addView(cover, LinearLayout.LayoutParams(dp(64), dp(64)))
+        addView(LinearLayout(this@playingCard).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, dp(6), 0)
+            addView(TextView(this@playingCard).apply { text = n.title; textSize = 17f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+            addView(TextView(this@playingCard).apply { text = n.sub; textSize = 13f; setTextColor(palette.textMuted); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(TextView(this@playingCard).apply { text = if (n.playing) "⏸" else "▶"; textSize = 30f; setTextColor(palette.text); setPadding(dp(10), dp(4), dp(10), dp(4)); setOnClickListener { musicAction("toggle"); uiHandler.postDelayed({ renderAudio() }, 600) } })
+        addView(TextView(this@playingCard).apply { text = "⛶"; textSize = 24f; setTextColor(palette.text); setPadding(dp(8), dp(4), dp(8), dp(4)); contentDescription = "Schermo intero"; setOnClickListener { showNowPlayingFull() } })
+        setOnClickListener { showPlayerSheet() }
+    }
 }
 
 /** Search box with the recent searches as chips. */

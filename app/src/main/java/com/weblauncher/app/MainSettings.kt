@@ -347,7 +347,7 @@ internal fun MainActivity.renderSettings() {
         "finestrella".takeIf { ytPrefs.getBoolean("autoPip", true) }
     ).joinToString(", ").ifBlank { "Tutto spento" }) { ytOptionsDialog() }
     row("Velocità e qualità", "${ytPrefs.getFloat("speed", 1f)}x · ${ytPrefs.getString("quality", "auto")}") { ytSpeedDialog() }
-    row("Canali seguiti", "${ytChannels().size} · in Ascolta → Video") { audioTab = "video"; showTab(TAB_AUDIO) }
+    row("Canali seguiti", "${ytChannels().size} · in Ascolta → Per te") { audioTab = "video"; showTab(TAB_AUDIO) }
 
     section("PRIVACY")
     row("🛡 Privacy e pulizia", "Report, siti da dimenticare, pulizia (anche in Strumenti)") { showPrivacyTools() }

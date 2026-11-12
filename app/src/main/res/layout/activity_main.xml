@@ -511,13 +511,22 @@
                 android:textStyle="bold"
                 android:textColor="@color/text" />
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnAudioAuto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="🚗 Auto"
+                android:textAllCaps="false"
+                app:cornerRadius="20dp" />
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnAudioSearch"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Cerca"
+                android:text=""
                 android:textAllCaps="false"
                 app:icon="@drawable/ic_search"
-                app:iconSize="18dp"
+                app:iconPadding="0dp"
+                app:iconSize="20dp"
                 app:cornerRadius="20dp" />
         </LinearLayout>
 

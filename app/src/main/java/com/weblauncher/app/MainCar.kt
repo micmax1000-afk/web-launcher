@@ -160,8 +160,7 @@ internal fun MainActivity.showCarMode(startUrl: String? = null) {
     val webWasVisible = webView.visibility
     val content = FrameLayout(this)
     val webPane = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
-    val mapsPane = android.widget.ScrollView(this).apply { visibility = View.GONE }
-    content.addView(root, FrameLayout.LayoutParams(-1, -1)); content.addView(webPane, FrameLayout.LayoutParams(-1, -1)); content.addView(mapsPane, FrameLayout.LayoutParams(-1, -1))
+    content.addView(root, FrameLayout.LayoutParams(-1, -1)); content.addView(webPane, FrameLayout.LayoutParams(-1, -1))
 
     // small player shown under Web and Mappe
     val miniTitle = TextView(this).apply { textSize = 15f; setTextColor(white); setTypeface(typeface, android.graphics.Typeface.BOLD); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
@@ -246,41 +245,12 @@ internal fun MainActivity.showCarMode(startUrl: String? = null) {
     webPane.addView(addr, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(6) })
     webPane.addView(favScroll, LinearLayout.LayoutParams(-1, 0, 1f)); webPane.addView(webFrame, LinearLayout.LayoutParams(-1, 0, 1f)); webPane.addView(navRow)
 
-    // --- Mappe: big rows that start the navigation ---
-    val mapsList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(4), dp(12), dp(12)) }
-    fun mapRow(label: String, sub: String?, onClick: () -> Unit) = mapsList.addView(LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_VERTICAL; minimumHeight = dp(84); setPadding(dp(18), dp(12), dp(18), dp(12))
-        background = GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(0xFF1C2230.toInt()) }
-        addView(TextView(this@showCarMode).apply { text = label; textSize = 21f; setTextColor(white) })
-        if (sub != null) addView(TextView(this@showCarMode).apply { text = sub; textSize = 14f; setTextColor(0xFF9AA3B8.toInt()) })
-        setOnClickListener { onClick() }
-    }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
-    fun navTo(q: String) {
-        val i = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("google.navigation:q=" + android.net.Uri.encode(q))).setPackage("com.google.android.apps.maps")
-        try { startActivity(i) } catch (_: Exception) { showPage("https://www.google.com/maps/dir/?api=1&destination=" + android.net.Uri.encode(q)) }
-    }
-    fun nearby(q: String) {
-        val i = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("geo:0,0?q=" + android.net.Uri.encode(q))).setPackage("com.google.android.apps.maps")
-        try { startActivity(i) } catch (_: Exception) { showPage("https://www.google.com/maps/search/" + android.net.Uri.encode(q)) }
-    }
-    mapRow("🏠 Portami a casa", carPrefs.getString("home", null) ?: "Tocca per impostare l'indirizzo") { goHome() }
-    mapRow("📍 Cerca una destinazione", "Scrivi un indirizzo o un luogo") {
-        val et = field("Dove vuoi andare?", null)
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(this).setTitle("Destinazione").setView(form(et)).setPositiveButton("Naviga") { _, _ -> et.text.toString().trim().takeIf { it.isNotEmpty() }?.let { navTo(it) } }.setNegativeButton("Annulla", null).show()
-    }
-    mapRow("🚗 Dove ho parcheggiato", null) { Places.parking(this)?.let { navigateTo(it.lat, it.lon, true) } ?: toast("Nessun parcheggio salvato") }
-    mapRow("⛽ Distributore vicino", null) { nearby("distributore di benzina") }
-    mapRow("🅿️ Parcheggio vicino", null) { nearby("parcheggio") }
-    mapRow("🔌 Colonnina di ricarica", null) { nearby("colonnina ricarica auto elettrica") }
-    mapsPane.addView(mapsList)
-
     // --- the tab row ---
     val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), dp(10), dp(4), dp(6)) }
     val tabViews = mutableListOf<TextView>()
     fun select(i: Int) {
         root.visibility = if (i == 0) View.VISIBLE else View.GONE
         webPane.visibility = if (i == 1) View.VISIBLE else View.GONE
-        mapsPane.visibility = if (i == 2) View.VISIBLE else View.GONE
         mini.visibility = if (i == 0) View.GONE else View.VISIBLE
         tabViews.forEachIndexed { k, v ->
             v.setTextColor(if (k == i) Color.BLACK else white); v.setTypeface(null, if (k == i) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
@@ -288,7 +258,7 @@ internal fun MainActivity.showCarMode(startUrl: String? = null) {
         }
         if (i == 1 && webFrame.visibility != View.VISIBLE) showFavs()
     }
-    listOf("🎵 Musica", "🌐 Web", "🧭 Mappe").forEachIndexed { i, label ->
+    listOf("🎵 Musica", "🌐 Web").forEachIndexed { i, label ->
         val tv = TextView(this).apply { text = label; textSize = 16f; gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(12)); setOnClickListener { select(i) } }
         tabViews += tv; tabs.addView(tv, LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = dp(6) })
     }
