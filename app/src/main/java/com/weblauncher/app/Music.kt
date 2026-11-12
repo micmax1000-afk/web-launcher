@@ -178,3 +178,46 @@ object Music {
         return pressKey(c, action)
     }
 }
+
+/** YouTube / YouTube Music listened inside the app: recent ones, favourites, recent searches, «audio only». */
+object WebMedia {
+    data class Item(val url: String, val title: String, val sub: String, val art: String, val music: Boolean, val time: Long)
+    private fun prefs(c: Context) = c.getSharedPreferences("wl_music", Context.MODE_PRIVATE)
+    private fun list(c: Context, key: String): List<Item> = runCatching {
+        Gson().fromJson<List<Item>>(prefs(c).getString(key, null), object : TypeToken<List<Item>>() {}.type)
+    }.getOrNull().orEmpty().filterNotNull()
+    private fun put(c: Context, key: String, l: List<Item>) = prefs(c).edit().putString(key, Gson().toJson(l)).apply()
+
+    /** Same song or video whatever the extra bits of the link (playlist position, time…). */
+    fun key(url: String): String {
+        val v = Regex("[?&]v=([\\w-]{11})").find(url)?.groupValues?.get(1) ?: Regex("youtu\\.be/([\\w-]{11})").find(url)?.groupValues?.get(1)
+        val list = Regex("[?&]list=([\\w-]+)").find(url)?.groupValues?.get(1)
+        return v ?: list ?: url.substringBefore('#')
+    }
+
+    fun recents(c: Context) = list(c, "webRecent")
+    fun addRecent(c: Context, i: Item) {
+        if (i.url.isBlank() || !(i.url.contains("watch") || i.url.contains("youtu.be") || i.url.contains("list="))) return
+        val cur = recents(c)
+        if (cur.firstOrNull()?.let { key(it.url) == key(i.url) && it.title == i.title } == true) return
+        put(c, "webRecent", (listOf(i) + cur.filter { key(it.url) != key(i.url) }).take(30))
+    }
+    fun removeRecent(c: Context, url: String) = put(c, "webRecent", recents(c).filter { key(it.url) != key(url) })
+    fun favorites(c: Context) = list(c, "webFav")
+    fun isFavorite(c: Context, url: String) = favorites(c).any { key(it.url) == key(url) }
+    /** Returns true if it is now a favourite. */
+    fun toggleFavorite(c: Context, i: Item): Boolean {
+        val cur = favorites(c)
+        return if (cur.any { key(it.url) == key(i.url) }) { put(c, "webFav", cur.filter { key(it.url) != key(i.url) }); false }
+        else { put(c, "webFav", listOf(i) + cur); true }
+    }
+
+    fun searches(c: Context): List<String> = prefs(c).getString("searches", "").orEmpty().split('\n').filter { it.isNotBlank() }
+    fun addSearch(c: Context, q: String) = prefs(c).edit().putString("searches", (listOf(q.trim()) + searches(c).filter { !it.equals(q.trim(), true) }).take(8).joinToString("\n")).apply()
+
+    fun audioOnly(c: Context) = prefs(c).getBoolean("audioOnly", false)
+    fun setAudioOnly(c: Context, on: Boolean) = prefs(c).edit().putBoolean("audioOnly", on).apply()
+
+    /** Is this text (or a link in it) a YouTube / YouTube Music link? */
+    fun youtubeLink(text: String): String? = Regex("https?://(www\\.|m\\.|music\\.)?(youtube\\.com|youtu\\.be)/\\S+").find(text)?.value?.trimEnd('.', ',', ')', ';')
+}

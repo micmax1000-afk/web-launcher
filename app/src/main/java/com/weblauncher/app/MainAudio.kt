@@ -90,16 +90,16 @@ internal fun MainActivity.setupAudio() {
     findViewById<TextView>(R.id.miniSub).setTextColor(palette.textMuted)
     findViewById<android.widget.ImageButton>(R.id.miniPlay).apply {
         setColorFilter(palette.text)
-        setOnClickListener { controller?.let { if (it.isPlaying) it.pause() else it.play() } }
+        setOnClickListener { musicAction("toggle"); uiHandler.postDelayed({ updateMiniPlayer() }, 500) }
     }
     findViewById<android.widget.ImageButton>(R.id.miniClose).apply {
         setColorFilter(palette.textMuted)
-        setOnClickListener { controller?.run { stop(); clearMediaItems() }; updateMiniPlayer() }
+        setOnClickListener { closeMiniPlayer() }
     }
     findViewById<View>(R.id.audioPanel).setBackgroundColor(palette.bg)
     findViewById<TextView>(R.id.audioHeading).setTextColor(palette.text)
     findViewById<View>(R.id.btnAudioSearch).setOnClickListener {
-        when (audioTab) { "radio" -> showRadioSearch(); "video" -> addChannelDialog(); "music" -> searchMusic(); else -> showPodcastSearch() }
+        when (audioTab) { "radio" -> showRadioSearch(); "video" -> addChannelDialog(); "music" -> searchMusic(); "foryou" -> musicSearchDialog(); else -> showPodcastSearch() }
     }
     val refresh = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.audioRefresh)
     refresh.setOnRefreshListener {
@@ -112,26 +112,6 @@ internal fun MainActivity.setupAudio() {
     }
 }
 
-internal fun MainActivity.updateMiniPlayer() {
-    val c = controller
-    val card = findViewById<View>(R.id.miniPlayer)
-    val item = c?.currentMediaItem
-    val show = c != null && item != null && c.playbackState != androidx.media3.common.Player.STATE_IDLE
-    card.isVisible = show
-    if (!show) return
-    val md = item!!.mediaMetadata
-    findViewById<TextView>(R.id.miniTitle).text = md.title ?: ""
-    findViewById<TextView>(R.id.miniSub).text = when {
-        c!!.playbackState == androidx.media3.common.Player.STATE_BUFFERING -> "Caricamento…"
-        else -> md.artist ?: ""
-    }
-    findViewById<android.widget.ImageButton>(R.id.miniPlay).setImageResource(if (c.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
-    val art = findViewById<ImageView>(R.id.miniArt)
-    if (art.tag != md.artworkUri) {
-        art.tag = md.artworkUri
-        art.load(md.artworkUri) { transformations(coil.transform.RoundedCornersTransformation(16f)); error(R.drawable.ic_nav_audio) }
-    }
-}
 
 internal fun MainActivity.ensureNotificationPermission() {
     if (android.os.Build.VERSION.SDK_INT >= 33 &&
@@ -169,6 +149,12 @@ internal fun MainActivity.playEpisode(e: Episode, showPlayer: Boolean = false) {
 }
 
 internal fun MainActivity.playRadio(s: RadioStation) {
+    runCatching {
+        val p = getSharedPreferences("wl_audio", MODE_PRIVATE)
+        val g = com.google.gson.Gson()
+        val old = runCatching { g.fromJson<List<RadioStation>>(p.getString("recentRadio", null), object : com.google.gson.reflect.TypeToken<List<RadioStation>>() {}.type) }.getOrNull().orEmpty().filterNotNull()
+        p.edit().putString("recentRadio", g.toJson((listOf(s) + old.filter { it.id != s.id }).take(6))).apply()
+    }
     playMedia("radio:" + s.id, s.url, s.name, "Radio" + (s.state.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), s.favicon, 0L)
 }
 
@@ -333,7 +319,7 @@ internal fun MainActivity.renderAudio() {
     fun dp(v: Int) = (v * d).toInt()
     val tabs = findViewById<android.widget.LinearLayout>(R.id.audioTabs)
     tabs.removeAllViews()
-    listOf("podcast" to "🎙 Podcast", "radio" to "📻 Radio", "music" to "🎵 Musica", "video" to "▶ Video").forEach { (key, label) ->
+    listOf("foryou" to "⭐ Per te", "podcast" to "🎙 Podcast", "radio" to "📻 Radio", "music" to "🎵 Musica", "video" to "▶ Video").forEach { (key, label) ->
         val active = key == audioTab
         tabs.addView(TextView(this).apply {
             text = label; textSize = 14f
@@ -355,6 +341,7 @@ internal fun MainActivity.renderAudio() {
     if (audioTab == "radio") { renderRadio(list); return }
     if (audioTab == "video") { renderVideos(list); return }
     if (audioTab == "music") { renderMusic(list); return }
+    if (audioTab == "foryou") { renderForYou(list); return }
 
     // continua ad ascoltare: gli episodi iniziati e non finiti (anche di podcast non seguiti)
     val resume = AudioStore.recent(this).filter { !AudioStore.isFinished(this, it.id) }.take(4)
@@ -597,129 +584,6 @@ internal fun MainActivity.fmtTime(ms: Long): String {
     else String.format(Locale.ROOT, "%d:%02d", s / 60, s % 60)
 }
 
-internal fun MainActivity.showPlayerSheet() {
-    val c = controller ?: return
-    if (c.currentMediaItem == null) return
-    val palette = AppRepository.palette(this)
-    val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
-    val d = resources.displayMetrics.density
-    fun dp(v: Int) = (v * d).toInt()
-    val sheet = com.google.android.material.bottomsheet.BottomSheetDialog(this)
-    val root = android.widget.LinearLayout(this).apply {
-        orientation = android.widget.LinearLayout.VERTICAL
-        gravity = android.view.Gravity.CENTER_HORIZONTAL
-        setPadding(dp(24), dp(8), dp(24), dp(24))
-    }
-    val art = ImageView(this).apply {
-        scaleType = ImageView.ScaleType.CENTER_CROP
-        layoutParams = android.widget.LinearLayout.LayoutParams(dp(230), dp(230)).apply { bottomMargin = dp(16) }
-    }
-    val title = TextView(this).apply {
-        textSize = 19f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text)
-        gravity = android.view.Gravity.CENTER; maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END
-    }
-    val sub = TextView(this).apply { textSize = 14f; setTextColor(palette.textMuted); gravity = android.view.Gravity.CENTER; setPadding(0, dp(4), 0, dp(12)) }
-    val seek = android.widget.SeekBar(this).apply {
-        max = 1000
-        layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
-        progressTintList = android.content.res.ColorStateList.valueOf(accent)
-        thumbTintList = android.content.res.ColorStateList.valueOf(accent)
-    }
-    val times = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
-    val tPos = TextView(this).apply { textSize = 12f; setTextColor(palette.textMuted); layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f) }
-    val tDur = TextView(this).apply { textSize = 12f; setTextColor(palette.textMuted) }
-    times.addView(tPos); times.addView(tDur)
-    val controls = android.widget.LinearLayout(this).apply {
-        orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER
-        setPadding(0, dp(10), 0, dp(10))
-    }
-    fun textBtn(label: String, onClick: () -> Unit) = TextView(this).apply {
-        text = label; textSize = 16f; setTextColor(palette.text); gravity = android.view.Gravity.CENTER
-        setPadding(dp(14), dp(10), dp(14), dp(10)); setOnClickListener { onClick() }
-    }
-    val back = textBtn("↺ 15") { c.seekBack() }
-    val play = android.widget.ImageButton(this).apply {
-        setColorFilter(android.graphics.Color.WHITE); scaleType = ImageView.ScaleType.FIT_CENTER
-        setPadding(dp(18), dp(18), dp(18), dp(18))
-        background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(accent) }
-        layoutParams = android.widget.LinearLayout.LayoutParams(dp(72), dp(72)).apply { setMargins(dp(18), 0, dp(18), 0) }
-        setOnClickListener { if (c.isPlaying) c.pause() else c.play() }
-    }
-    val fwd = textBtn("30 ↻") { c.seekForward() }
-    controls.addView(back); controls.addView(play); controls.addView(fwd)
-    val extras = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER }
-    fun chip(label: String, onClick: (TextView) -> Unit) = TextView(this).apply {
-        text = label; textSize = 14f; setTextColor(accent); setTypeface(typeface, android.graphics.Typeface.BOLD)
-        setPadding(dp(16), dp(8), dp(16), dp(8))
-        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 18 * d; setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
-        layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { setMargins(dp(6), 0, dp(6), 0) }
-        setOnClickListener { onClick(this) }
-        extras.addView(this)
-    }
-    val speeds = floatArrayOf(0.8f, 1f, 1.2f, 1.5f, 1.8f, 2f)
-    val speedChip = chip("1x") { v ->
-        val cur = c.playbackParameters.speed
-        val next = speeds.firstOrNull { it > cur + 0.01f } ?: speeds[0]
-        c.setPlaybackSpeed(next)
-        getSharedPreferences("wl_audio", MODE_PRIVATE).edit().putFloat("speed", next).apply()
-        v.text = (if (next % 1f == 0f) next.toInt().toString() else next.toString()) + "x"
-    }
-    val sleepChip = chip("⏾ Timer") { v ->
-        val opts = arrayOf("Spento", "15 minuti", "30 minuti", "45 minuti", "60 minuti")
-        MaterialAlertDialogBuilder(this).setTitle("Spegni dopo").setItems(opts) { _, w ->
-            uiHandler.removeCallbacks(sleepRunnable)
-            sleepAt = 0L
-            if (w > 0) {
-                val ms = w * 15 * 60_000L
-                sleepAt = System.currentTimeMillis() + ms
-                uiHandler.postDelayed(sleepRunnable, ms)
-            }
-            v.text = if (sleepAt > 0) "⏾ ${w * 15} min" else "⏾ Timer"
-        }.show()
-    }
-    if (sleepAt > 0) sleepChip.text = "⏾ ${((sleepAt - System.currentTimeMillis()) / 60_000) + 1} min"
-    root.addView(art); root.addView(title); root.addView(sub); root.addView(seek); root.addView(times); root.addView(controls); root.addView(extras)
-    var dragging = false
-    seek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-        override fun onProgressChanged(sb: android.widget.SeekBar?, p: Int, fromUser: Boolean) {
-            if (fromUser && c.duration > 0) tPos.text = fmtTime(c.duration * p / 1000)
-        }
-        override fun onStartTrackingTouch(sb: android.widget.SeekBar?) { dragging = true }
-        override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {
-            dragging = false
-            if (c.duration > 0) c.seekTo(c.duration * (sb?.progress ?: 0) / 1000)
-        }
-    })
-    var lastArt: Uri? = null
-    fun update() {
-        val md = c.currentMediaItem?.mediaMetadata ?: return
-        title.text = md.title ?: ""
-        sub.text = md.artist ?: ""
-        if (md.artworkUri != lastArt) {
-            lastArt = md.artworkUri
-            art.load(md.artworkUri) { transformations(coil.transform.RoundedCornersTransformation(48f)); error(R.drawable.ic_nav_audio) }
-        }
-        play.setImageResource(if (c.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
-        val live = c.isCurrentMediaItemLive || c.duration <= 0 || c.currentMediaItem?.mediaId?.startsWith("radio:") == true
-        seek.isVisible = !live; times.isVisible = !live; back.isVisible = !live; fwd.isVisible = !live; speedChip.isVisible = !live
-        if (!live && !dragging) {
-            seek.progress = (c.currentPosition * 1000 / c.duration).toInt()
-            tPos.text = fmtTime(c.currentPosition)
-            tDur.text = "−" + fmtTime(c.duration - c.currentPosition)
-        }
-        val sp = c.playbackParameters.speed
-        speedChip.text = (if (sp % 1f == 0f) sp.toInt().toString() else sp.toString()) + "x"
-    }
-    val ticker = object : Runnable { override fun run() { update(); uiHandler.postDelayed(this, 500) } }
-    playerSheetUpdate = { update() }
-    sheet.setOnDismissListener { uiHandler.removeCallbacks(ticker); playerSheetUpdate = null }
-    sheet.setContentView(android.widget.ScrollView(this).apply { addView(root) })
-    sheet.behavior.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
-    sheet.behavior.skipCollapsed = true
-    update()
-    uiHandler.post(ticker)
-    sheet.show()
-}
 
 internal fun MainActivity.musicPerm() = if (android.os.Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO else Manifest.permission.READ_EXTERNAL_STORAGE
 

@@ -124,3 +124,14 @@ class TodoTest {
         assertEquals("💊 ieri 08:00 Pastiglia", Todo.line(Todo.Item(day - 86_400_000L + 8 * 3_600_000L, false, "Pastiglia", "💊", "med"), noon))
     }
 }
+
+class WebMediaTest {
+    @Test fun linkDiYouTube() {
+        assertEquals("dQw4w9WgXcQ", WebMedia.key("https://music.youtube.com/watch?v=dQw4w9WgXcQ&list=RDAMVM&t=30"))
+        assertEquals("dQw4w9WgXcQ", WebMedia.key("https://youtu.be/dQw4w9WgXcQ?si=abc"))
+        assertEquals("PL123abc", WebMedia.key("https://music.youtube.com/playlist?list=PL123abc"))
+        assertEquals("https://youtu.be/dQw4w9WgXcQ", WebMedia.youtubeLink("guarda qui https://youtu.be/dQw4w9WgXcQ."))
+        assertEquals("https://m.youtube.com/watch?v=abcdefghijk", WebMedia.youtubeLink("https://m.youtube.com/watch?v=abcdefghijk"))
+        assertEquals(null, WebMedia.youtubeLink("https://www.repubblica.it/articolo"))
+    }
+}
