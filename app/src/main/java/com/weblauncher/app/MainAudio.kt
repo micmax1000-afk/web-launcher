@@ -98,6 +98,7 @@ internal fun MainActivity.setupAudio() {
     }
     findViewById<View>(R.id.audioPanel).setBackgroundColor(palette.bg)
     findViewById<TextView>(R.id.audioHeading).setTextColor(palette.text)
+    findViewById<View>(R.id.btnAudioAuto).setOnClickListener { showCarMode() }
     findViewById<View>(R.id.btnAudioSearch).setOnClickListener {
         when (audioTab) { "radio" -> showRadioSearch(); "video" -> addChannelDialog(); "music" -> searchMusic(); "foryou" -> musicSearchDialog(); else -> showPodcastSearch() }
     }
@@ -319,20 +320,20 @@ internal fun MainActivity.renderAudio() {
     fun dp(v: Int) = (v * d).toInt()
     val tabs = findViewById<android.widget.LinearLayout>(R.id.audioTabs)
     tabs.removeAllViews()
-    listOf("foryou" to "⭐ Per te", "podcast" to "🎙 Podcast", "radio" to "📻 Radio", "music" to "🎵 Musica", "video" to "▶ Video").forEach { (key, label) ->
+    listOf("foryou" to "⭐ Per te", "podcast" to "🎙 Podcast", "radio" to "📻 Radio", "music" to "🎵 Musica").plus(if (audioTab == "video") listOf("video" to "▶ Canali") else emptyList()).forEach { (key, label) ->
         val active = key == audioTab
         tabs.addView(TextView(this).apply {
-            text = label; textSize = 14f
+            text = label; textSize = 13f
             setTypeface(typeface, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
             setTextColor(if (active) android.graphics.Color.WHITE else palette.text)
-            setPadding(dp(16), dp(8), dp(16), dp(8))
+            setPadding(dp(11), dp(8), dp(11), dp(8))
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = 18 * d; setColor(if (active) accent else palette.card)
                 setStroke(d.toInt().coerceAtLeast(1), if (active) accent else palette.stroke)
             }
             layoutParams = android.widget.LinearLayout.LayoutParams(
                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { marginEnd = dp(8) }
+            ).apply { marginEnd = dp(6) }
             setOnClickListener { audioTab = key; onAudioShown() }
         })
     }

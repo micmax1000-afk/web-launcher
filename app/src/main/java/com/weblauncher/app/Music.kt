@@ -50,12 +50,18 @@ object Music {
         "else if(a=='next'){c(['ytmusic-player-bar .next-button','.next-button','a.ytp-next-button','button[aria-label*=\\'Succ\\']','button[aria-label*=\\'Next\\']'])||(v&&v.duration&&(v.currentTime=v.duration));}" +
         "else if(a=='prev'){c(['ytmusic-player-bar .previous-button','.previous-button','button[aria-label*=\\'Prec\\']','button[aria-label*=\\'Prev\\']'])||(v&&(v.currentTime=0));}}catch(e){}})('" + action.filter { it.isLetter() } + "')"
 
+    /** The page title without the site's name («Mi Fido Di Te | YouTube Music» → «Mi Fido Di Te»); blank when it is only the site's name. */
+    fun cleanTitle(raw: String): String {
+        val t = raw.replace(Regex("^\\(\\d+\\)\\s*"), "").replace(Regex("\\s*[|\\-–—]\\s*YouTube( Music)?\\s*$", RegexOption.IGNORE_CASE), "").trim()
+        return if (t.equals("YouTube", true) || t.equals("YouTube Music", true) || t.equals("Home", true) || t.equals("Esplora", true)) "" else t
+    }
+
     /** The result of [STATE_JS] as WebView hands it over (a JSON string inside a JSON string). */
     fun parseWebState(raw: String?, now: Long = System.currentTimeMillis()): WebPlaying? = runCatching {
         val inner = com.google.gson.JsonParser.parseString(raw).asString
         val o = com.google.gson.JsonParser.parseString(inner).asJsonObject
         if (o.get("has")?.asBoolean != true) return null
-        WebPlaying(o.get("t")?.asString.orEmpty(), o.get("a")?.asString.orEmpty(), o.get("art")?.asString.orEmpty(), o.get("p")?.asBoolean == true, now, o.get("mu")?.asBoolean != false, o.get("pos")?.asLong ?: 0L, o.get("dur")?.asLong ?: 0L)
+        WebPlaying(cleanTitle(o.get("t")?.asString.orEmpty()), o.get("a")?.asString.orEmpty(), o.get("art")?.asString.orEmpty(), o.get("p")?.asBoolean == true, now, o.get("mu")?.asBoolean != false, o.get("pos")?.asLong ?: 0L, o.get("dur")?.asLong ?: 0L)
     }.getOrNull()
 
     const val SPOTIFY = "com.spotify.music"
