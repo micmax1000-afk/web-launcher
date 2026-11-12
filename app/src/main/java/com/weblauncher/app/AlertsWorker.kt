@@ -30,7 +30,7 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
     override fun doWork(): Result {
         val first = !prefs.getBoolean("initialized", false)
         runCatching { if (prefs.getBoolean("podcasts", true)) podcasts(first) }
-        runCatching { if (prefs.getBoolean("youtube", true)) youtube(first) }
+        // YouTube channels are no longer followed (Ascolta keeps only YouTube Music)
         runCatching { keywords(first) }
         runCatching { if (prefs.getBoolean("quakes", false)) quakes() }
         prefs.edit().putBoolean("initialized", true).putLong("lastRun", System.currentTimeMillis()).apply()
@@ -127,7 +127,7 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
 
         fun schedule(c: Context) {
             val p = c.getSharedPreferences("wl_alerts", Context.MODE_PRIVATE)
-            val any = p.getBoolean("podcasts", true) || p.getBoolean("youtube", true) || p.getStringSet("keywords", emptySet()).orEmpty().isNotEmpty() || p.getBoolean("quakes", false)
+            val any = p.getBoolean("podcasts", true) || p.getStringSet("keywords", emptySet()).orEmpty().isNotEmpty() || p.getBoolean("quakes", false)
             val wm = WorkManager.getInstance(c)
             if (!p.getBoolean("enabled", true) || !any) { wm.cancelUniqueWork(WORK); return }
             val req = PeriodicWorkRequestBuilder<AlertsWorker>(2, TimeUnit.HOURS)

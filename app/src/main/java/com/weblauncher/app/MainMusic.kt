@@ -15,7 +15,8 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /** Opens a link in the music app (Spotify / YouTube Music open their own links); falls back to the browser. */
 internal fun MainActivity.openMusicLink(url: String) {
-    if (Music.appFor(url) == "youtube" || Music.appFor(url) == "ytmusic" && Music.ytInApp(this)) { openInBrowser(url); return }
+    if (Music.appFor(url) == "ytmusic" && Music.ytInApp(this)) { openYtMusic(url); return }
+    if (Music.appFor(url) == "youtube") { openInBrowser(url); return }
     val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     Music.packageOf(Music.appFor(url))?.takeIf { Music.installed(this, it) }?.let { i.setPackage(it) }
     try { startActivity(i) } catch (_: Exception) { if (url.startsWith("http")) openInBrowser(url) else toast("Non trovo l'app per aprire questo link") }
@@ -23,7 +24,7 @@ internal fun MainActivity.openMusicLink(url: String) {
 
 internal fun MainActivity.openMusicApp(app: String?) {
     if (app == "youtube") { openInBrowser("https://m.youtube.com/"); return }
-    if (app == "ytmusic" && Music.ytInApp(this)) { openInBrowser("https://music.youtube.com/"); return }
+    if (app == "ytmusic" && Music.ytInApp(this)) { openYtMusic(); return }
     val pkg = Music.packageOf(app) ?: return toast("Nessuna app di musica trovata")
     val i = packageManager.getLaunchIntentForPackage(pkg) ?: return toast("${Music.appName(app)} non è installata")
     startActivity(i)
@@ -43,7 +44,7 @@ data class NowView(val title: String, val sub: String, val artUrl: String?, val 
 internal fun MainActivity.nowPlaying(): NowView? {
     val w = Music.web
     if (w != null && Music.webActive())
-        return NowView(w.title.ifBlank { "In riproduzione" }, listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · "), w.art.takeIf { it.startsWith("http") }, null, w.playing, "web", w.posMs + if (w.playing) System.currentTimeMillis() - w.at else 0L, w.durMs, runCatching { webView.url }.getOrNull().orEmpty(), w.music)
+        return NowView(w.title.ifBlank { "In riproduzione" }, listOf(w.artist, if (w.music) "YouTube Music" else "YouTube").filter { it.isNotBlank() }.joinToString(" · "), w.art.takeIf { it.startsWith("http") }, null, w.playing, "web", w.posMs + if (w.playing) System.currentTimeMillis() - w.at else 0L, w.durMs, runCatching { activeWeb().url }.getOrNull().orEmpty(), w.music)
     val c = controller
     val item = c?.currentMediaItem
     if (c != null && item != null && c.playbackState != androidx.media3.common.Player.STATE_IDLE) {
@@ -220,15 +221,14 @@ internal fun MainActivity.musicSections(body: LinearLayout, leave: () -> Unit, r
 }
 
 /** Strumenti → Musica and the voice/test shortcut: the player lives in Ascolta → Musica. */
-internal fun MainActivity.showMusicPage() {
-    audioTab = "music"; showTab(MainActivity.TAB_AUDIO); onAudioShown()
-}
+internal fun MainActivity.showMusicPage() { openYtMusic() }
 
 /** Opens a search in the chosen music app. */
 internal fun MainActivity.searchMusic(query: String, appHint: String?) {
     WebMedia.addSearch(this, query)
     var app = appHint ?: Music.defaultApp(this)
     if (app == "spotify" && !Music.installed(this, Music.SPOTIFY)) app = "ytmusic"
+    if (app == "youtube" && appHint == null) app = "ytmusic"   // Ascolta keeps only YouTube Music
     toast("🎵 Cerco «$query» su ${Music.appName(app)}")
     openMusicLink(Music.searchUri(app, query))
 }
@@ -247,21 +247,47 @@ internal fun MainActivity.musicVoice(text: String): Boolean {
 
 /** Keeps [Music.web] up to date while the Browser is on YouTube / YouTube Music, and lets the rest of the app command that player. */
 internal fun MainActivity.setupWebMusic() {
-    Music.webControl = { action -> runOnUiThread { runCatching { webView.evaluateJavascript(Music.controlJs(action), null) } } }
+    Music.webControl = { action -> runOnUiThread { runCatching { activeWeb().evaluateJavascript(Music.controlJs(action), null) } } }
     val h = Handler(Looper.getMainLooper())
     h.post(object : Runnable {
         override fun run() {
             if (isFinishing || isDestroyed) return
-            runCatching {
-                if (YouTube.isYouTube(webView.url)) webView.evaluateJavascript(Music.STATE_JS) { raw ->
-                    val st = Music.parseWebState(raw); Music.web = st
-                    val url = webView.url.orEmpty()
-                    if (st != null && st.playing && Music.cleanTitle(st.title).isNotBlank()) WebMedia.addRecent(this@setupWebMusic, WebMedia.Item(url, st.title, st.artist, st.art, st.music, System.currentTimeMillis()))
-                    if (st != null && !st.music && WebMedia.audioOnly(this@setupWebMusic)) applyAudioOnly(true)
-                    updateMiniPlayer()
-                } else if (Music.web != null) { Music.web = null; updateMiniPlayer() }
-            }
+            runCatching { pollWebMusic() }
             h.postDelayed(this, 2000)
         }
     })
+}
+
+/** Reads what plays in the YouTube Music page (Ascolta) and in the Browser; the one that is playing wins. */
+private fun MainActivity.pollWebMusic() {
+    val mw = musicWeb?.takeIf { YouTube.isYouTube(it.url) }
+    val bw = webView.takeIf { YouTube.isYouTube(it.url) }
+    if (mw == null && bw == null) {
+        if (Music.web != null) { Music.web = null; updateMiniPlayer(); musicBarUpdate?.invoke() }
+        return
+    }
+    var fromMusic: WebPlaying? = null; var fromBrowser: WebPlaying? = null
+    var pending = (if (mw != null) 1 else 0) + (if (bw != null) 1 else 0)
+    fun done() {
+        if (--pending > 0) return
+        val useMusic = when {
+            fromMusic?.playing == true -> true
+            fromBrowser?.playing == true -> false
+            fromMusic != null && fromMusic!!.title.isNotBlank() -> true
+            else -> false
+        }
+        val st = if (useMusic) fromMusic else fromBrowser
+        Music.webFromMusic = useMusic && st != null
+        Music.web = st
+        val url = (if (useMusic) mw?.url else bw?.url).orEmpty()
+        if (st != null && st.playing && Music.cleanTitle(st.title).isNotBlank()) {
+            WebMedia.addRecent(this, WebMedia.Item(url, st.title, st.artist, st.art, st.music || useMusic, System.currentTimeMillis()))
+            if (useMusic) AudioStore.setLast(this, "music")
+        }
+        if (st != null && !useMusic && !st.music && WebMedia.audioOnly(this)) applyAudioOnly(true)
+        updateMiniPlayer()
+        musicBarUpdate?.invoke()
+    }
+    mw?.evaluateJavascript(Music.STATE_JS) { raw -> fromMusic = Music.parseWebState(raw)?.let { it.copy(music = true) }; done() }
+    bw?.evaluateJavascript(Music.STATE_JS) { raw -> fromBrowser = Music.parseWebState(raw); done() }
 }

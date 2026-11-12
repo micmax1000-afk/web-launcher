@@ -21,7 +21,7 @@ internal fun MainActivity.playerSeekTo(ms: Long) {
     val n = nowPlaying() ?: return
     when (n.source) {
         "local" -> controller?.seekTo(ms.coerceAtLeast(0))
-        "web" -> runCatching { webView.evaluateJavascript("(function(t){var v=document.querySelector('video');if(v)v.currentTime=t;})(${ms.coerceAtLeast(0) / 1000.0})", null) }
+        "web" -> runCatching { activeWeb().evaluateJavascript("(function(t){var v=document.querySelector('video');if(v)v.currentTime=t;})(${ms.coerceAtLeast(0) / 1000.0})", null) }
         else -> Music.current(this)?.controller?.transportControls?.seekTo(ms.coerceAtLeast(0))
     }
 }
@@ -36,7 +36,7 @@ private fun MainActivity.setPlayerSpeed(n: NowView, s: Float) {
     when (n.source) {
         "local" -> { controller?.setPlaybackSpeed(s); getSharedPreferences("wl_audio", android.content.Context.MODE_PRIVATE).edit().putFloat("speed", s).apply() }
         "web" -> { getSharedPreferences("wl_music", android.content.Context.MODE_PRIVATE).edit().putFloat("webSpeed", s).apply()
-            runCatching { webView.evaluateJavascript("(function(){var v=document.querySelector('video');if(v)v.playbackRate=$s;})()", null) } }
+            runCatching { activeWeb().evaluateJavascript("(function(){var v=document.querySelector('video');if(v)v.playbackRate=$s;})()", null) } }
     }
 }
 
@@ -61,7 +61,8 @@ internal fun MainActivity.updateMiniPlayer() {
     if (inPip) { card.isVisible = false; return }
     val n = runCatching { nowPlaying() }.getOrNull()
     // on the Browser with the YouTube page in front, the page itself is the player
-    val hidden = n == null || (n.source == "web" && currentTab == MainActivity.TAB_BROWSER) || (n.source == "web" && miniClosedFor == n.title)
+    val hidden = n == null || (n.source == "web" && !Music.webFromMusic && currentTab == MainActivity.TAB_BROWSER) ||
+        (n.source == "web" && Music.webFromMusic && currentTab == MainActivity.TAB_AUDIO && audioTab == "music") || (n.source == "web" && miniClosedFor == n.title)
     card.isVisible = !hidden
     if (hidden) return
     findViewById<TextView>(R.id.miniTitle).text = n!!.title
@@ -150,7 +151,7 @@ internal fun MainActivity.showPlayerSheet() {
     val favChip = chip("☆ Preferito") { v ->
         val n = nowPlaying() ?: return@chip
         val on = WebMedia.toggleFavorite(this, WebMedia.Item(n.url, n.title, n.sub.substringBeforeLast(" · ", ""), n.artUrl.orEmpty(), n.music, System.currentTimeMillis()))
-        toast(if (on) "⭐ Aggiunto ai preferiti (Ascolta → Per te)" else "Tolto dai preferiti"); update()
+        toast(if (on) "⭐ Aggiunto ai preferiti (Ascolta → Musica)" else "Tolto dai preferiti"); update()
     }
     val audioChip = chip("🎧 Solo audio") { _ ->
         val on = !WebMedia.audioOnly(this); WebMedia.setAudioOnly(this, on); applyAudioOnly(on)
@@ -160,7 +161,8 @@ internal fun MainActivity.showPlayerSheet() {
     chip("🔊 Volume") { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_SAME, android.media.AudioManager.FLAG_SHOW_UI) }
     chip("⛶ Schermo intero") { sheet.dismiss(); showNowPlayingFull() }
     if (nowPlaying()?.source == "local" || AudioQueue.list(this).isNotEmpty()) chip("📋 Coda (${AudioQueue.list(this).size})") { sheet.dismiss(); showQueuePage() }
-    if (currentTab != MainActivity.TAB_BROWSER) chip("🌐 Apri la pagina") { sheet.dismiss(); showTab(MainActivity.TAB_BROWSER) }.also { it.tag = "page" }
+    if (nowPlaying()?.let { it.source == "web" && Music.webFromMusic } == true) chip("🔴 Apri YouTube Music") { sheet.dismiss(); openYtMusic() }
+    else if (currentTab != MainActivity.TAB_BROWSER) chip("🌐 Apri la pagina") { sheet.dismiss(); showTab(MainActivity.TAB_BROWSER) }.also { it.tag = "page" }
 
     root.addView(badge, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(10) })
     root.addView(art, LinearLayout.LayoutParams(dp(230), dp(230)).apply { bottomMargin = dp(14) })
@@ -206,66 +208,111 @@ internal fun MainActivity.showPlayerSheet() {
     update(); sheet.show(); uiHandler.post(ticker)
 }
 
-// ======================= Ascolta → «Per te» =======================
+// ======================= Ascolta: first screen =======================
 
-internal fun MainActivity.renderForYou(list: LinearLayout) {
+/** First screen of Ascolta: «Continua» (what you were listening to), three big buttons, one search. */
+internal fun MainActivity.renderAudioHome(list: LinearLayout) {
     val palette = AppRepository.palette(this)
     val d = resources.displayMetrics.density
     fun dp(v: Int) = (v * d).toInt()
-    val now = runCatching { nowPlaying() }.getOrNull()
-    // 1) what is playing: one compact card (cover, title, play/pause, full screen)
-    if (now != null) list.addView(playingCard(now))
-    // 2) one search box, with the microphone
+    continueCard()?.let { list.addView(it) }
+    fun big(icon: String, label: String, sub: String, onClick: () -> Unit) = list.addView(LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(18), dp(18), dp(16), dp(18))
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(palette.card); setStroke(1, palette.stroke) }
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(6), dp(5), dp(6), dp(5)) }
+        addView(TextView(this@renderAudioHome).apply { text = icon; textSize = 32f; setPadding(0, 0, dp(16), 0) })
+        addView(LinearLayout(this@renderAudioHome).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@renderAudioHome).apply { text = label; textSize = 20f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text) })
+            addView(TextView(this@renderAudioHome).apply { text = sub; textSize = 13.5f; setTextColor(palette.textMuted) })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(TextView(this@renderAudioHome).apply { text = "›"; textSize = 26f; setTextColor(palette.textMuted) })
+        setOnClickListener { onClick() }
+    })
+    val subs = audio.subscriptions().size
+    val newEps = episodes.count { System.currentTimeMillis() - it.time < 3 * 86_400_000L && !AudioStore.isFinished(this, it.id) }
+    big("🎙", "Podcast", when { subs == 0 -> "Cerca e segui i tuoi podcast"; newEps > 0 -> "$newEps episodi nuovi"; else -> "I tuoi $subs podcast" }) { audioTab = "podcast"; onAudioShown() }
+    val favs = audio.favoriteStations().size
+    big("📻", "Radio", if (favs > 0) "Le tue $favs radio preferite" else "Le radio italiane in diretta") { audioTab = "radio"; onAudioShown() }
+    big("🎵", "Musica", "YouTube Music, qui dentro") { openYtMusic() }
+    // one search box, with the microphone
     list.addView(LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(12), dp(8), dp(12))
         background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(24).toFloat(); setColor(palette.card); setStroke(1, palette.stroke) }
-        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(8), dp(4), dp(8), dp(10)) }
-        addView(TextView(this@renderForYou).apply { text = "🔎  Cerca musica, podcast o radio"; textSize = 15f; setTextColor(palette.textMuted); setOnClickListener { musicSearchDialog() } }, LinearLayout.LayoutParams(0, -2, 1f))
-        addView(TextView(this@renderForYou).apply { text = "🎤"; textSize = 22f; setPadding(dp(12), dp(2), dp(12), dp(2)); contentDescription = "Cerca a voce"; setOnClickListener { requestMicAndListen() } })
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(6), dp(12), dp(6), dp(10)) }
+        addView(TextView(this@renderAudioHome).apply { text = "🔎  Cerca"; textSize = 15f; setTextColor(palette.textMuted); setOnClickListener { audioSearchDialog() } }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(TextView(this@renderAudioHome).apply { text = "🎤"; textSize = 22f; setPadding(dp(12), dp(2), dp(12), dp(2)); contentDescription = "Cerca a voce"; setOnClickListener { requestMicAndListen() } })
     })
-    listRow(list, "📰 Notizie di oggi, lette ad alta voce", "Un notiziario di 2-3 minuti dalle tue fonti", onClick = { listenNews() })
-    AudioQueue.list(this).takeIf { it.isNotEmpty() }?.let { q -> listRow(list, "📋 In coda: ${q.size}", "Poi: " + q.first().title, onClick = { showQueuePage() }) }
-    // 3) nothing playing: four big tiles
-    if (now == null) {
-        val grid = android.widget.GridLayout(this).apply { columnCount = 2; layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(4), 0, dp(4), dp(4)) } }
-        fun tile(icon: String, label: String, onClick: () -> Unit) = grid.addView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(20).toFloat(); setColor(palette.card); setStroke(1, palette.stroke) }
-            addView(TextView(this@renderForYou).apply { text = icon; textSize = 32f; gravity = Gravity.CENTER })
-            addView(TextView(this@renderForYou).apply { text = label; textSize = 15f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); gravity = Gravity.CENTER; setPadding(0, dp(4), 0, 0) })
-            layoutParams = android.widget.GridLayout.LayoutParams().apply { width = 0; height = dp(100); columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f); setMargins(dp(4), dp(4), dp(4), dp(4)) }
-            setOnClickListener { onClick() }
-        })
-        tile("🔴", "YouTube Music") { openMusicApp("ytmusic") }
-        tile("▶️", "YouTube") { openMusicApp("youtube") }
-        tile("🎙", "Podcast") { audioTab = "podcast"; onAudioShown() }
-        tile("📻", "Radio") { audioTab = "radio"; onAudioShown() }
-        list.addView(grid)
+}
+
+/** The «Continua» card: what is playing now, otherwise the last thing you listened to. Null if there is nothing. */
+private fun MainActivity.continueCard(): View? {
+    val d = resources.displayMetrics.density
+    fun dp(v: Int) = (v * d).toInt()
+    val now = runCatching { nowPlaying() }.getOrNull()
+    var label = "CONTINUA"; var title: String; var sub: String; var art: String? = null; var bmp: android.graphics.Bitmap? = null
+    var playing = false
+    val onPlay: () -> Unit; val onOpen: () -> Unit
+    if (now != null) {
+        label = if (now.playing) "IN ASCOLTO" else "IN PAUSA"
+        title = now.title; sub = now.sub; art = now.artUrl; bmp = now.artBmp; playing = now.playing
+        onPlay = { musicAction("toggle"); uiHandler.postDelayed({ if (currentTab == MainActivity.TAB_AUDIO) renderAudio() }, 600) }
+        onOpen = { if (now.source == "web" && Music.webFromMusic) openYtMusic() else showPlayerSheet() }
+    } else {
+        val ep = AudioStore.recent(this).firstOrNull { !AudioStore.isFinished(this, it.id) }
+        val radio = runCatching {
+            com.google.gson.Gson().fromJson<List<RadioStation>>(getSharedPreferences("wl_audio", android.content.Context.MODE_PRIVATE).getString("recentRadio", null), object : com.google.gson.reflect.TypeToken<List<RadioStation>>() {}.type)
+        }.getOrNull().orEmpty().filterNotNull().firstOrNull()
+        val song = WebMedia.recents(this).firstOrNull { (it.music || it.url.contains("music.youtube.com")) && Music.cleanTitle(it.title).isNotBlank() }
+        val kind = AudioStore.last(this).takeIf { k -> (k == "podcast" && ep != null) || (k == "radio" && radio != null) || (k == "music" && song != null) }
+            ?: when { ep != null -> "podcast"; radio != null -> "radio"; song != null -> "music"; else -> return null }
+        when (kind) {
+            "podcast" -> { val e = ep!!; title = e.title; sub = e.podcastTitle + episodeProgress(e).takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty(); art = e.artwork
+                onPlay = { playEpisode(e) }; onOpen = { playEpisode(e, showPlayer = true) } }
+            "radio" -> { val r = radio!!; title = r.name; sub = "Radio in diretta"; art = r.favicon
+                onPlay = { playRadio(r) }; onOpen = { playRadio(r) } }
+            else -> { val m = song!!; title = Music.cleanTitle(m.title); sub = m.sub.ifBlank { "YouTube Music" }; art = m.art.ifBlank { null }
+                onPlay = { openYtMusic(m.url) }; onOpen = { openYtMusic(m.url) } }
+        }
     }
-    val resume = AudioStore.recent(this).filter { !AudioStore.isFinished(this, it.id) }.take(3)
-    val radios = runCatching {
-        com.google.gson.Gson().fromJson<List<RadioStation>>(getSharedPreferences("wl_audio", android.content.Context.MODE_PRIVATE).getString("recentRadio", null), object : com.google.gson.reflect.TypeToken<List<RadioStation>>() {}.type)
-    }.getOrNull().orEmpty().filterNotNull().take(2)
-    if (resume.isNotEmpty() || radios.isNotEmpty()) {
-        sectionLabel(list, "CONTINUA AD ASCOLTARE")
-        resume.forEach { episodeRow(list, it) }
-        radios.forEach { s -> mediaRow(list, s.favicon, s.name, "Radio") { playRadio(s) } }
+    val cover = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; clipToOutline = true
+        outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(14).toFloat()) } } }
+    when { bmp != null -> cover.setImageBitmap(bmp); art != null -> cover.load(art) { error(R.drawable.ic_nav_audio) }; else -> cover.setImageResource(R.drawable.ic_nav_audio) }
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(14), dp(12), dp(14))
+        background = android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF2563EB.toInt(), 0xFF1E3A8A.toInt())).apply { cornerRadius = dp(22).toFloat() }
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(6), dp(4), dp(6), dp(10)) }
+        addView(cover, LinearLayout.LayoutParams(dp(64), dp(64)))
+        addView(LinearLayout(this@continueCard).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(14), 0, dp(8), 0)
+            addView(TextView(this@continueCard).apply { text = label; textSize = 11.5f; letterSpacing = 0.08f; setTextColor(0xCCFFFFFF.toInt()) })
+            addView(TextView(this@continueCard).apply { text = title; textSize = 17f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(0xFFFFFFFF.toInt()); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END })
+            addView(TextView(this@continueCard).apply { text = sub; textSize = 13f; setTextColor(0xDDFFFFFF.toInt()); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(TextView(this@continueCard).apply {
+            text = if (playing) "⏸" else "▶"; textSize = 24f; gravity = Gravity.CENTER; setTextColor(0xFF1E3A8A.toInt())
+            background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(0xFFFFFFFF.toInt()) }
+            contentDescription = if (playing) "Pausa" else "Riproduci"
+            setOnClickListener { onPlay() }
+        }, LinearLayout.LayoutParams(dp(54), dp(54)))
+        setOnClickListener { onOpen() }
     }
-    val favs = WebMedia.favorites(this)
-    if (favs.isNotEmpty()) {
-        sectionLabel(list, "⭐ I MIEI PREFERITI")
-        favs.take(12).forEach { i -> mediaRow(list, i.art.ifBlank { null }, Music.cleanTitle(i.title).ifBlank { i.title }, i.sub.ifBlank { if (i.music) "YouTube Music" else "YouTube" },
-            onLong = { MaterialAlertDialogBuilder(this).setTitle(i.title).setItems(arrayOf("Togli dai preferiti")) { _, _ -> WebMedia.toggleFavorite(this, i); renderAudio() }.show() }) { openMusicLink(i.url) } }
-    }
-    val recent = WebMedia.recents(this).filter { r -> Music.cleanTitle(r.title).isNotBlank() && favs.none { WebMedia.key(it.url) == WebMedia.key(r.url) } }
-    if (recent.isNotEmpty()) {
-        sectionLabel(list, "🕘 ASCOLTATI DI RECENTE")
-        recent.take(8).forEach { i -> mediaRow(list, i.art.ifBlank { null }, Music.cleanTitle(i.title), listOf(i.sub, NewsAdapter.ago(i.time)).filter { it.isNotBlank() }.joinToString(" · "),
-            onLong = { MaterialAlertDialogBuilder(this).setTitle(i.title).setItems(arrayOf("⭐ Aggiungi ai preferiti", "Togli dai recenti")) { _, w ->
-                if (w == 0) WebMedia.toggleFavorite(this, i) else WebMedia.removeRecent(this, i.url); renderAudio() }.show() }) { openMusicLink(i.url) } }
-    }
-    if (episodes.isNotEmpty()) { sectionLabel(list, "NUOVI EPISODI"); episodes.take(4).forEach { episodeRow(list, it) } }
-    if (ytChannels().isNotEmpty()) listRow(list, "▶ Canali di YouTube che segui", "${ytChannels().size} canali: gli ultimi video", onClick = { audioTab = "video"; onAudioShown() })
+}
+
+/** One search for everything: music (YouTube Music), podcasts, radio. */
+internal fun MainActivity.audioSearchDialog() {
+    val et = field("Cosa vuoi ascoltare?", null)
+    val box = form(et)
+    val chips = com.google.android.material.chip.ChipGroup(this)
+    lateinit var dlg: androidx.appcompat.app.AlertDialog
+    WebMedia.searches(this).take(6).forEach { q -> chips.addView(com.google.android.material.chip.Chip(this).apply { text = "🕘 $q"; setOnClickListener { et.setText(q); et.setSelection(q.length) } }) }
+    box.addView(chips)
+    fun q() = et.text.toString().trim().takeIf { it.isNotEmpty() }
+    dlg = MaterialAlertDialogBuilder(this).setTitle("🔎 Cerca").setMessage("Scrivi e scegli dove cercare").setView(box)
+        .setPositiveButton("🎵 Musica") { _, _ -> q()?.let { searchMusic(it, "ytmusic") } }
+        .setNeutralButton("📻 Radio") { _, _ -> q()?.let { showRadioSearch(it) } }
+        .setNegativeButton("🎙 Podcast") { _, _ -> q()?.let { showPodcastSearch(it) } }.create()
+    dlg.show()
 }
 
 /** The compact «now playing» card: cover, title, artist, play/pause and full screen. */
@@ -293,15 +340,14 @@ internal fun MainActivity.playingCard(n: NowView): View {
 
 /** Search box with the recent searches as chips. */
 internal fun MainActivity.musicSearchDialog() {
-    val et = field("Cosa vuoi ascoltare o vedere?", null)
+    val et = field("Cerca su YouTube Music", null)
     val box = form(et)
     val chips = com.google.android.material.chip.ChipGroup(this)
     lateinit var dlg: androidx.appcompat.app.AlertDialog
-    WebMedia.searches(this).forEach { q -> chips.addView(com.google.android.material.chip.Chip(this).apply { text = "🕘 $q"; setOnClickListener { dlg.dismiss(); searchMusic(q, null) } }) }
+    WebMedia.searches(this).forEach { q -> chips.addView(com.google.android.material.chip.Chip(this).apply { text = "🕘 $q"; setOnClickListener { dlg.dismiss(); searchMusic(q, "ytmusic") } }) }
     box.addView(chips)
     dlg = MaterialAlertDialogBuilder(this).setTitle("🔎 Cerca").setView(box)
-        .setPositiveButton("YouTube Music") { _, _ -> et.text.toString().trim().takeIf { it.isNotEmpty() }?.let { searchMusic(it, "ytmusic") } }
-        .setNeutralButton("YouTube") { _, _ -> et.text.toString().trim().takeIf { it.isNotEmpty() }?.let { searchMusic(it, "youtube") } }
+        .setPositiveButton("Cerca") { _, _ -> et.text.toString().trim().takeIf { it.isNotEmpty() }?.let { searchMusic(it, "ytmusic") } }
         .setNegativeButton("Annulla", null).create()
     dlg.show()
 }
@@ -310,9 +356,9 @@ internal fun MainActivity.musicSearchDialog() {
 internal fun MainActivity.checkYoutubeClip() {
     val cm = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
     val text = runCatching { cm.primaryClip?.getItemAt(0)?.coerceToText(this)?.toString() }.getOrNull()?.trim().orEmpty()
-    val link = WebMedia.youtubeLink(text) ?: return
+    val link = WebMedia.youtubeLink(text)?.takeIf { it.contains("music.youtube.com") } ?: return
     if (link.hashCode() == toolsPrefs.getInt("lastYtClip", 0)) return
     toolsPrefs.edit().putInt("lastYtClip", link.hashCode()).apply()
-    com.google.android.material.snackbar.Snackbar.make(findViewById(android.R.id.content), "🔗 Hai copiato un link di YouTube. Ascoltare questo?", 9000)
+    com.google.android.material.snackbar.Snackbar.make(findViewById(android.R.id.content), "🔗 Hai copiato un link di YouTube Music. Ascoltarlo?", 9000)
         .setAction("Ascolta") { openMusicLink(link) }.show()
 }

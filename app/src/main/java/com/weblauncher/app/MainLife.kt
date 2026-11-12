@@ -288,7 +288,6 @@ internal fun MainActivity.showAlertsPage() {
             })
             sw("Avvisi attivi", "Controllo ogni 2 ore circa, con internet", "enabled")
             sw("🎧 Nuovi episodi", "Dei podcast che segui (${audio.subscriptions().size})", "podcasts")
-            sw("▶ Nuovi video", "Dei canali YouTube che segui (${ytChannels().size})", "youtube")
             sectionLabel(body, "📰 NOTIZIE SU…")
             val words = p.getStringSet("keywords", emptySet()).orEmpty().sorted()
             if (words.isEmpty()) body.addView(TextView(this).apply {

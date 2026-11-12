@@ -54,6 +54,9 @@ object AudioStore {
         e.apply()
     }
     fun position(c: Context, id: String) = prefs(c).getLong("pos_$id", 0L)
+    /** What was listened to last: "podcast", "radio" or "music" (for the «Continua» card). */
+    fun setLast(c: Context, kind: String) { if (prefs(c).getString("lastKind", null) != kind) prefs(c).edit().putString("lastKind", kind).apply() }
+    fun last(c: Context): String? = prefs(c).getString("lastKind", null)
     fun duration(c: Context, id: String) = prefs(c).getLong("dur_$id", 0L)
     fun isFinished(c: Context, id: String) = prefs(c).getBoolean("done_$id", false)
     fun markFinished(c: Context, id: String) { prefs(c).edit().putBoolean("done_$id", true).putLong("pos_$id", 0L).apply() }

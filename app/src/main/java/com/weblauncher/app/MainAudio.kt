@@ -100,14 +100,14 @@ internal fun MainActivity.setupAudio() {
     findViewById<TextView>(R.id.audioHeading).setTextColor(palette.text)
     findViewById<View>(R.id.btnAudioAuto).setOnClickListener { showCarMode() }
     findViewById<View>(R.id.btnAudioSearch).setOnClickListener {
-        when (audioTab) { "radio" -> showRadioSearch(); "video" -> addChannelDialog(); "music" -> searchMusic(); "foryou" -> musicSearchDialog(); else -> showPodcastSearch() }
+        when (audioTab) { "radio" -> showRadioSearch(); "music" -> musicSearchDialog(); "phone" -> searchMusic(); "foryou" -> showAudioSettings(); else -> showPodcastSearch() }
     }
     val refresh = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.audioRefresh)
     refresh.setOnRefreshListener {
         when (audioTab) {
             "radio" -> { radioCache.clear(); refresh.isRefreshing = false; renderAudio() }
-            "video" -> refreshYtVideos()
-            "music" -> { songs = null; refresh.isRefreshing = false; renderAudio() }
+            "phone" -> { songs = null; refresh.isRefreshing = false; renderAudio() }
+            "foryou", "music" -> { refresh.isRefreshing = false; renderAudio() }
             else -> refreshEpisodes()
         }
     }
@@ -150,6 +150,7 @@ internal fun MainActivity.playEpisode(e: Episode, showPlayer: Boolean = false) {
     c.prepare(); c.play()
     updateMiniPlayer()
     AudioStore.addRecent(this, e)
+    AudioStore.setLast(this, "podcast")
     if (currentTab == TAB_AUDIO && audioTab == "podcast") renderAudio()
     if (showPlayer) uiHandler.postDelayed({ if (!isFinishing) showPlayerSheet() }, 350)   // the player opens on top, so you see what is playing
 }
@@ -161,6 +162,7 @@ internal fun MainActivity.playRadio(s: RadioStation) {
         val old = runCatching { g.fromJson<List<RadioStation>>(p.getString("recentRadio", null), object : com.google.gson.reflect.TypeToken<List<RadioStation>>() {}.type) }.getOrNull().orEmpty().filterNotNull()
         p.edit().putString("recentRadio", g.toJson((listOf(s) + old.filter { it.id != s.id }).take(6))).apply()
     }
+    AudioStore.setLast(this, "radio")
     playMedia("radio:" + s.id, s.url, s.name, "Radio" + (s.state.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""), s.favicon, 0L)
 }
 
@@ -194,7 +196,7 @@ internal fun MainActivity.downloadEpisode(e: Episode) {
 }
 
 internal fun MainActivity.onAudioShown() {
-    if (audioTab == "podcast" && episodes.isEmpty()) episodes = audio.cachedEpisodes()
+    if ((audioTab == "podcast" || audioTab == "foryou") && episodes.isEmpty()) episodes = audio.cachedEpisodes()
     renderAudio()
     val last = getSharedPreferences("wl_audio", MODE_PRIVATE).getLong("refreshed", 0L)
     if (audioTab == "podcast" && audio.subscriptions().isNotEmpty() && System.currentTimeMillis() - last > 3600_000L) refreshEpisodes()
@@ -328,15 +330,25 @@ internal fun MainActivity.renderAudio() {
     val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
     val d = resources.displayMetrics.density
     fun dp(v: Int) = (v * d).toInt()
+    if (audioTab !in listOf("foryou", "podcast", "radio", "music", "phone")) audioTab = "foryou"
+    val home = audioTab == "foryou"
+    findViewById<TextView>(R.id.audioHeading).text = when (audioTab) { "podcast" -> "Podcast"; "radio" -> "Radio"; "music" -> "Musica"; "phone" -> "Sul telefono"; else -> "Ascolta" }
+    // header button: ⚙️ on the first screen, 🔎 inside a section
+    findViewById<com.google.android.material.button.MaterialButton>(R.id.btnAudioSearch).apply {
+        setIconResource(if (home) R.drawable.ic_nav_settings else R.drawable.ic_search)
+        contentDescription = if (home) "Impostazioni di Ascolta" else "Cerca"
+    }
+    // the section row: hidden on the first screen; inside, «‹ Ascolta» and the three sections
     val tabs = findViewById<android.widget.LinearLayout>(R.id.audioTabs)
+    (tabs.parent as View).visibility = if (home) View.GONE else View.VISIBLE
     tabs.removeAllViews()
-    listOf("foryou" to "⭐ Per te", "podcast" to "🎙 Podcast", "radio" to "📻 Radio", "music" to "🎵 Musica").plus(if (audioTab == "video") listOf("video" to "▶ Canali") else emptyList()).forEach { (key, label) ->
+    listOf("foryou" to "‹ Ascolta", "podcast" to "🎙 Podcast", "radio" to "📻 Radio", "music" to "🎵 Musica").forEach { (key, label) ->
         val active = key == audioTab
         tabs.addView(TextView(this).apply {
-            text = label; textSize = 13f
+            text = label; textSize = 14f
             setTypeface(typeface, if (active) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
             setTextColor(if (active) android.graphics.Color.WHITE else palette.text)
-            setPadding(dp(11), dp(8), dp(11), dp(8))
+            setPadding(dp(13), dp(8), dp(13), dp(8))
             background = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = 18 * d; setColor(if (active) accent else palette.card)
                 setStroke(d.toInt().coerceAtLeast(1), if (active) accent else palette.stroke)
@@ -347,22 +359,23 @@ internal fun MainActivity.renderAudio() {
             setOnClickListener { audioTab = key; onAudioShown() }
         })
     }
+    // Musica: the YouTube Music page instead of the list
+    val musicBox = findViewById<android.widget.LinearLayout>(R.id.audioMusicBox)
+    val refresh = findViewById<View>(R.id.audioRefresh)
+    if (audioTab == "music") {
+        refresh.visibility = View.GONE; musicBox.visibility = View.VISIBLE
+        renderMusicBox(musicBox)
+        updateMiniPlayer()
+        return
+    }
+    musicBox.visibility = View.GONE; refresh.visibility = View.VISIBLE
+    musicBarUpdate = null
     val list = findViewById<android.widget.LinearLayout>(R.id.audioList)
     list.removeAllViews()
     if (audioTab == "radio") { renderRadio(list); return }
-    if (audioTab == "video") { renderVideos(list); return }
-    if (audioTab == "music") { renderMusic(list); return }
-    if (audioTab == "foryou") { renderForYou(list); return }
+    if (audioTab == "phone") { renderMusic(list); return }
+    if (audioTab == "foryou") { renderAudioHome(list); updateMiniPlayer(); return }
 
-    val qn = AudioQueue.list(this).size
-    listRow(list, "📋 Coda di ascolto" + if (qn > 0) " ($qn)" else "", if (qn > 0) "Partono uno dopo l'altro" else "Vuota: tieni premuto un episodio per aggiungerlo", onClick = { showQueuePage() })
-    listRow(list, "⚙️ Impostazioni podcast", "Link RSS, importa da altre app, download su Wi-Fi, salta i silenzi", onClick = { showPodcastTools() })
-    // continua ad ascoltare: gli episodi iniziati e non finiti (anche di podcast non seguiti)
-    val resume = AudioStore.recent(this).filter { !AudioStore.isFinished(this, it.id) }.take(4)
-    if (resume.isNotEmpty()) {
-        sectionLabel(list, "CONTINUA AD ASCOLTARE")
-        resume.forEach { episodeRow(list, it) }
-    }
     val subs = audio.subscriptions()
     if (subs.isEmpty()) {
         list.addView(TextView(this).apply {
@@ -401,6 +414,17 @@ internal fun MainActivity.renderAudio() {
         })
         row.addView(cell)
     }
+    row.addView(android.widget.LinearLayout(this).apply {
+        orientation = android.widget.LinearLayout.VERTICAL
+        layoutParams = android.widget.LinearLayout.LayoutParams(dp(92), android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
+        setOnClickListener { showPodcastSearch() }
+        addView(TextView(this@renderAudio).apply {
+            text = "➕"; textSize = 30f; gravity = android.view.Gravity.CENTER
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 28f; setColor(palette.card); setStroke(1, palette.stroke) }
+            layoutParams = android.widget.LinearLayout.LayoutParams(dp(92), dp(92))
+        })
+        addView(TextView(this@renderAudio).apply { text = "Aggiungi"; textSize = 12f; setTextColor(palette.text); setPadding(0, dp(4), 0, 0) })
+    })
     list.addView(android.widget.HorizontalScrollView(this).apply {
         isHorizontalScrollBarEnabled = false
         setPadding(dp(6), 0, 0, 0)
@@ -414,11 +438,11 @@ internal fun MainActivity.renderAudio() {
         })
     }
     episodes.take(60).forEach { episodeRow(list, it) }
+    if (episodes.isNotEmpty()) hintLabel(list, "Tieni premuto un episodio: coda, scarica, segna come ascoltato.")
 }
 
 internal fun MainActivity.renderRadio(list: android.widget.LinearLayout) {
     val favs = audio.favoriteStations()
-    listRow(list, "⏰ Sveglia con la radio", if (RadioAlarm.enabled(this)) String.format(Locale.ITALIAN, "Attiva alle %02d:%02d · %s", RadioAlarm.hour(this), RadioAlarm.minute(this), RadioAlarm.station(this)?.name.orEmpty()) else "Svegliati con la tua radio preferita", onClick = { showRadioAlarmPage() })
     fun stationRows(target: android.widget.LinearLayout, stations: List<RadioStation>) {
         stations.forEach { s ->
             val fav = favs.any { it.id == s.id }
@@ -435,7 +459,12 @@ internal fun MainActivity.renderRadio(list: android.widget.LinearLayout) {
                 })) { playRadio(s) }
         }
     }
-    if (favs.isNotEmpty()) { sectionLabel(list, "⭐ PREFERITE"); stationRows(list, favs) }
+    radioFavoritesGrid(list, favs)
+    val recent = runCatching {
+        com.google.gson.Gson().fromJson<List<RadioStation>>(getSharedPreferences("wl_audio", MODE_PRIVATE).getString("recentRadio", null), object : com.google.gson.reflect.TypeToken<List<RadioStation>>() {}.type)
+    }.getOrNull().orEmpty().filterNotNull().filter { r -> favs.none { it.id == r.id } }.take(4)
+    if (recent.isNotEmpty()) { sectionLabel(list, "🕘 ASCOLTATE DI RECENTE"); stationRows(list, recent) }
+    sectionLabel(list, "📡 TROVA ALTRE RADIO")
     // optional region filter
     val palette = AppRepository.palette(this)
     val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
@@ -572,9 +601,9 @@ internal fun MainActivity.showPodcastDetail(p: Podcast) {
     }
 }
 
-internal fun MainActivity.showRadioSearch() {
+internal fun MainActivity.showRadioSearch(initial: String? = null) {
     openPage("Cerca radio") { root, body, _ ->
-        val et = searchField(root, "Nome della radio, es. RTL, Deejay, Rai", null) { q ->
+        val et = searchField(root, "Nome della radio, es. RTL, Deejay, Rai", initial) { q ->
             body.removeAllViews()
             emptyLabel(body, "Cerco «$q»…")
             Thread {
@@ -592,7 +621,7 @@ internal fun MainActivity.showRadioSearch() {
             }.start()
         }
         emptyLabel(body, "Catalogo libero Radio Browser,\nsenza account.")
-        et.requestFocus()
+        if (initial.isNullOrBlank()) et.requestFocus() else et.post { et.onEditorAction(EditorInfo.IME_ACTION_SEARCH) }
     }
 }
 
@@ -641,10 +670,7 @@ internal fun MainActivity.renderMusic(list: android.widget.LinearLayout) {
     val accent = com.google.android.material.color.MaterialColors.getColor(this, androidx.appcompat.R.attr.colorPrimary, 0xFF5B8CFF.toInt())
     val d = resources.displayMetrics.density
     fun dp(v: Int) = (v * d).toInt()
-    if (musicFilter == null) {
-        musicSections(list, leave = {}, rerender = { renderAudio() })
-        sectionLabel(list, "SUL TELEFONO")
-    }
+    if (musicFilter == null) hintLabel(list, "Gli MP3 e la musica salvata nella memoria del telefono.")
     if (ContextCompat.checkSelfPermission(this, musicPerm()) != PackageManager.PERMISSION_GRANTED) {
         list.addView(TextView(this).apply {
             text = "Ascolta gli MP3 e la musica salvata sul telefono, anche a schermo spento."; textSize = 14f; setTextColor(palette.textMuted)
@@ -705,4 +731,38 @@ internal fun MainActivity.searchMusic() {
         }
         et.requestFocus()
     }
+}
+
+/** The favourite stations as big tiles: one tap and it plays; ➕ to add one. */
+internal fun MainActivity.radioFavoritesGrid(list: android.widget.LinearLayout, favs: List<RadioStation>) {
+    val palette = AppRepository.palette(this)
+    val d = resources.displayMetrics.density
+    fun dp(v: Int) = (v * d).toInt()
+    sectionLabel(list, "⭐ LE MIE PREFERITE")
+    val grid = android.widget.GridLayout(this).apply { columnCount = 3; layoutParams = android.widget.LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(2), 0, dp(2), dp(4)) } }
+    fun tile(onClick: () -> Unit, onLong: (() -> Unit)?, fill: android.widget.LinearLayout.() -> Unit) = grid.addView(android.widget.LinearLayout(this).apply {
+        orientation = android.widget.LinearLayout.VERTICAL; gravity = android.view.Gravity.CENTER; setPadding(dp(6), dp(12), dp(6), dp(10))
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = dp(18).toFloat(); setColor(palette.card); setStroke(1, palette.stroke) }
+        layoutParams = android.widget.GridLayout.LayoutParams().apply { width = 0; height = dp(112); columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f); setMargins(dp(4), dp(4), dp(4), dp(4)) }
+        fill()
+        setOnClickListener { onClick() }
+        if (onLong != null) setOnLongClickListener { onLong(); true }
+    })
+    favs.forEach { s ->
+        tile({ playRadio(s); toast("▶ ${s.name}") }, {
+            MaterialAlertDialogBuilder(this).setTitle(s.name).setItems(arrayOf("Togli dalle preferite")) { _, _ -> audio.toggleFavorite(s); renderAudio() }.show()
+        }) {
+            addView(ImageView(this@radioFavoritesGrid).apply {
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                load(s.favicon) { transformations(coil.transform.RoundedCornersTransformation(16f)); error(R.drawable.ic_nav_audio) }
+            }, android.widget.LinearLayout.LayoutParams(dp(52), dp(52)))
+            addView(TextView(this@radioFavoritesGrid).apply { text = s.name; textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); gravity = android.view.Gravity.CENTER; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, dp(6), 0, 0) })
+        }
+    }
+    tile({ showRadioSearch() }, null) {
+        addView(TextView(this@radioFavoritesGrid).apply { text = "➕"; textSize = 30f; gravity = android.view.Gravity.CENTER })
+        addView(TextView(this@radioFavoritesGrid).apply { text = "Aggiungi"; textSize = 13f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.text); setPadding(0, dp(6), 0, 0) })
+    }
+    list.addView(grid)
+    if (favs.isEmpty()) hintLabel(list, "Tocca ⭐ accanto a una radio qui sotto per metterla tra le preferite: la ritrovi qui in grande.")
 }
