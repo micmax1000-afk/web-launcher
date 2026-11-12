@@ -28,7 +28,7 @@ import java.time.ZoneId
 import kotlin.reflect.KClass
 
 /**
- * Health Connect (read only): the phone's shared store for health data. Apps such as Mi Fitness write steps, heart rate,
+ * Health Connect (read only): the phone's shared store for health data. Watch and fitness apps write steps, heart rate,
  * sleep, weight and workouts into it; Web Launcher reads them to build the daily summary and the charts.
  * Everything stays on the phone.
  */
@@ -43,7 +43,9 @@ object Hc {
     data class Snapshot(
         val time: Long, val days: List<Day>, val exercises: List<Exercise>,
         val spo2: Double = 0.0, val spo2Time: Long = 0, val systolic: Int = 0, val diastolic: Int = 0, val bpTime: Long = 0,
-        val glucoseMgDl: Double = 0.0, val glucoseTime: Long = 0, val sources: List<String> = emptyList()
+        val glucoseMgDl: Double = 0.0, val glucoseTime: Long = 0, val sources: List<String> = emptyList(),
+        /** data label (e.g. "Passi") -> packages that wrote it in the period */
+        val bySource: Map<String, List<String>> = emptyMap()
     )
 
     private val RECORDS: List<KClass<out Record>> = listOf(
@@ -75,9 +77,18 @@ object Hc {
     /** Sleep of the most recent night that has any. */
     fun lastNight(s: Snapshot?): Day? = s?.days?.sortedByDescending { it.date }?.firstOrNull { it.sleepMin > 0 }
 
-    /** Mi Fitness is `com.xiaomi.wearable`; show a friendly name for the common sources. */
+    /** A friendly name for the common apps that write into Health Connect (unknown ones keep the package name). */
     fun sourceName(pkg: String) = when {
-        pkg.contains("xiaomi.wearable") || pkg.contains("mi.health") -> "Mi Fitness"
+        pkg.contains("xiaomi.wearable") || pkg.contains("mi.health") -> "App dell'orologio Xiaomi"
+        pkg.contains("huawei") -> "Huawei Salute"
+        pkg.contains("withings") -> "Withings"
+        pkg.contains("polar") -> "Polar Flow"
+        pkg.contains("ouraring") || pkg.contains(".oura") -> "Oura"
+        pkg.contains("suunto") -> "Suunto"
+        pkg.contains("coros") -> "COROS"
+        pkg.contains("whoop") -> "WHOOP"
+        pkg.contains("healthdata") -> "Health Connect"
+        pkg.contains("weblauncher") -> "Web Launcher"
         pkg.contains("google.android.apps.fitness") -> "Google Fit"
         pkg.contains("samsung") -> "Samsung Health"
         pkg.contains("fitbit") -> "Fitbit"
@@ -194,13 +205,29 @@ object Hc {
             glucose = it.level.inMilligramsPerDeciliter; glucoseTime = it.time.toEpochMilli()
         }
 
-        // which apps wrote the data (to check that Mi Fitness is really sharing)
-        val sources = mutableSetOf<String>()
-        listOf(StepsRecord.COUNT_TOTAL to StepsRecord::class, HeartRateRecord.BPM_AVG to HeartRateRecord::class).forEach { (m, rec) ->
+        // which apps wrote each kind of data (the "Le mie sorgenti" page)
+        val bySource = linkedMapOf<String, MutableSet<String>>()
+        fun note(label: String, pkg: String) { if (pkg.isNotBlank()) bySource.getOrPut(label) { linkedSetOf() } += pkg }
+        listOf(
+            Triple("Passi", StepsRecord.COUNT_TOTAL, StepsRecord::class),
+            Triple("Battito", HeartRateRecord.BPM_AVG, HeartRateRecord::class),
+            Triple("Distanza", DistanceRecord.DISTANCE_TOTAL, DistanceRecord::class),
+            Triple("Calorie attive", ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL, ActiveCaloriesBurnedRecord::class),
+            Triple("Peso", WeightRecord.WEIGHT_AVG, WeightRecord::class)
+        ).forEach { (label, m, rec) ->
+            if (has(rec)) runCatching { hc.aggregate(AggregateRequest(setOf(m), range)).dataOrigins.forEach { note(label, it.packageName) } }
+        }
+        suspend fun origins(label: String, rec: KClass<out Record>) {
             if (has(rec)) runCatching {
-                hc.aggregate(AggregateRequest(setOf(m), range)).dataOrigins.forEach { sources += it.packageName }
+                hc.readRecords(ReadRecordsRequest(rec, wide, pageSize = 200)).records.forEach { note(label, it.metadata.dataOrigin.packageName) }
             }
         }
-        return Snapshot(System.currentTimeMillis(), byDay.values.toList(), exercises, spo2, spo2Time, sys, dia, bpTime, glucose, glucoseTime, sources.toList())
+        origins("Sonno", SleepSessionRecord::class)
+        origins("Allenamenti", ExerciseSessionRecord::class)
+        origins("Ossigeno", OxygenSaturationRecord::class)
+        origins("Pressione", BloodPressureRecord::class)
+        origins("Glicemia", BloodGlucoseRecord::class)
+        val sources = bySource.values.flatten().distinct()
+        return Snapshot(System.currentTimeMillis(), byDay.values.toList(), exercises, spo2, spo2Time, sys, dia, bpTime, glucose, glucoseTime, sources, bySource.mapValues { it.value.toList() })
     }
 }

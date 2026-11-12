@@ -1114,6 +1114,8 @@ class MainActivity : AppCompatActivity() {
             "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
+            "sources" -> { intent.removeExtra(EXTRA_WIDGET); showSourcesPage(); return }
+            "bledevices" -> { intent.removeExtra(EXTRA_WIDGET); showBleDevicesPage(); return }
             "body" -> { intent.removeExtra(EXTRA_WIDGET); showBodyPage(); return }
             "symptoms" -> { intent.removeExtra(EXTRA_WIDGET); showSymptomsPage(); return }
             "pdftext" -> {          // automatic test: text extraction of a PDF made on the spot (the AI reads this text)
