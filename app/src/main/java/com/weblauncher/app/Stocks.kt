@@ -30,9 +30,11 @@ object Stocks {
         val change get() = price - previous
         val changePct get() = if (previous != 0.0) (price - previous) / previous * 100 else 0.0
     }
-    data class Alert(val id: String, val symbol: String, val name: String, val above: Boolean, val price: Double, var done: Boolean = false)
+    /** A price alert; when [pct] is not 0 it is a daily-move alert instead (e.g. +3 or −3 %), firing at most once a day. */
+    data class Alert(val id: String, val symbol: String, val name: String, val above: Boolean, val price: Double, var done: Boolean = false,
+                     val pct: Double = 0.0, var firedDay: String? = null)
     /** Shares owned: quantity and average purchase price (in the asset's currency). */
-    data class Holding(val symbol: String, val name: String, val qty: Double, val cost: Double)
+    data class Holding(val symbol: String, val name: String, val qty: Double, val cost: Double, val govBond: Boolean = false)
     data class Quote(val price: Double, val pct: Double, val currency: String, val time: Long)
     /** Portfolio totals for one currency. */
     data class Total(val currency: String, val value: Double, val invested: Double) {
@@ -97,7 +99,113 @@ object Stocks {
             .filter { it.isNotEmpty() }.take(max).toList()
 
     /** True when the alert should fire for this price. */
-    fun triggered(a: Alert, price: Double) = !a.done && (if (a.above) price >= a.price else price <= a.price)
+    fun triggered(a: Alert, price: Double) = a.pct == 0.0 && !a.done && (if (a.above) price >= a.price else price <= a.price)
+    /** Daily-move alert: fires when today's change reaches [Alert.pct] in its direction, once per [day]. */
+    fun triggeredPct(a: Alert, changePct: Double, day: String) = a.pct != 0.0 && a.firedDay != day &&
+        (if (a.pct > 0) changePct >= a.pct else changePct <= a.pct)
+
+    // ---------- main markets ----------
+    data class Market(val symbol: String, val name: String, val zone: String, val open: String, val close: String)
+    val MARKETS = listOf(
+        Market("FTSEMIB.MI", "FTSE MIB", "Europe/Rome", "09:00", "17:30"),
+        Market("^STOXX50E", "Euro Stoxx 50", "Europe/Berlin", "09:00", "17:30"),
+        Market("^GSPC", "S&P 500", "America/New_York", "09:30", "16:00"),
+        Market("^IXIC", "Nasdaq", "America/New_York", "09:30", "16:00"),
+        Market("GC=F", "Oro", "", "", ""),
+        Market("BZ=F", "Petrolio", "", "", ""),
+        Market("EURUSD=X", "Euro/Dollaro", "", "", "")
+    )
+    /** Open on weekdays between [Market.open] and [Market.close] local time (holidays are not known). Null = trades almost always. */
+    fun isOpen(m: Market, now: java.time.Instant = java.time.Instant.now()): Boolean? {
+        if (m.zone.isBlank()) return null
+        val t = now.atZone(java.time.ZoneId.of(m.zone))
+        if (t.dayOfWeek == java.time.DayOfWeek.SATURDAY || t.dayOfWeek == java.time.DayOfWeek.SUNDAY) return false
+        val lt = t.toLocalTime()
+        return !lt.isBefore(java.time.LocalTime.parse(m.open)) && lt.isBefore(java.time.LocalTime.parse(m.close))
+    }
+
+    // ---------- dividends ----------
+    data class Dividend(val time: Long, val amount: Double)
+    fun parseDividends(json: String): List<Dividend> = runCatching {
+        val r = JsonParser.parseString(json).asJsonObject.getAsJsonObject("chart").getAsJsonArray("result")[0].asJsonObject
+        val divs = r.getAsJsonObject("events")?.getAsJsonObject("dividends") ?: return emptyList()
+        divs.entrySet().map { (_, v) -> v.asJsonObject.let { Dividend(it.get("date").asLong * 1000, it.get("amount").asDouble) } }.sortedBy { it.time }
+    }.getOrDefault(emptyList())
+    fun dividends(symbol: String): List<Dividend> = runCatching {
+        yahoo("/v8/finance/chart/" + java.net.URLEncoder.encode(symbol, "UTF-8") + "?range=5y&interval=1mo&events=div", listOf("query1", "query2")) { parseDividends(it).ifEmpty { listOf() } }
+    }.getOrDefault(emptyList())
+    /** Sum of the last 12 months and the next date guessed from the usual gap (null if too few payments). */
+    fun dividendSummary(list: List<Dividend>, now: Long = System.currentTimeMillis()): Pair<Double, Long?> {
+        val year = list.filter { it.time > now - 365L * 86_400_000 }.sumOf { it.amount }
+        if (list.size < 2) return year to null
+        val gaps = list.zipWithNext { a, b -> b.time - a.time }.takeLast(4).sorted()
+        val gap = gaps[gaps.size / 2]
+        var next = list.last().time + gap
+        while (next < now) next += gap
+        return year to next
+    }
+
+    // ---------- taxes, savings plan, export ----------
+    /** Italian capital gains tax: 26%, or 12.5% for government bonds; only on gains. */
+    fun taxOnGain(gain: Double, govBond: Boolean) = if (gain <= 0) 0.0 else gain * if (govBond) 0.125 else 0.26
+
+    data class Plan(val invested: Double, val value: Double) { val gain get() = value - invested; val net get() = value - taxOnGain(gain, false) }
+    /** Monthly savings plan: [monthly] each month for [years], with an [annualPct] yearly return compounded monthly. */
+    fun savingsPlan(monthly: Double, years: Int, annualPct: Double): Plan {
+        val r = Math.pow(1 + annualPct / 100, 1.0 / 12) - 1
+        var v = 0.0
+        repeat(years * 12) { v = (v + monthly) * (1 + r) }
+        return Plan(monthly * years * 12, v)
+    }
+
+    /** CSV for Excel in Italian (semicolon, decimal comma). */
+    fun csv(holdings: List<Holding>, quotes: Map<String, Quote>): String = buildString {
+        fun n(v: Double) = String.format(Locale.ITALIAN, "%.4f", v).trimEnd('0').trimEnd(',')
+        append("Simbolo;Nome;Quantità;Prezzo medio;Prezzo attuale;Valuta;Valore;Guadagno;Tasse stimate\n")
+        holdings.forEach { h ->
+            val q = quotes[h.symbol]
+            val value = q?.let { h.qty * it.price }; val gain = value?.let { it - h.qty * h.cost }
+            append(listOf(h.symbol, "\"" + h.name.replace("\"", "'") + "\"", n(h.qty), n(h.cost), q?.let { n(it.price) } ?: "", q?.currency ?: "",
+                value?.let { n(it) } ?: "", gain?.let { n(it) } ?: "", gain?.let { n(taxOnGain(it, h.govBond)) } ?: "").joinToString(";")).append("\n")
+        }
+    }
+
+    /** News with links (Google News RSS). */
+    data class News(val title: String, val link: String, val source: String)
+    fun parseNews(xml: String, max: Int = 10): List<News> =
+        Regex("<item>(.*?)</item>", RegexOption.DOT_MATCHES_ALL).findAll(xml).mapNotNull { m ->
+            val it = m.groupValues[1]
+            fun tag(t: String) = Regex("<$t[^>]*>(?:<!\\[CDATA\\[)?(.*?)(?:\\]\\]>)?</$t>", RegexOption.DOT_MATCHES_ALL).find(it)?.groupValues?.get(1)
+                ?.replace("&amp;", "&")?.replace("&quot;", "\"")?.replace("&#39;", "'")?.trim()
+            val title = tag("title") ?: return@mapNotNull null
+            val src = tag("source").orEmpty()
+            News(title.removeSuffix(" - $src").trim(), tag("link").orEmpty(), src)
+        }.take(max).toList()
+    fun newsWithLinks(name: String): List<News> = runCatching {
+        parseNews(get("https://news.google.com/rss/search?q=" + java.net.URLEncoder.encode("$name borsa", "UTF-8") + "&hl=it&gl=IT&ceid=IT:it"))
+    }.getOrDefault(emptyList())
+
+    /** Rescales two price series to 100 at their start, on the same number of points. */
+    fun normalize(a: List<Double>, b: List<Double>): Pair<List<Double>, List<Double>> {
+        val n = minOf(a.size, b.size)
+        if (n < 2 || a.first() == 0.0 || b.first() == 0.0) return emptyList<Double>() to emptyList()
+        fun pick(l: List<Double>) = (0 until n).map { i -> l[(i.toLong() * (l.size - 1) / (n - 1)).toInt()] }
+        val pa = pick(a); val pb = pick(b)
+        return pa.map { it / pa.first() * 100 } to pb.map { it / pb.first() * 100 }
+    }
+
+    // ---------- portfolio history ----------
+    /** Saves today's portfolio value (one point per day and currency). */
+    fun recordHistory(c: Context, totals: List<Total>) {
+        if (totals.isEmpty()) return
+        val day = java.time.LocalDate.now().toString()
+        val h = history(c).toMutableMap()
+        totals.forEach { t -> h[t.currency] = (h[t.currency].orEmpty().filter { it.first != day } + (day to t.value)).takeLast(400) }
+        prefs(c).edit().putString("history", Gson().toJson(h)).apply()
+    }
+    fun history(c: Context): Map<String, List<Pair<String, Double>>> = runCatching {
+        Gson().fromJson<Map<String, List<Pair<String, Double>>>>(prefs(c).getString("history", null), object : TypeToken<Map<String, List<Pair<String, Double>>>>() {}.type)
+    }.getOrNull().orEmpty()
 
     fun fmtPrice(v: Double, currency: String = ""): String {
         val dec = if (v < 10) 4 else 2
@@ -240,6 +348,18 @@ object Stocks {
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build())
     }
 
+    fun notifyPct(c: Context, a: Alert, ch: Chart) {
+        val nm = c.getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel("borsa", "Borsa", NotificationManager.IMPORTANCE_DEFAULT))
+        val i = Intent(c, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP).putExtra(MainActivity.EXTRA_WIDGET, "stocks")
+        val pi = PendingIntent.getActivity(c, a.id.hashCode(), i, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val n = NotificationCompat.Builder(c, "borsa").setSmallIcon(R.drawable.ic_nav_news)
+            .setContentTitle("${if (ch.changePct >= 0) "📈" else "📉"} ${a.name} ${fmtPct(ch.changePct)} oggi")
+            .setContentText("Prezzo ${fmtPrice(ch.price, ch.currency)} · avviso «${if (a.pct > 0) "sale" else "scende"} del ${fmtNum(kotlin.math.abs(a.pct))}%»")
+            .setAutoCancel(true).setContentIntent(pi).build()
+        runCatching { nm.notify(a.id.hashCode(), n) }
+    }
+
     fun notify(c: Context, a: Alert, price: Double, currency: String) {
         val nm = c.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("borsa", "Borsa", NotificationManager.IMPORTANCE_DEFAULT))
@@ -260,9 +380,13 @@ class StocksWorker(context: Context, params: WorkerParameters) : Worker(context,
         val c = applicationContext
         val list = Stocks.alerts(c)
         var changed = false
+        val day = java.time.LocalDate.now().toString()
         list.filter { !it.done }.groupBy { it.symbol }.forEach { (sym, alerts) ->
             val ch = runCatching { Stocks.chart(sym) }.getOrNull() ?: return@forEach
-            alerts.forEach { a -> if (Stocks.triggered(a, ch.price)) { Stocks.notify(c, a, ch.price, ch.currency); a.done = true; changed = true } }
+            alerts.forEach { a ->
+                if (Stocks.triggered(a, ch.price)) { Stocks.notify(c, a, ch.price, ch.currency); a.done = true; changed = true }
+                else if (Stocks.triggeredPct(a, ch.changePct, day)) { Stocks.notifyPct(c, a, ch); a.firedDay = day; changed = true }
+            }
         }
         if (changed) Stocks.saveAlerts(c, list)
         if (StocksWidget.present(c)) Stocks.refreshAll(c)

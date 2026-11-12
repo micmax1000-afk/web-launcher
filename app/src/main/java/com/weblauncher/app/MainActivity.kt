@@ -1079,6 +1079,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             "voice" -> { intent.removeExtra(EXTRA_WIDGET); requestMicAndListen(); return }
+            "portfolio" -> { intent.removeExtra(EXTRA_WIDGET); showPortfolioPage(); return }
             "stocks" -> { intent.removeExtra(EXTRA_WIDGET); showStocksPage(); return }
             "waste" -> { intent.removeExtra(EXTRA_WIDGET); showWastePage(); return }
             "birthdays" -> { intent.removeExtra(EXTRA_WIDGET); showBirthdaysPage(); return }
@@ -1114,6 +1115,11 @@ class MainActivity : AppCompatActivity() {
             "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
+            "queue" -> { intent.removeExtra(EXTRA_WIDGET); showQueuePage(); return }
+            "podcasttools" -> { intent.removeExtra(EXTRA_WIDGET); showPodcastTools(); return }
+            "radioalarm" -> { intent.removeExtra(EXTRA_WIDGET); showRadioAlarmPage(); return }
+            "sources" -> { intent.removeExtra(EXTRA_WIDGET); showSourcesPage(); return }
+            "bledevices" -> { intent.removeExtra(EXTRA_WIDGET); showBleDevicesPage(); return }
             "body" -> { intent.removeExtra(EXTRA_WIDGET); showBodyPage(); return }
             "symptoms" -> { intent.removeExtra(EXTRA_WIDGET); showSymptomsPage(); return }
             "pdftext" -> {          // automatic test: text extraction of a PDF made on the spot (the AI reads this text)
@@ -1700,6 +1706,7 @@ class MainActivity : AppCompatActivity() {
     var wasteRefresh: (() -> Unit)? = null
 
     val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val opmlPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { importOpml(it) } }
 
     var playerSheetUpdate: (() -> Unit)? = null
     var miniClosedFor: String? = null

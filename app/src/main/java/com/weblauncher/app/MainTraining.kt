@@ -73,7 +73,7 @@ internal fun MainActivity.showHrPage() {
             HrBand.scan(this, 8, { list ->
                 if (isFinishing) return@scan
                 if (list.isEmpty()) MaterialAlertDialogBuilder(this).setTitle("Nessuna fascia trovata")
-                    .setMessage("Controlla che:\n• la fascia sia indossata con i sensori bagnati;\n• non sia già collegata a un'altra app (Mi Fitness, Polar Beat…): se è così, chiudi quell'app o spegni il Bluetooth dell'altra;\n• il Bluetooth sia acceso.")
+                    .setMessage("Controlla che:\n• la fascia sia indossata con i sensori bagnati;\n• non sia già collegata a un'altra app (l'app dell'orologio, Polar Beat…): se è così, chiudi quell'app o spegni il Bluetooth dell'altra;\n• il Bluetooth sia acceso.")
                     .setPositiveButton("Riprova") { _, _ -> chooseAndConnect() }.setNegativeButton("Chiudi", null).show()
                 else MaterialAlertDialogBuilder(this).setTitle("Scegli la fascia").setItems(list.map { it.name + " (" + it.address.takeLast(5) + ")" }.toTypedArray()) { _, i ->
                     ensureNotificationPermission(); HrBand.connect(this, list[i].address, list[i].name); render()
@@ -152,7 +152,7 @@ internal fun MainActivity.showHrPage() {
 
             sectionLabel(body, "COLLEGAMENTO CON MI FITNESS")
             val on = HcWrite.enabled(this)
-            listRow(body, if (on) "✅ Salvo gli allenamenti su Health Connect" else "☐ Salva gli allenamenti su Health Connect", if (on) "Compaiono anche in Mi Fitness e nelle altre app. Tocca per spegnere" else "Così li vedi anche in Mi Fitness. Serve un permesso in più", onClick = {
+            listRow(body, if (on) "✅ Salvo gli allenamenti su Health Connect" else "☐ Salva gli allenamenti su Health Connect", if (on) "Compaiono anche nelle app del tuo orologio. Tocca per spegnere" else "Così li vedi anche nell'app del tuo orologio. Serve un permesso in più", onClick = {
                 if (on) { HcWrite.setEnabled(this, false); render() }
                 else { HcWrite.setEnabled(this, true); hcPermission.launch(Hc.PERMISSIONS + HcWrite.PERMISSIONS); render() }
             })

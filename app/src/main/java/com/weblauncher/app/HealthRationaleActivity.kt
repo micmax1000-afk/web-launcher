@@ -13,7 +13,7 @@ class HealthRationaleActivity : AppCompatActivity() {
         val p = AppRepository.palette(this)
         val t = TextView(this).apply {
             text = "Web Launcher legge da Health Connect passi, battito, sonno, peso, allenamenti, ossigeno nel sangue, pressione e glicemia " +
-                "condivisi dalla tua app di fitness (per esempio Mi Fitness).\n\n" +
+                "condivisi dalla tua app di fitness (Samsung Health, Fitbit, Garmin, Zepp, Withings… o l'app del tuo orologio).\n\n" +
                 "Li usa solo per mostrarti il riepilogo della giornata e i grafici nella sezione Benessere.\n\n" +
                 "I dati restano sul telefono: non vengono inviati a nessun server, non vengono scritti in Health Connect e puoi revocare " +
                 "l'accesso quando vuoi dalle impostazioni di Health Connect."

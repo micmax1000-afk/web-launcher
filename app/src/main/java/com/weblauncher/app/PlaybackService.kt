@@ -23,6 +23,36 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    private var exo: ExoPlayer? = null
+    private val prefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+        if (key == "skipSilence") exo?.skipSilenceEnabled = p.getBoolean(key, false)
+    }
+
+    /** Ends the episode early when the podcast has an «outro» to skip. */
+    private val outroCheck = object : Runnable {
+        override fun run() {
+            val p = exo ?: return
+            val outro = p.currentMediaItem?.mediaMetadata?.extras?.getInt("outroSec", 0) ?: 0
+            if (outro > 0 && p.isPlaying && p.duration > 0 && p.duration - p.currentPosition <= outro * 1000L) {
+                p.currentMediaItem?.mediaId?.let { AudioStore.markFinished(this@PlaybackService, it) }
+                if (!playNextInQueue(p)) p.pause()
+            }
+            handler.postDelayed(this, 1000)
+        }
+    }
+
+    /** Plays the next queued episode, if any. */
+    private fun playNextInQueue(player: Player): Boolean {
+        val e = AudioQueue.pop(this) ?: return false
+        val repo = AudioRepository(this)
+        val uri = if (repo.isDownloaded(e)) android.net.Uri.fromFile(repo.localFile(e)).toString() else e.audioUrl
+        player.setMediaItem(episodeItem(this, e, uri), PodcastPrefs.startAt(this, e))
+        player.setPlaybackSpeed(PodcastPrefs.speed(this, e.feedUrl))
+        player.prepare(); player.play()
+        AudioStore.addRecent(this, e)
+        return true
+    }
+
     override fun onCreate() {
         super.onCreate()
         val player = ExoPlayer.Builder(this)
@@ -35,14 +65,19 @@ class PlaybackService : MediaSessionService() {
             .setSeekBackIncrementMs(15_000)
             .setSeekForwardIncrementMs(30_000)
             .build()
+        exo = player
+        val audioPrefs = getSharedPreferences("wl_audio", MODE_PRIVATE)
+        player.skipSilenceEnabled = audioPrefs.getBoolean("skipSilence", false)
+        audioPrefs.registerOnSharedPreferenceChangeListener(prefsListener)
         player.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                handler.removeCallbacks(saver)
-                if (isPlaying) handler.postDelayed(saver, 15_000) else savePosition(player)
+                handler.removeCallbacks(saver); handler.removeCallbacks(outroCheck)
+                if (isPlaying) { handler.postDelayed(saver, 15_000); handler.postDelayed(outroCheck, 1000) } else savePosition(player)
             }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
                     player.currentMediaItem?.mediaId?.let { AudioStore.markFinished(this@PlaybackService, it) }
+                    playNextInQueue(player)
                 }
             }
         })
@@ -70,7 +105,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
-        handler.removeCallbacks(saver)
+        handler.removeCallbacks(saver); handler.removeCallbacks(outroCheck)
+        runCatching { getSharedPreferences("wl_audio", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(prefsListener) }
         session?.run {
             savePosition(player)
             player.release()
@@ -79,4 +115,14 @@ class PlaybackService : MediaSessionService() {
         session = null
         super.onDestroy()
     }
+}
+
+/** A media item for a podcast episode, carrying the per-podcast «outro» to skip. */
+fun episodeItem(c: android.content.Context, e: Episode, uri: String): androidx.media3.common.MediaItem {
+    val md = androidx.media3.common.MediaMetadata.Builder()
+        .setTitle(e.title).setArtist(e.podcastTitle).setIsPlayable(true)
+        .setExtras(android.os.Bundle().apply { putInt("outroSec", PodcastPrefs.get(c, e.feedUrl).outroSec); putString("feed", e.feedUrl) })
+        .apply { e.artwork?.let { setArtworkUri(android.net.Uri.parse(it)) } }
+        .build()
+    return androidx.media3.common.MediaItem.Builder().setMediaId(e.id).setUri(uri).setMediaMetadata(md).build()
 }

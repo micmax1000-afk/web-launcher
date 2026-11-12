@@ -53,7 +53,7 @@ internal fun MainActivity.progressBar(fraction: Double, color: Int): View {
     }
 }
 
-// ======================= Health Connect (Mi Fitness and others) =======================
+// ======================= Health Connect (any watch or fitness app) =======================
 
 /** Reads Health Connect in the background and stores the result; [then] runs on the main thread. */
 internal fun MainActivity.syncHealthConnect(then: (() -> Unit)? = null) {
@@ -65,7 +65,7 @@ internal fun MainActivity.syncHealthConnect(then: (() -> Unit)? = null) {
 }
 
 internal fun MainActivity.showHealthConnectPage() {
-    openPage("Mi Fitness e Health Connect") { _, body, dialog ->
+    openPage("Orologio e app fitness") { _, body, dialog ->
         val palette = AppRepository.palette(this)
         fun render() {
             body.removeAllViews()
@@ -93,8 +93,8 @@ internal fun MainActivity.showHealthConnectPage() {
             })
             if (snap != null) {
                 sectionLabel(body, "DA CHI ARRIVANO I DATI")
-                if (snap.sources.isEmpty()) hintLabel(body, "Nessun dato ricevuto negli ultimi 30 giorni. Controlla che in Mi Fitness la condivisione con Health Connect sia attiva (vedi sotto).")
-                else snap.sources.forEach { listRow(body, "✅ ${Hc.sourceName(it)}", if (Hc.sourceName(it) == it) null else it, onClick = {}) }
+                if (snap.sources.isEmpty()) hintLabel(body, "Nessun dato ricevuto negli ultimi 30 giorni. Controlla che nell'app del tuo orologio la condivisione con Health Connect sia attiva (vedi sotto).")
+                else listRow(body, "🧭 Le mie sorgenti", snap.sources.joinToString { Hc.sourceName(it) } + " · tocca per vedere chi scrive cosa", onClick = { showSourcesPage() })
 
                 sectionLabel(body, "ULTIMA LETTURA")
                 val today = Hc.today(snap)
@@ -114,11 +114,23 @@ internal fun MainActivity.showHealthConnectPage() {
                 if (rows.isEmpty()) hintLabel(body, "Ancora nessun dato: tocca «Scegli i dati da leggere» e poi «Aggiorna ora».")
                 rows.forEach { (l, v) -> listRow(body, l, v, onClick = {}) }
             }
-            sectionLabel(body, "COME COLLEGARE MI FITNESS")
-            hintLabel(body, "1. Apri l'app Mi Fitness → Profilo → Impostazioni (o «Account e privacy»).\n" +
-                "2. Cerca «Condividi i dati» / «Dati di terze parti» / «Health Connect» e attiva la condivisione di passi, frequenza cardiaca, sonno, peso e allenamenti.\n" +
-                "3. Torna qui, tocca «Scegli i dati da leggere» e consenti l'accesso, poi «Aggiorna ora».\n\n" +
-                "Se in Mi Fitness non trovi la voce Health Connect, aggiorna l'app: alcune versioni o orologi non la offrono. Dimmelo e ti propongo un'altra strada (importare il file con i tuoi dati).")
+            sectionLabel(body, "COME COLLEGARE IL TUO OROLOGIO")
+            hintLabel(body, "Funziona con qualsiasi orologio o app che condivide i dati con Health Connect. In genere:\n" +
+                "1. Apri l'app del tuo orologio o di fitness → Impostazioni (o Profilo / Account e privacy).\n" +
+                "2. Cerca «Health Connect», «Connessione Salute» o «Condividi i dati» e attiva passi, battito, sonno, peso e allenamenti.\n" +
+                "3. Torna qui, tocca «Scegli i dati da leggere» e poi «Aggiorna ora».")
+            sectionLabel(body, "APP CHE DI SOLITO LO SUPPORTANO")
+            listOf(
+                "Samsung Health" to "Galaxy Watch e anelli Samsung",
+                "Fitbit e Google Pixel Watch" to "",
+                "Garmin Connect" to "Orologi Garmin",
+                "Zepp" to "Amazfit",
+                "Polar Flow, Suunto, COROS" to "Orologi sportivi",
+                "Withings" to "Orologi, bilance e misuratori Withings",
+                "Oura" to "Anello Oura",
+                "Huawei Salute, Xiaomi e altri" to "Dipende dalla versione dell'app"
+            ).forEach { (n, d) -> listRow(body, "⌚ $n", d.ifBlank { null }, onClick = {}) }
+            hintLabel(body, "L'elenco è indicativo: il supporto cambia da marca a marca e da versione a versione. Se la tua app non ha la voce Health Connect, prova ad aggiornarla.")
             hintLabel(body, "I dati restano sul telefono: Web Launcher li legge soltanto, non li scrive e non li invia a nessun server.")
         }
         render()
@@ -159,9 +171,11 @@ internal fun MainActivity.showWellnessHub() {
                 statTile("Allenamenti", "$week / $goal", "questa settimana", if (week >= goal) 0xFF16A34A.toInt() else null)))
 
             sectionLabel(body, "OROLOGIO E APP FITNESS")
-            listRow(body, "⌚ Mi Fitness e Health Connect",
-                if (!hcOn) "Non disponibile su questo telefono" else if (snap == null) "Non ancora collegato: tocca per collegarlo" else "Collegato · ultima lettura ${NewsAdapter.ago(snap.time)}",
+            listRow(body, "⌚ Orologio e app fitness",
+                if (!hcOn) "Non disponibile su questo telefono" else if (snap == null) "Samsung, Fitbit, Garmin, Amazfit… tramite Health Connect: tocca per collegare" else "Collegato · ultima lettura ${NewsAdapter.ago(snap.time)}",
                 onClick = { showHealthConnectPage() })
+            if (snap != null && snap.sources.isNotEmpty()) listRow(body, "🧭 Le mie sorgenti", "Da quale app arriva ogni dato", onClick = { showSourcesPage() })
+            listRow(body, "🩺 Misuratori Bluetooth", BleHealth.savedSummary(this) ?: "Pressione, bilancia, termometro, saturimetro, glucometro", onClick = { showBleDevicesPage() })
 
             sectionLabel(body, "ALIMENTAZIONE")
             listRow(body, "🔍 Scansiona un prodotto", "Codice a barre: calorie, Nutri-Score, allergeni e additivi", onClick = { scanFoodBarcode() })
@@ -209,4 +223,31 @@ internal fun MainActivity.goalDialog() {
     MaterialAlertDialogBuilder(this).setTitle("Obiettivo settimanale")
         .setSingleChoiceItems(options, Fitness.weeklyGoal(this) - 1) { dl, w -> Fitness.setWeeklyGoal(this, w + 1); dl.dismiss(); wellnessRefresh?.invoke() }
         .setNegativeButton("Chiudi", null).show()
+}
+
+/** Which app writes each kind of data into Health Connect, with a warning when two apps write the same thing. */
+internal fun MainActivity.showSourcesPage() {
+    openPage("Le mie sorgenti") { _, body, _ ->
+        val snap = Hc.cached(this)
+        val map = snap?.bySource.orEmpty()
+        if (map.isEmpty()) {
+            hintLabel(body, "Ancora nessuna informazione: apri «Orologio e app fitness» e tocca «Aggiorna ora».")
+            return@openPage
+        }
+        val doubled = map.filterValues { it.size > 1 }
+        if (doubled.isNotEmpty()) {
+            sectionLabel(body, "⚠️ ATTENZIONE AI DOPPIONI")
+            hintLabel(body, "Questi dati arrivano da più app: ${doubled.keys.joinToString().lowercase(Locale.ITALIAN)}. " +
+                "Health Connect di solito tiene conto solo della app con la priorità più alta, ma se i numeri ti sembrano raddoppiati " +
+                "apri Health Connect → Dati e accesso → (tipo di dato) → Priorità delle app e metti in cima l'app del tuo orologio.")
+        }
+        sectionLabel(body, "CHI SCRIVE COSA (ULTIMI 30 GIORNI)")
+        map.forEach { (label, pkgs) ->
+            listRow(body, (if (pkgs.size > 1) "⚠️ " else "✅ ") + label, pkgs.joinToString { Hc.sourceName(it) }, onClick = {})
+        }
+        listRow(body, "⚙️ Apri Health Connect", "Per cambiare le priorità o togliere un'app", onClick = {
+            runCatching { startActivity(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) }.onFailure { toast("Non riesco ad aprire Health Connect") }
+        })
+        hintLabel(body, "I misuratori Bluetooth collegati qui (pressione, bilancia…) salvano nel tuo diario della salute, non in Health Connect.")
+    }
 }

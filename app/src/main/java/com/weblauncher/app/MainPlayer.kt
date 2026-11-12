@@ -159,6 +159,7 @@ internal fun MainActivity.showPlayerSheet() {
     val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
     chip("🔊 Volume") { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_SAME, android.media.AudioManager.FLAG_SHOW_UI) }
     chip("⛶ Schermo intero") { sheet.dismiss(); showNowPlayingFull() }
+    if (nowPlaying()?.source == "local" || AudioQueue.list(this).isNotEmpty()) chip("📋 Coda (${AudioQueue.list(this).size})") { sheet.dismiss(); showQueuePage() }
     if (currentTab != MainActivity.TAB_BROWSER) chip("🌐 Apri la pagina") { sheet.dismiss(); showTab(MainActivity.TAB_BROWSER) }.also { it.tag = "page" }
 
     root.addView(badge, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(10) })
@@ -222,6 +223,8 @@ internal fun MainActivity.renderForYou(list: LinearLayout) {
         addView(TextView(this@renderForYou).apply { text = "🔎  Cerca musica, podcast o radio"; textSize = 15f; setTextColor(palette.textMuted); setOnClickListener { musicSearchDialog() } }, LinearLayout.LayoutParams(0, -2, 1f))
         addView(TextView(this@renderForYou).apply { text = "🎤"; textSize = 22f; setPadding(dp(12), dp(2), dp(12), dp(2)); contentDescription = "Cerca a voce"; setOnClickListener { requestMicAndListen() } })
     })
+    listRow(list, "📰 Notizie di oggi, lette ad alta voce", "Un notiziario di 2-3 minuti dalle tue fonti", onClick = { listenNews() })
+    AudioQueue.list(this).takeIf { it.isNotEmpty() }?.let { q -> listRow(list, "📋 In coda: ${q.size}", "Poi: " + q.first().title, onClick = { showQueuePage() }) }
     // 3) nothing playing: four big tiles
     if (now == null) {
         val grid = android.widget.GridLayout(this).apply { columnCount = 2; layoutParams = LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(4), 0, dp(4), dp(4)) } }

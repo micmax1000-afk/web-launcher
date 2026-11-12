@@ -12,7 +12,7 @@ import androidx.health.connect.client.units.Energy
 import androidx.health.connect.client.units.Length
 import java.time.Instant
 
-/** Writes finished workouts into Health Connect, so Mi Fitness and other apps can see them (optional, off by default). */
+/** Writes finished workouts into Health Connect, so the watch and fitness apps can see them (optional, off by default). */
 object HcWrite {
     val PERMISSIONS: Set<String> = setOf(
         HealthPermission.getWritePermission(ExerciseSessionRecord::class), HealthPermission.getWritePermission(DistanceRecord::class),
