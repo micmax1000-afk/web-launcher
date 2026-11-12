@@ -414,6 +414,7 @@ internal fun MainActivity.renderSettings() {
     row("📅 Riquadro «Oggi»", "Appuntamenti, promemoria e scadenze sotto la ricerca", switch = homePrefs.getBoolean("today", true)) {
         homePrefs.edit().putBoolean("today", !homePrefs.getBoolean("today", true)).apply(); renderWeather(); renderSettings()
     }
+    row("🧩 Cosa usi? (Strumenti)", "Mostra solo i gruppi che ti servono") { showTab(MainActivity.TAB_TOOLS); showWhatYouUse() }
     row("🧩 Widget", "Ricerca e Notizie sulla schermata del telefono") {
         MaterialAlertDialogBuilder(this).setTitle("Widget")
             .setMessage("Tieni premuto su uno spazio vuoto della schermata del telefono → Widget → Web Launcher.\n\n" +

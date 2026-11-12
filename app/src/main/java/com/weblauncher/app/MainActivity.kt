@@ -155,6 +155,7 @@ class MainActivity : AppCompatActivity() {
     var bleDone: ((Boolean) -> Unit)? = null
     val blePermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r -> bleDone?.invoke(r.isNotEmpty() && r.values.all { it }) }
     var locationDone: ((Boolean) -> Unit)? = null
+    val checkPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { appCheckRefresh?.invoke() }
     val workoutLocationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { r ->
         locationDone?.invoke(r[android.Manifest.permission.ACCESS_FINE_LOCATION] == true || r[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true)
     }
@@ -357,6 +358,7 @@ class MainActivity : AppCompatActivity() {
         uiHandler.postDelayed({ runCatching { showNewsAfterUpdate() } }, 900)
         setupNav()
         setupBack()
+        setupQuickButton()
         applyBarPosition()
         setupDownloadDone()
 
@@ -857,6 +859,7 @@ class MainActivity : AppCompatActivity() {
         showBars()
         hideSuggestions()
         homePanel.isVisible = tab == TAB_HOME
+        quickFab?.visibility = if (tab == TAB_HOME) View.VISIBLE else View.GONE
         findViewById<View>(R.id.homeWallpaper).isVisible = tab == TAB_HOME && homePrefs.getBoolean("wallpaper", false) &&
             java.io.File(filesDir, "wallpaper.jpg").exists()
         browserPanel.isVisible = tab == TAB_BROWSER
@@ -987,6 +990,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        appCheckRefresh?.invoke()
         syncWebViewTheme()
         hasWindowFocusOrResumed = true
         if (::webView.isInitialized) trackUsage()
@@ -996,6 +1000,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        io.execute { runCatching { TodayWidget.update(this); ShopWidget.update(this) } }
         hasWindowFocusOrResumed = false
         flushUsage()
         usageHost = null
@@ -1012,6 +1017,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openShortcut(intent: Intent?) {
+        if (intent?.getBooleanExtra("wl_noprompts", false) == true) {          // prova automatica: niente domande a comparsa
+            intent.removeExtra("wl_noprompts")
+            getSharedPreferences("wl_tools", MODE_PRIVATE).edit().putBoolean("usesAsked", true).apply()
+        }
         intent?.getStringExtra(EXTRA_WIDGET)?.takeIf { it.startsWith("settings_") }?.let { w ->     // «settings_PRIVACY»: a settings page
             intent.removeExtra(EXTRA_WIDGET); settingsPage = w.removePrefix("settings_"); settingsQuery = ""; showTab(TAB_SETTINGS); return
         }
@@ -1089,11 +1098,16 @@ class MainActivity : AppCompatActivity() {
             "nowplaying" -> { intent.removeExtra(EXTRA_WIDGET); showNowPlayingFull(); return }
             "privacytools" -> { intent.removeExtra(EXTRA_WIDGET); showPrivacyTools(); return }
             "backuptools" -> { intent.removeExtra(EXTRA_WIDGET); showBackupTools(); return }
-            "sport" -> { intent.removeExtra(EXTRA_WIDGET); showSportsPage(); return }
             "carweb" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode("https://www.wikipedia.org/"); return }
             "carmode" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode(); return }
             "recipes" -> { intent.removeExtra(EXTRA_WIDGET); showRecipesPage(); return }
-            "netcheck" -> { intent.removeExtra(EXTRA_WIDGET); sportsNetCheck(); return }
+            "todo" -> { intent.removeExtra(EXTRA_WIDGET); showTodoPage(); return }
+            "quickadd" -> { intent.removeExtra(EXTRA_WIDGET); showQuickAdd(); return }
+            "quick_shop" -> { intent.removeExtra(EXTRA_WIDGET); quickShopping(); return }
+            "quick_reminder" -> { intent.removeExtra(EXTRA_WIDGET); quickReminder(); return }
+            "whatuse" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_TOOLS); showWhatYouUse(); return }
+            "appcheck" -> { intent.removeExtra(EXTRA_WIDGET); showAppCheck(); return }
+            "shopping" -> { intent.removeExtra(EXTRA_WIDGET); val n = notes.load().firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals("Lista della spesa", true) }; showChecklist(n?.id, "Lista della spesa"); return }
             "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
@@ -1945,6 +1959,8 @@ class MainActivity : AppCompatActivity() {
     var financeRefresh: (() -> Unit)? = null
     var birthdaysRefresh: (() -> Unit)? = null
     var wellnessRefresh: (() -> Unit)? = null
+    var quickFab: View? = null
+    var appCheckRefresh: (() -> Unit)? = null
     var lastRecipeOffer: String? = null
     var foodRefresh: (() -> Unit)? = null
     var hcRefresh: (() -> Unit)? = null

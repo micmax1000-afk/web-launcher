@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/qRoot" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/bg_widget" android:orientation="horizontal" android:gravity="center" android:padding="8dp">
+    <TextView android:id="@+id/qNote" style="@style/WidgetButton" android:text="📝\nNota" />
+    <TextView android:id="@+id/qShop" style="@style/WidgetButton" android:text="🛒\nSpesa" />
+    <TextView android:id="@+id/qRem" style="@style/WidgetButton" android:text="⏰\nPromemoria" />
+    <TextView android:id="@+id/qScan" style="@style/WidgetButton" android:text="📷\nFoto" />
+</LinearLayout>

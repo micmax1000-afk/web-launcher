@@ -223,7 +223,6 @@ internal fun MainActivity.showCarMode(startUrl: String? = null) {
                 com.google.android.material.dialog.MaterialAlertDialogBuilder(this).setTitle(name).setItems(arrayOf("Togli dai preferiti dell'auto")) { _, _ -> saveSites(sites().filter { it.second != url }); showFavs() }.show()
             }))
         }
-        favGrid.addView(tileView("⚽ Sport", { showSportsPage() }))
         favGrid.addView(tileView("🔍 Cerca", { askSearch() }))
         favGrid.addView(tileView("➕ Aggiungi sito", {
             val n = field("Nome (es. Radio Deejay)", null); val u = field("Indirizzo (es. deejay.it)", null)

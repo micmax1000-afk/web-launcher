@@ -197,6 +197,18 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_stocks_info" />
         </receiver>
+        <receiver android:name=".TodayWidget" android:exported="true" android:label="Web Launcher · Oggi">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today_info" />
+        </receiver>
+        <receiver android:name=".ShopWidget" android:exported="true" android:label="Web Launcher · Spesa">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_shop_info" />
+        </receiver>
+        <receiver android:name=".QuickWidget" android:exported="true" android:label="Web Launcher · Aggiungi">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_quick_info" />
+        </receiver>
         <receiver android:name=".NewsWidget" android:exported="true" android:label="Web Launcher · Notizie">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
