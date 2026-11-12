@@ -818,6 +818,8 @@ class MainActivity : AppCompatActivity() {
                     currentTab == TAB_SETTINGS -> showTab(TAB_TOOLS)
                     currentTab == TAB_TOOLS -> showTab(TAB_HOME)
                     currentTab == TAB_NEWS -> showTab(TAB_HOME)
+                    currentTab == TAB_AUDIO && audioTab == "music" && musicWeb?.canGoBack() == true -> musicWeb?.goBack()
+                    currentTab == TAB_AUDIO && audioTab != "foryou" -> { audioTab = "foryou"; onAudioShown() }
                     currentTab == TAB_AUDIO -> showTab(TAB_HOME)
                     else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
                 }
@@ -957,9 +959,10 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
         // battery: pages (scripts, ads, feeds) must not keep running in the background,
         // except a YouTube video playing with «audio a schermo spento» or picture-in-picture
-        val keepAudio = YouTube.isYouTube(webView.url) && ytPlaying && ytPrefs.getBoolean("background", true)
+        val keepAudio = (YouTube.isYouTube(webView.url) && ytPlaying || musicWebPlaying || Music.webFromMusic && Music.web?.playing == true) && ytPrefs.getBoolean("background", true)
         if (!keepAudio && !inPip && !isChangingConfigurations) {
             webView.onPause()
+            musicWeb?.onPause()
             webView.pauseTimers()
             webPaused = true
         }
@@ -973,7 +976,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (webPaused && ::webView.isInitialized) { webView.onResume(); webView.resumeTimers(); webPaused = false }
+        if (webPaused && ::webView.isInitialized) { webView.onResume(); musicWeb?.onResume(); webView.resumeTimers(); webPaused = false }
         if (lockEnabled() && !inPip) {
             val delay = lockPrefs.getInt("delayMin", 1) * 60_000L
             if (lockedSince == 0L || System.currentTimeMillis() - lockedSince >= delay) { showLockOverlay(); unlockApp() }
@@ -1115,6 +1118,9 @@ class MainActivity : AppCompatActivity() {
             "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
+            "audiosettings" -> { intent.removeExtra(EXTRA_WIDGET); showAudioSettings(); return }
+            "ytmusic" -> { intent.removeExtra(EXTRA_WIDGET); openYtMusic(); return }
+            "radiotab" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "radio"; showTab(TAB_AUDIO); return }
             "queue" -> { intent.removeExtra(EXTRA_WIDGET); showQueuePage(); return }
             "podcasttools" -> { intent.removeExtra(EXTRA_WIDGET); showPodcastTools(); return }
             "radioalarm" -> { intent.removeExtra(EXTRA_WIDGET); showRadioAlarmPage(); return }
@@ -1512,7 +1518,6 @@ class MainActivity : AppCompatActivity() {
             item("✨ Chiedi al video") { askVideo() }
             item("🎬 Finestrella") { enterVideoPip() }
             item("⏩ Velocità (${ytPrefs.getFloat("speed", 1f)}x)") { ytSpeedDialog() }
-            item("▶ Segui il canale") { followCurrentChannel() }
             item("⚙ Opzioni YouTube") { ytOptionsDialog() }
         }
         if (hostOf(webView.url) == "mail.google.com") item("📧 Riassumi email") { summarizeEmail() }
@@ -1765,6 +1770,10 @@ class MainActivity : AppCompatActivity() {
     var settingsPage: String? = null
     var toolsCatalog: List<Pair<String, List<Pair<String, String>>>> = emptyList()
     var ytPlaying = false
+    /** YouTube Music, in its own page inside Ascolta (separate from the Browser). */
+    var musicWeb: WebView? = null
+    var musicWebPlaying = false
+    var musicBarUpdate: (() -> Unit)? = null
     var ytTranscriptCallback: ((org.json.JSONObject) -> Unit)? = null
     var inPip = false
 

@@ -318,7 +318,6 @@ private fun MainActivity.carSources(openWeb: (String) -> Unit) {
     // web sources need the screen to choose a song: close the car screen, the music then shows up here again
     fun web(url: String) { dlg.dismiss(); openWeb(url) }
     row("🔴", "YouTube Music", "Si apre qui, nella scheda Web") { web("https://music.youtube.com/") }
-    row("▶️", "YouTube", "Si apre qui, nella scheda Web") { web("https://m.youtube.com/") }
     if (Music.installed(this, Music.SPOTIFY)) row("🟢", "Spotify", "Si apre l'app") { dlg.dismiss(); openMusicApp("spotify") }
     audio.favoriteStations().take(4).forEach { s -> row("📻", s.name, "Radio") { playRadio(s); dlg.dismiss() } }
     if (audio.favoriteStations().isEmpty()) row("📻", "Radio", "Aggiungi le preferite (⭐) in Ascolta → Radio") { toast("Aggiungi una radio preferita in Ascolta → Radio") }

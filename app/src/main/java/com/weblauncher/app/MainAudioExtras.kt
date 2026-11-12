@@ -63,17 +63,34 @@ internal fun MainActivity.podcastSettingsDialog(p: Podcast) {
 
 // ======================= Podcast tools: RSS, OPML, automatic downloads, skip silence =======================
 
-internal fun MainActivity.showPodcastTools() {
-    openPage("Impostazioni podcast") { _, body, _ ->
+internal fun MainActivity.showPodcastTools() = showAudioSettings()
+
+/** Ascolta → ⚙️: everything that is not needed every day. */
+internal fun MainActivity.showAudioSettings() {
+    openPage("Impostazioni di Ascolta") { _, body, _ ->
         val prefs = getSharedPreferences("wl_audio", android.content.Context.MODE_PRIVATE)
         fun render() {
             body.removeAllViews()
-            sectionLabel(body, "AGGIUNGI PODCAST")
+            sectionLabel(body, "ASCOLTO")
+            listRow(body, "📋 Coda di ascolto", "${AudioQueue.list(this).size} episodi in coda", onClick = { showQueuePage() })
+            val speed = prefs.getFloat("speed", 1f)
+            listRow(body, "⏩ Velocità dei podcast", String.format(Locale.ITALIAN, "%.2g×", speed) + " · per un solo podcast: aprilo e tocca «Velocità e salti»", onClick = {
+                val speeds = floatArrayOf(0.8f, 1f, 1.1f, 1.25f, 1.5f, 1.75f, 2f)
+                MaterialAlertDialogBuilder(this).setTitle("Velocità").setItems(speeds.map { String.format(Locale.ITALIAN, "%.2g×", it) }.toTypedArray()) { _, w ->
+                    prefs.edit().putFloat("speed", speeds[w]).apply(); render()
+                }.show()
+            })
+            val skip = prefs.getBoolean("skipSilence", false)
+            listRow(body, (if (skip) "✅ " else "☐ ") + "Salta i silenzi", "Accorcia le pause nel parlato", onClick = { prefs.edit().putBoolean("skipSilence", !skip).apply(); render() })
+
+            sectionLabel(body, "RADIO E NOTIZIE")
+            listRow(body, "⏰ Sveglia con la radio", if (RadioAlarm.enabled(this)) String.format(Locale.ITALIAN, "Attiva alle %02d:%02d · %s", RadioAlarm.hour(this), RadioAlarm.minute(this), RadioAlarm.station(this)?.name.orEmpty()) else "Svegliati con la tua radio preferita", onClick = { showRadioAlarmPage() })
+            listRow(body, "📰 Notizie di oggi, lette ad alta voce", "Un notiziario di 2-3 minuti dalle tue fonti", onClick = { listenNews() })
+
+            sectionLabel(body, "PODCAST")
             listRow(body, "🔗 Aggiungi con un link RSS", "Per i podcast che non si trovano con la ricerca", onClick = { addPodcastByRss() })
             listRow(body, "📥 Importa da un'altra app (OPML)", "Il file che altre app di podcast esportano", onClick = { runCatching { opmlPicker.launch(arrayOf("*/*")) }.onFailure { toast("Non riesco ad aprire i file") } })
             listRow(body, "📤 Esporta i miei podcast (OPML)", "${audio.subscriptions().size} podcast seguiti", onClick = { exportOpml() })
-
-            sectionLabel(body, "DOWNLOAD AUTOMATICO")
             val auto = PodcastAuto.enabled(this)
             listRow(body, (if (auto) "✅ " else "☐ ") + "Scarica i nuovi episodi su Wi-Fi", if (auto) "Ogni qualche ora, solo con Wi-Fi e batteria non scarica" else "Così li ascolti anche senza rete, senza consumare dati", onClick = {
                 PodcastAuto.setEnabled(this, !auto); render()
@@ -84,11 +101,9 @@ internal fun MainActivity.showPodcastTools() {
                 io.execute { val n = PodcastAuto.deleteHeard(this); runOnUiThread { toast(if (n == 0) "Niente da cancellare" else "Cancellati $n episodi"); renderAudio() } }
             })
 
-            sectionLabel(body, "ASCOLTO")
-            val skip = prefs.getBoolean("skipSilence", false)
-            listRow(body, (if (skip) "✅ " else "☐ ") + "Salta i silenzi", "Accorcia le pause nel parlato (podcast e file)", onClick = { prefs.edit().putBoolean("skipSilence", !skip).apply(); render() })
-            listRow(body, "📋 Coda di ascolto", "${AudioQueue.list(this).size} episodi in coda", onClick = { showQueuePage() })
-            hintLabel(body, "Velocità e salti di sigla si impostano per ogni podcast: apri il podcast e tocca «⚙️ Velocità e salti».")
+            sectionLabel(body, "MUSICA")
+            listRow(body, "🔴 Opzioni di YouTube Music", "Salta le pubblicità, audio a schermo spento", onClick = { ytOptionsDialog() })
+            listRow(body, "📱 Musica sul telefono", "Gli MP3 salvati nella memoria del telefono", onClick = { audioTab = "phone"; showTab(MainActivity.TAB_AUDIO); renderAudio() })
         }
         render()
     }

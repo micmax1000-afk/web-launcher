@@ -35,6 +35,8 @@ sealed class MusicCmd {
 data class WebPlaying(val title: String, val artist: String, val art: String, val playing: Boolean, val at: Long, val music: Boolean = true, val posMs: Long = 0, val durMs: Long = 0)
 
 object Music {
+    /** True when [web] comes from the YouTube Music page in Ascolta, false when from the Browser. */
+    @Volatile var webFromMusic = false
     /** The YouTube Music player inside the app: its state and a way to command it (set by the main screen). */
     @Volatile var web: WebPlaying? = null
     @Volatile var webControl: ((String) -> Unit)? = null
