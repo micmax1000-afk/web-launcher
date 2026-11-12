@@ -71,14 +71,14 @@ internal fun MainActivity.showNowPlayingFull(openLyrics: Boolean = false) {
     val close = TextView(this).apply { text = "⌄"; textSize = 30f; setTextColor(white); gravity = Gravity.CENTER; setPadding(dp(14), 0, dp(14), 0); contentDescription = "Chiudi"; setOnClickListener { dlg.dismiss() } }
     val srcLine = TextView(this).apply { textSize = 10.5f; letterSpacing = 0.12f; setTextColor(0xCCFFFFFF.toInt()); gravity = Gravity.CENTER; text = "IN RIPRODUZIONE DA" }
     val srcName = TextView(this).apply { textSize = 13.5f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(white); gravity = Gravity.CENTER }
-    val clock = TextView(this).apply { textSize = 13f; setTextColor(0xCCFFFFFF.toInt()); gravity = Gravity.END }
-    val more = TextView(this).apply { text = "⋯"; textSize = 26f; setTextColor(white); gravity = Gravity.END; setPadding(dp(10), 0, dp(6), 0); contentDescription = "Altro" }
-    val moreBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END; minimumWidth = dp(56); addView(more); addView(clock) }
+    val clock = TextView(this).apply { textSize = 13f; setTextColor(0xCCFFFFFF.toInt()); gravity = Gravity.END; maxLines = 1; setPadding(0, 0, dp(10), 0) }
+    val more = TextView(this).apply { text = "⋯"; textSize = 30f; setTextColor(white); gravity = Gravity.END; setPadding(dp(10), 0, dp(6), 0); contentDescription = "Altro" }
+    val moreBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.END; minimumWidth = dp(64); addView(more); addView(clock) }
     val header = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
         addView(close, LinearLayout.LayoutParams(dp(56), -2))
         addView(LinearLayout(this@showNowPlayingFull).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; addView(srcLine); addView(srcName) }, LinearLayout.LayoutParams(0, -2, 1f))
-        addView(moreBox, LinearLayout.LayoutParams(dp(56), -2))
+        addView(moreBox, LinearLayout.LayoutParams(-2, -2))
     }
 
     // ----- cover, title, favourite -----
@@ -115,11 +115,13 @@ internal fun MainActivity.showNowPlayingFull(openLyrics: Boolean = false) {
     }
     val back15 = txt("↺\n15", 15f) { nowPlaying()?.let { playerSeekTo(it.posMs - 15_000) } }
     val prev = txt("⏮", 30f) { musicAction("prev") }
-    val play = TextView(this).apply {
-        text = "⏸"; textSize = 32f; setTextColor(0xFF111111.toInt()); gravity = Gravity.CENTER
+    val play = ImageView(this).apply {
+        setImageResource(R.drawable.ic_pause); setColorFilter(0xFF111111.toInt()); scaleType = ImageView.ScaleType.FIT_CENTER
+        setPadding(dp(22), dp(22), dp(22), dp(22)); contentDescription = "Riproduci o metti in pausa"
         background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(white) }
         setOnClickListener { musicAction("toggle"); h.postDelayed({ refresh() }, 500) }
     }
+    fun showPlaying(on: Boolean) = play.setImageResource(if (on) R.drawable.ic_pause else R.drawable.ic_play)
     val next = txt("⏭", 30f) { musicAction("next") }
     val fwd15 = txt("↻\n15", 15f) { nowPlaying()?.let { playerSeekTo(it.posMs + 15_000) } }
     val controls = LinearLayout(this).apply {
@@ -252,7 +254,7 @@ internal fun MainActivity.showNowPlayingFull(openLyrics: Boolean = false) {
             val size = (w * 0.74).toInt().coerceAtMost((hh * 0.4).toInt())
             val col = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL; setPadding(dp(22), dp(10), dp(22), dp(18))
-                addView(header, LinearLayout.LayoutParams(-1, dp(56)).apply { marginStart = -dp(10); marginEnd = -dp(10) })
+                addView(header, LinearLayout.LayoutParams(-1, dp(56)).apply { marginStart = -dp(12); marginEnd = -dp(12) })
                 addView(cover, LinearLayout.LayoutParams(size, size).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(14) })
                 addView(lyricsScroll, LinearLayout.LayoutParams(-1, 0, 1f))
                 addView(titleRow, lp(22)); addView(seekBox, lp(14)); addView(controls, lp(6)); addView(chips, lp(14)); addView(volRow, lp(18))
@@ -332,14 +334,14 @@ internal fun MainActivity.showNowPlayingFull(openLyrics: Boolean = false) {
     refresh = {
         clock.text = SimpleDateFormat("HH:mm", Locale.ITALIAN).format(Date())
         val n = nowPlaying()
-        if (n == null) { title.text = "Niente in riproduzione"; sub.text = ""; play.text = "▶" }
+        if (n == null) { title.text = "Niente in riproduzione"; sub.text = ""; showPlaying(false) }
         else {
             val radio = n.source == "local" && n.sub.startsWith("Radio")
             srcName.text = n.sourceLabel()
             title.text = n.title
             sub.text = n.sub.substringBeforeLast(" · ", n.sub).let { if (radio) it.removePrefix("Radio").trim(' ', '·').ifBlank { "Radio" } else it }
             showArtPublic(cover, n)
-            play.text = if (n.playing) "⏸" else "▶"
+            showPlaying(n.playing)
             val isLive = isLive(n)
             live.isVisible = isLive && radio
             seekBox.isVisible = !isLive; back15.isVisible = !isLive; fwd15.isVisible = !isLive
