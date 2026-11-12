@@ -1079,6 +1079,7 @@ class MainActivity : AppCompatActivity() {
                 return
             }
             "voice" -> { intent.removeExtra(EXTRA_WIDGET); requestMicAndListen(); return }
+            "portfolio" -> { intent.removeExtra(EXTRA_WIDGET); showPortfolioPage(); return }
             "stocks" -> { intent.removeExtra(EXTRA_WIDGET); showStocksPage(); return }
             "waste" -> { intent.removeExtra(EXTRA_WIDGET); showWastePage(); return }
             "birthdays" -> { intent.removeExtra(EXTRA_WIDGET); showBirthdaysPage(); return }

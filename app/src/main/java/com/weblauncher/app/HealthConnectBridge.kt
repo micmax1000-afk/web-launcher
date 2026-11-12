@@ -79,7 +79,7 @@ object Hc {
 
     /** A friendly name for the common apps that write into Health Connect (unknown ones keep the package name). */
     fun sourceName(pkg: String) = when {
-        pkg.contains("xiaomi.wearable") || pkg.contains("mi.health") -> "App dell'orologio Xiaomi"
+        pkg.contains("xiaomi.wearable") || pkg.contains("mi.health") -> "Mi Fitness"
         pkg.contains("huawei") -> "Huawei Salute"
         pkg.contains("withings") -> "Withings"
         pkg.contains("polar") -> "Polar Flow"

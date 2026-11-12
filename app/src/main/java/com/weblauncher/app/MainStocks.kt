@@ -71,8 +71,10 @@ internal fun MainActivity.showStocksPage() {
         fun dp(v: Int) = (v * d).toInt()
         fun render() {
             body.removeAllViews()
+            marketsStrip(body)
             val list = Stocks.watch(this)
             if (list.isEmpty()) {
+                sectionLabel(body, "LA MIA WATCHLIST")
                 hintLabel(body, "La tua watchlist è vuota.\nTocca «Aggiungi» e cerca un titolo (es. Eni, Apple, un ETF) oppure parti da questi:")
                 Stocks.PRESETS.forEach { a ->
                     listRow(body, "➕ ${a.name}", a.symbol, onClick = { Stocks.saveWatch(this, Stocks.watch(this) + a); render() })
@@ -87,6 +89,7 @@ internal fun MainActivity.showStocksPage() {
                 setOnClickListener { render() }
             }
             body.addView(banner)
+            sectionLabel(body, "LA MIA WATCHLIST")
             val alerts = Stocks.alerts(this).filter { !it.done }
             val holdings = Stocks.holdings(this)
             val summary = TextView(this).apply { textSize = 15f; setTextColor(palette.text); setPadding(dp(14), dp(10), dp(14), dp(10)) }
@@ -100,10 +103,12 @@ internal fun MainActivity.showStocksPage() {
                         append("${if (t.gain >= 0) "+" else "−"}${Stocks.fmtPrice(kotlin.math.abs(t.gain), t.currency)} (${Stocks.fmtPct(t.gainPct)})\n")
                         setSpan(android.text.style.ForegroundColorSpan(if (t.gain >= 0) UP else DOWN), start, length, 0)
                     }
-                }.trimEnd()
+                    append("Tocca per grafici, tasse ed esportazione ›")
+                }
             }
             if (holdings.isNotEmpty()) {
                 summary.background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 16 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
+                summary.setOnClickListener { showPortfolioPage() }
                 body.addView(summary, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(6), dp(4), dp(6), dp(10)) })
                 refreshSummary()
             }
@@ -172,6 +177,9 @@ internal fun MainActivity.showStocksPage() {
                     }
                 }
             }
+            sectionLabel(body, "STRUMENTI")
+            listRow(body, "💼 Il mio portafoglio", if (holdings.isEmpty()) "Aggiungi le tue azioni da un titolo: «Ho queste azioni»" else "Grafico, andamento, tasse stimate, CSV", onClick = { showPortfolioPage() })
+            listRow(body, "🧮 Simula un piano di accumulo (PAC)", "Quanto diventa un versamento mensile", onClick = { savingsPlanDialog() })
             listRow(body, "🔧 Prova la connessione a Yahoo Finance", "Se vedi «n.d.»: mostra cosa risponde il servizio", onClick = { diagnoseStocks() })
             hintLabel(body, "Dati Yahoo Finance, possono essere in ritardo di 15-20 minuti. Tieni premuto un titolo per spostarlo o toglierlo.")
         }
@@ -272,21 +280,24 @@ internal fun MainActivity.showStockDetail(a: Stocks.Asset) {
                 Stocks.quotes(this)[a.symbol]?.let { q -> val g = h.qty * (q.price - h.cost); "Ora vale ${Stocks.fmtPrice(h.qty * q.price, q.currency)} · ${if (g >= 0) "+" else "−"}${Stocks.fmtPrice(kotlin.math.abs(g), q.currency)}" } ?: "Tocca per modificare",
             onClick = { holdingDialog(a, h) { dialog.dismiss(); showStockDetail(a) } })
         listRow(body, "🔔 Avvisami a un prezzo", "Notifica quando sale sopra o scende sotto un valore", onClick = { stockAlertDialog(a, last) })
+        listRow(body, "📊 Avvisami se si muove molto", "Per esempio ±3% in un giorno", onClick = { pctAlertDialog(a) })
+        listRow(body, "⚖️ Confronta con un altro titolo", "Chi è cresciuto di più in 1 mese, 6 mesi, 1 anno…", onClick = { compareDialog(a) })
         listRow(body, "✨ Perché si è mosso oggi?", "L'AI legge le ultime notizie", onClick = { whyStockMoved(a, last) })
-        listRow(body, "📰 Notizie", "Google News su ${a.name}", onClick = {
+        listRow(body, "📰 Tutte le notizie", "Google News su ${a.name}", onClick = {
             dialog.dismiss(); openInBrowser("https://news.google.com/search?q=" + java.net.URLEncoder.encode(a.name, "UTF-8") + "&hl=it&gl=IT&ceid=IT:it")
         })
         val alerts = Stocks.alerts(this).filter { it.symbol == a.symbol }
         if (alerts.isNotEmpty()) {
             sectionLabel(body, "AVVISI")
             alerts.forEach { al ->
-                listRow(body, "${if (al.above) "Sopra" else "Sotto"} ${Stocks.fmtPrice(al.price)}", if (al.done) "✓ Già scattato" else "Attivo",
+                listRow(body, alertLabel(al), if (al.done) "✓ Già scattato" else if (al.firedDay != null) "Attivo · ultimo avviso ${al.firedDay}" else "Attivo",
                     onClick = {}, onRemove = { Stocks.saveAlerts(this, Stocks.alerts(this).filter { it.id != al.id }); dialog.dismiss(); showStockDetail(a) })
             }
         }
         if (Stocks.watch(this).none { it.symbol == a.symbol }) listRow(body, "➕ Aggiungi alla watchlist", null, onClick = {
             Stocks.saveWatch(this, Stocks.watch(this) + a); toast("Aggiunto")
         })
+        stockExtrasSections(a, body)
     }
 }
 
