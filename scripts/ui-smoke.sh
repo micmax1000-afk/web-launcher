@@ -59,7 +59,7 @@ shot 05-browser 8
 
 # pagine degli strumenti: si devono aprire senza crash
 n=10
-for page in instruments tabata altimeter ruler metal split waste finance stocks birthdays wellness hc food water calc workout plans history sleep meds visits emergency report hr body symptoms music nowplaying recents privacytools backuptools passwords recipes todo quickadd appcheck foryou player sources bledevices queue podcasttools radioalarm portfolio audiosettings radiotab ytmusic; do
+for page in instruments tabata altimeter ruler metal split waste finance stocks birthdays wellness hc food water calc workout plans history sleep meds visits emergency report hr body symptoms music nowplaying recents privacytools backuptools passwords recipes todo quickadd appcheck foryou player sources bledevices queue podcasttools radioalarm portfolio audiosettings radiotab ytmusic playerdemo lyricsdemo; do
   adb shell am start -W -n $PKG/.MainActivity --es widget_action $page >/dev/null
   shot "$n-$page" 3
   alive || { echo "::error::L'app si è chiusa aprendo $page"; why; exit 1; }

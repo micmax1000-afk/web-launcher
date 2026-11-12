@@ -195,6 +195,7 @@ internal fun MainActivity.setupWebMusic() {
 
 /** Reads what plays in the YouTube Music page (Ascolta) and in the Browser; the one that is playing wins. */
 private fun MainActivity.pollWebMusic() {
+    if (Music.demo) { Music.web = Music.web?.copy(at = System.currentTimeMillis(), posMs = (Music.web?.posMs ?: 0) + 2000); updateMiniPlayer(); return }
     val mw = musicWeb?.takeIf { YouTube.isYouTube(it.url) }
     val bw = webView.takeIf { YouTube.isYouTube(it.url) }
     if (mw == null && bw == null) {

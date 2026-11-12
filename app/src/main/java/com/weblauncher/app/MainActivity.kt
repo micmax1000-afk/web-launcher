@@ -1116,6 +1116,14 @@ class MainActivity : AppCompatActivity() {
             "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
+            "playerdemo", "lyricsdemo" -> {
+                val withLyrics = intent.getStringExtra(EXTRA_WIDGET) == "lyricsdemo"
+                intent.removeExtra(EXTRA_WIDGET)
+                Music.demo = true; Music.webFromMusic = true
+                Music.web = WebPlaying("Someone Like You", "Adele", "", true, System.currentTimeMillis(), true, 84_000, 285_000)
+                showTab(TAB_AUDIO); showNowPlayingFull(openLyrics = withLyrics)
+                uiHandler.postDelayed({ Music.demo = false; Music.webFromMusic = false; Music.web = null; updateMiniPlayer() }, 9000); return
+            }
             "audiosettings" -> { intent.removeExtra(EXTRA_WIDGET); showAudioSettings(); return }
             "ytmusic" -> { intent.removeExtra(EXTRA_WIDGET); openYtMusic(); return }
             "radiotab" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "radio"; showTab(TAB_AUDIO); return }

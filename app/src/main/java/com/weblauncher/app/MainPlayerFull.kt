@@ -52,7 +52,7 @@ internal fun MainActivity.sleepTimerDialog(after: () -> Unit) {
 /** The only player of the app: podcasts, radio, YouTube Music and phone music look and work the same. */
 internal fun MainActivity.showPlayerSheet() = showNowPlayingFull()
 
-internal fun MainActivity.showNowPlayingFull() {
+internal fun MainActivity.showNowPlayingFull(openLyrics: Boolean = false) {
     if (nowPlaying() == null) { toast("Niente in riproduzione"); return }
     miniClosedFor = null
     val dlg = android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
@@ -392,5 +392,6 @@ internal fun MainActivity.showNowPlayingFull() {
     dlg.setOnDismissListener { h.removeCallbacksAndMessages(null); playerSheetUpdate = null }
     dlg.show()
     refresh()
+    if (openLyrics) showLyrics(true)
     h.postDelayed(tick, 1000)
 }

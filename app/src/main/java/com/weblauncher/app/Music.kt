@@ -37,6 +37,8 @@ data class WebPlaying(val title: String, val artist: String, val art: String, va
 object Music {
     /** True when [web] comes from the YouTube Music page in Ascolta, false when from the Browser. */
     @Volatile var webFromMusic = false
+    /** Only for the automatic UI test: a pretend song, so the player can be photographed. */
+    @Volatile var demo = false
     /** The YouTube Music player inside the app: its state and a way to command it (set by the main screen). */
     @Volatile var web: WebPlaying? = null
     @Volatile var webControl: ((String) -> Unit)? = null
