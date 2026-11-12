@@ -404,7 +404,6 @@ internal fun MainActivity.renderSettings() {
     row("🌦 Meteo in home", if (weatherPrefs.getBoolean("hidden", false)) "Nascosto" else weatherPrefs.getString("city", null) ?: "Scegli la città") {
         weatherPrefs.edit().putBoolean("hidden", false).apply(); renderWeather(); setupWeather()
     }
-    row("🏠 Indirizzo di casa", carPrefs.getString("home", null) ?: "Per «Portami a casa» in modalità auto") { setHomeAddress { renderSettings() } }
     row("☀️ Buongiorno ogni mattina", if (Brief.enabled(this)) "Alle %02d:%02d · meteo, appuntamenti, scadenze, notizie".format(Brief.hour(this), Brief.minute(this))
         else "Una notifica con il riepilogo della giornata", switch = Brief.enabled(this)) {
         if (Brief.enabled(this)) { Brief.set(this, false); renderSettings() } else briefSettings()

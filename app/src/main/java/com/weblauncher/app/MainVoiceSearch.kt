@@ -192,7 +192,6 @@ internal fun MainActivity.systemVoiceCommand(raw: String): Boolean {
         }
         return true
     }
-    if (Regex("^(?:attiva |apri |avvia )?(?:la )?modalità auto|^modalità guida").containsMatchIn(t)) { showCarMode(); return true }
     return false
 }
 

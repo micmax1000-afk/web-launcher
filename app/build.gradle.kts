@@ -14,7 +14,7 @@ android {
         // Su GitHub il numero di build cresce a ogni compilazione (1000 + numero dell'esecuzione),
         // cosi' l'app riconosce da sola le versioni piu' nuove.
         versionCode = System.getenv("WL_VERSION_CODE")?.toIntOrNull() ?: 45
-        versionName = "7.25.0"
+        versionName = "7.26.0"
         // solo italiano e inglese: le librerie includono testi in ~80 lingue che l'app non usa
         resourceConfigurations += listOf("it", "en")
     }
@@ -84,4 +84,5 @@ dependencies {
     implementation("androidx.health.connect:connect-client:1.1.0-alpha07")
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
 }

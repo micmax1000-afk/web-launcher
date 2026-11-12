@@ -192,7 +192,6 @@ internal fun MainActivity.renderTools() {
         Triple("📊", "La mia settimana") { showWeeklySummary() },
         Triple("🔔", "Avvisi") { showAlertsPage() },
         Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
-        Triple("🚘", "Modalità auto") { showCarMode() },
         Triple("⌛", "Tempo di utilizzo") { showUsagePage() }
     ))
     group("SOLDI", listOf(
@@ -384,7 +383,6 @@ private fun toolIcon(label: String): Int = when (label) {
     "Registratore" -> R.drawable.ic_tool_record
     "Chiedi a voce" -> R.drawable.ic_tool_voice
     "Ricette" -> R.drawable.ic_tool_recipe
-    "Modalità auto" -> R.drawable.ic_tool_car
     "Buongiorno" -> R.drawable.ic_tool_sun
     "Passi" -> R.drawable.ic_tool_steps
     "Salute" -> R.drawable.ic_tool_heart

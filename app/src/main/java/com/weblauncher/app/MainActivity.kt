@@ -1103,8 +1103,6 @@ class MainActivity : AppCompatActivity() {
             "nowplaying" -> { intent.removeExtra(EXTRA_WIDGET); showNowPlayingFull(); return }
             "privacytools" -> { intent.removeExtra(EXTRA_WIDGET); showPrivacyTools(); return }
             "backuptools" -> { intent.removeExtra(EXTRA_WIDGET); showBackupTools(); return }
-            "carweb" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode("https://www.wikipedia.org/"); return }
-            "carmode" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode(); return }
             "recipes" -> { intent.removeExtra(EXTRA_WIDGET); showRecipesPage(); return }
             "foryou" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "foryou"; showTab(TAB_AUDIO); return }
             "player" -> { intent.removeExtra(EXTRA_WIDGET); showPlayerSheet(); return }
@@ -2055,7 +2053,6 @@ class MainActivity : AppCompatActivity() {
 
     // ======================= Car mode =======================
 
-    val carPrefs by lazy { getSharedPreferences("wl_car", MODE_PRIVATE) }
 
     // ======================= App lock =======================
 

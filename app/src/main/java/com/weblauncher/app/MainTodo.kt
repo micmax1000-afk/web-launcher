@@ -137,7 +137,7 @@ internal fun MainActivity.showWhatYouUse(after: () -> Unit = {}) {
     val cat = toolsCatalog.filter { it.first != "⭐ PREFERITI" }
     if (cat.isEmpty()) return
     val blurb = mapOf(
-        "ORGANIZZA" to "note, lista della spesa, ricette, compleanni", "LA TUA GIORNATA" to "buongiorno, meteo, avvisi, modalità auto",
+        "ORGANIZZA" to "note, lista della spesa, ricette, compleanni", "LA TUA GIORNATA" to "buongiorno, meteo, avvisi",
         "SOLDI" to "spese, finanze, scadenze, borsa", "SALUTE E SPORT" to "benessere, passi, allenamento", "AI" to "Mia AI e domande a voce",
         "DOCUMENTI" to "scanner, PDF, biglietti, cassaforte", "UTILITÀ" to "QR code, misure, calcoli", "BROWSER E APP" to "app, download, privacy, backup")
     val labels = cat.map { (g, items) -> g.lowercase(Locale.ITALIAN).replaceFirstChar { it.uppercase() } + (blurb[g]?.let { " — $it" } ?: "") }.toTypedArray()
