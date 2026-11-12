@@ -132,72 +132,7 @@ class MusicBar(private val a: MainActivity, private val large: Boolean = false) 
 
 internal fun MainActivity.showArtPublic(iv: ImageView, n: NowView?) = showArt(iv, n)
 
-/** Where the music comes from, for the car screen header. */
-internal fun NowView.sourceLabel() = when (source) { "local" -> "Web Launcher"; else -> sub.substringAfterLast(" · ", "") }
 
-/** Full screen «now playing», for the car: big cover, big text, huge buttons, the screen stays on. */
-internal fun MainActivity.showNowPlayingFull() {
-    val dlg = android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-    val d = resources.displayMetrics.density
-    fun dp(v: Int) = (v * d).toInt()
-    val h = Handler(Looper.getMainLooper())
-    val root = android.widget.FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
-    val cover = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; clipToOutline = true
-        outlineProvider = object : android.view.ViewOutlineProvider() { override fun getOutline(v: View, o: android.graphics.Outline) { o.setRoundRect(0, 0, v.width, v.height, dp(18).toFloat()) } } }
-    val title = TextView(this).apply { textSize = 30f; setTextColor(0xFFFFFFFF.toInt()); setTypeface(typeface, android.graphics.Typeface.BOLD); maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END; gravity = Gravity.CENTER }
-    val sub = TextView(this).apply { textSize = 20f; setTextColor(0xFFB8BCC8.toInt()); maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; gravity = Gravity.CENTER; setPadding(0, dp(6), 0, dp(10)) }
-    fun big(t: String, size: Int, onClick: () -> Unit) = TextView(this).apply {
-        text = t; textSize = size.toFloat(); gravity = Gravity.CENTER; setTextColor(0xFFFFFFFF.toInt())
-        background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(0x22FFFFFF) }
-        setOnClickListener { onClick() }
-    }
-    val am = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
-    lateinit var refresh: () -> Unit
-    val play = big("⏸", 46) { musicAction("toggle"); h.postDelayed({ refresh() }, 500) }
-    val prev = big("⏮", 34) { musicAction("prev"); h.postDelayed({ refresh() }, 600) }
-    val next = big("⏭", 34) { musicAction("next"); h.postDelayed({ refresh() }, 600) }
-    val volDown = big("−", 40) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_LOWER, android.media.AudioManager.FLAG_SHOW_UI) }
-    val volUp = big("+", 40) { am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_RAISE, android.media.AudioManager.FLAG_SHOW_UI) }
-    val close = TextView(this).apply { text = "✕"; textSize = 28f; setTextColor(0xFFFFFFFF.toInt()); setPadding(dp(18), dp(14), dp(18), dp(14)); setOnClickListener { dlg.dismiss() } }
-    var landscape: Boolean? = null
-    fun build() {
-        val land = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        if (land == landscape) return
-        landscape = land
-        root.removeAllViews()
-        listOf(cover, title, sub, play, prev, next, volDown, volUp).forEach { (it.parent as? android.view.ViewGroup)?.removeView(it) }
-        val w = resources.displayMetrics.widthPixels; val hh = resources.displayMetrics.heightPixels
-        val coverSize = if (land) (hh * 0.62).toInt() else (w * 0.78).toInt()
-        val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER
-            addView(prev, LinearLayout.LayoutParams(dp(82), dp(82)).apply { marginEnd = dp(14) })
-            addView(play, LinearLayout.LayoutParams(dp(110), dp(110)))
-            addView(next, LinearLayout.LayoutParams(dp(82), dp(82)).apply { marginStart = dp(14) }) }
-        val volRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER; setPadding(0, dp(18), 0, 0)
-            addView(volDown, LinearLayout.LayoutParams(dp(64), dp(64)).apply { marginEnd = dp(40) }); addView(volUp, LinearLayout.LayoutParams(dp(64), dp(64))) }
-        val info = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; addView(title); addView(sub); addView(btnRow); addView(volRow) }
-        val main = LinearLayout(this).apply {
-            orientation = if (land) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(24), dp(40), dp(24), dp(24))
-            addView(cover, LinearLayout.LayoutParams(coverSize, coverSize).apply { if (land) marginEnd = dp(32) else bottomMargin = dp(24) })
-            addView(info, if (land) LinearLayout.LayoutParams(0, -2, 1f) else LinearLayout.LayoutParams(-1, -2))
-        }
-        root.addView(main, android.widget.FrameLayout.LayoutParams(-1, -1))
-        root.addView(close, android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END))
-        cover.tag = null
-    }
-    refresh = {
-        val n = nowPlaying()
-        if (n == null) { title.text = "Nessuna musica in corso"; sub.text = "Avvia YouTube Music o YouTube"; play.text = "▶"; showArt(cover, null) }
-        else { title.text = n.title; sub.text = n.sub; play.text = if (n.playing) "⏸" else "▶"; showArt(cover, n) }
-    }
-    val tick = object : Runnable { override fun run() { refresh(); h.postDelayed(this, 1000) } }
-    root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> val before = landscape; build(); if (before != landscape) refresh() }
-    build()
-    dlg.setContentView(root)
-    dlg.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    dlg.setOnDismissListener { h.removeCallbacksAndMessages(null) }
-    dlg.show()
-    h.post(tick)
-}
 
 /** The «Musica» tab: what is playing, your playlists, then the songs on the phone. */
 internal fun MainActivity.musicSections(body: LinearLayout, leave: () -> Unit, rerender: () -> Unit) {
@@ -260,6 +195,7 @@ internal fun MainActivity.setupWebMusic() {
 
 /** Reads what plays in the YouTube Music page (Ascolta) and in the Browser; the one that is playing wins. */
 private fun MainActivity.pollWebMusic() {
+    if (Music.demo) { Music.web = Music.web?.copy(at = System.currentTimeMillis(), posMs = (Music.web?.posMs ?: 0) + 2000); updateMiniPlayer(); return }
     val mw = musicWeb?.takeIf { YouTube.isYouTube(it.url) }
     val bw = webView.takeIf { YouTube.isYouTube(it.url) }
     if (mw == null && bw == null) {

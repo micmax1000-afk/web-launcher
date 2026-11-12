@@ -98,7 +98,6 @@ internal fun MainActivity.setupAudio() {
     }
     findViewById<View>(R.id.audioPanel).setBackgroundColor(palette.bg)
     findViewById<TextView>(R.id.audioHeading).setTextColor(palette.text)
-    findViewById<View>(R.id.btnAudioAuto).setOnClickListener { showCarMode() }
     findViewById<View>(R.id.btnAudioSearch).setOnClickListener {
         when (audioTab) { "radio" -> showRadioSearch(); "music" -> musicSearchDialog(); "phone" -> searchMusic(); "foryou" -> showAudioSettings(); else -> showPodcastSearch() }
     }

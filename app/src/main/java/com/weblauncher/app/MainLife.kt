@@ -326,24 +326,6 @@ internal fun MainActivity.showAlertsPage() {
     AlertsWorker.schedule(this)
 }
 
-internal fun MainActivity.goHome() {
-    val addr = carPrefs.getString("home", null)
-    if (addr.isNullOrBlank()) { setHomeAddress { goHome() }; return }
-    val app = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=" + Uri.encode(addr))).setPackage("com.google.android.apps.maps")
-    try { startActivity(app) } catch (_: Exception) { showTab(TAB_BROWSER); openInBrowser("https://www.google.com/maps/dir/?api=1&destination=" + Uri.encode(addr)) }
-}
-
-internal fun MainActivity.setHomeAddress(then: (() -> Unit)? = null) {
-    val d = resources.displayMetrics.density
-    val et = TextInputEditText(this).apply { hint = "Via, numero, città"; setSingleLine(); setText(carPrefs.getString("home", "")) }
-    val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
-    MaterialAlertDialogBuilder(this).setTitle("🏠 Indirizzo di casa").setView(box)
-        .setPositiveButton("Salva") { _, _ ->
-            val a = et.text?.toString()?.trim().orEmpty()
-            if (a.isNotEmpty()) { carPrefs.edit().putString("home", a).apply(); then?.invoke() }
-        }.setNegativeButton("Annulla", null).show()
-}
-
 // ======================= Share to Web Launcher =======================
 
 internal fun MainActivity.handleShare(intent: Intent): Boolean {

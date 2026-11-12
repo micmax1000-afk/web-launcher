@@ -1103,8 +1103,6 @@ class MainActivity : AppCompatActivity() {
             "nowplaying" -> { intent.removeExtra(EXTRA_WIDGET); showNowPlayingFull(); return }
             "privacytools" -> { intent.removeExtra(EXTRA_WIDGET); showPrivacyTools(); return }
             "backuptools" -> { intent.removeExtra(EXTRA_WIDGET); showBackupTools(); return }
-            "carweb" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode("https://www.wikipedia.org/"); return }
-            "carmode" -> { intent.removeExtra(EXTRA_WIDGET); showCarMode(); return }
             "recipes" -> { intent.removeExtra(EXTRA_WIDGET); showRecipesPage(); return }
             "foryou" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "foryou"; showTab(TAB_AUDIO); return }
             "player" -> { intent.removeExtra(EXTRA_WIDGET); showPlayerSheet(); return }
@@ -1118,6 +1116,14 @@ class MainActivity : AppCompatActivity() {
             "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
+            "playerdemo", "lyricsdemo" -> {
+                val withLyrics = intent.getStringExtra(EXTRA_WIDGET) == "lyricsdemo"
+                intent.removeExtra(EXTRA_WIDGET)
+                Music.demo = true; Music.webFromMusic = true
+                Music.web = WebPlaying("Someone Like You", "Adele", "", true, System.currentTimeMillis(), true, 84_000, 285_000)
+                showTab(TAB_AUDIO); showNowPlayingFull(openLyrics = withLyrics)
+                uiHandler.postDelayed({ Music.demo = false; Music.webFromMusic = false; Music.web = null; updateMiniPlayer() }, 9000); return
+            }
             "audiosettings" -> { intent.removeExtra(EXTRA_WIDGET); showAudioSettings(); return }
             "ytmusic" -> { intent.removeExtra(EXTRA_WIDGET); openYtMusic(); return }
             "radiotab" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "radio"; showTab(TAB_AUDIO); return }
@@ -2055,7 +2061,6 @@ class MainActivity : AppCompatActivity() {
 
     // ======================= Car mode =======================
 
-    val carPrefs by lazy { getSharedPreferences("wl_car", MODE_PRIVATE) }
 
     // ======================= App lock =======================
 
