@@ -17,7 +17,7 @@ shot() { sleep "${2:-4}"; adb exec-out screencap -p > "$OUT/$1.png"; echo "scher
 alive() { adb shell pidof $PKG >/dev/null; }
 
 # le schermate si fanno con il tema chiaro, come lo usa chi guarda
-adb shell am start -W -n $PKG/.MainActivity --ez wl_selftest true >/dev/null
+adb shell am start -W -n $PKG/.MainActivity --ez wl_noprompts true >/dev/null
 sleep 4
 adb shell am start -W -n $PKG/.MainActivity --es wl_theme_check light >/dev/null
 sleep 4

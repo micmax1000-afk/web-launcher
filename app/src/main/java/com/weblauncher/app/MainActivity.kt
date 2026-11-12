@@ -1017,8 +1017,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun openShortcut(intent: Intent?) {
-        if (intent?.getBooleanExtra("wl_selftest", false) == true) {          // prova automatica: niente domande a comparsa
-            intent.removeExtra("wl_selftest")
+        if (intent?.getBooleanExtra("wl_noprompts", false) == true) {          // prova automatica: niente domande a comparsa
+            intent.removeExtra("wl_noprompts")
             getSharedPreferences("wl_tools", MODE_PRIVATE).edit().putBoolean("usesAsked", true).apply()
         }
         intent?.getStringExtra(EXTRA_WIDGET)?.takeIf { it.startsWith("settings_") }?.let { w ->     // «settings_PRIVACY»: a settings page
