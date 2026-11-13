@@ -23,6 +23,7 @@ class AiBridge(
     interface Listener {
         fun onPartial(text: String) {}
         fun onDone(text: String, model: String)
+        fun onAudio(base64: String, mime: String) {}
         fun onError(message: String, noKey: Boolean)
     }
 
@@ -64,6 +65,7 @@ class AiBridge(
             when (m.optString("t")) {
                 "partial" -> l.onPartial(m.optString("text"))
                 "done" -> { listeners.remove(id); l.onDone(m.optString("text"), m.optString("model")) }
+                "audio" -> { listeners.remove(id); l.onAudio(m.optString("data"), m.optString("mime")) }
                 "error" -> { listeners.remove(id); l.onError(m.optString("message"), m.optString("code") == "nokey") }
             }
         }
@@ -110,6 +112,25 @@ class AiBridge(
         val js = "wlAsk($id, ${JSONObject.quote(arr.toString())}, ${JSONObject.quote(system.orEmpty())})"
         run { web?.evaluateJavascript(js, null) }
         return id
+    }
+
+    /** Natural voice: speech of [text] from Gemini with the key saved in Mia AI. onAudio gets base64 PCM and its mime. */
+    fun tts(text: String, voice: String, onAudio: (String, String) -> Unit, onError: (String, String) -> Unit): Int {
+        if (!supported()) { onError("Browser di sistema troppo vecchio", "old"); return 0 }
+        val id = nextId++
+        listeners[id] = object : Listener {
+            override fun onDone(text: String, model: String) {}
+            override fun onAudio(base64: String, mime: String) = onAudio(base64, mime)
+            override fun onError(message: String, noKey: Boolean) = onError(message, if (noKey) "nokey" else "error")
+        }
+        run { web?.evaluateJavascript("wlTts($id, ${JSONObject.quote(text)}, ${JSONObject.quote(voice)})", null) }
+        return id
+    }
+
+    /** True when Mia AI has a Gemini key saved. */
+    fun hasGeminiKey(callback: (Boolean) -> Unit) {
+        if (!supported()) { callback(false); return }
+        run { web?.evaluateJavascript("wlHasGemini()") { raw -> callback(raw?.trim('"') == "true") } }
     }
 
     fun cancel(id: Int) {

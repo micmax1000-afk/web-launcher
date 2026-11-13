@@ -162,6 +162,17 @@
 
         <receiver android:name=".MusicKeyReceiver" android:exported="false" />
         <receiver android:name=".RadioAlarmReceiver" android:exported="false" />
+        <service android:name=".ReadAloudService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <receiver android:name=".ReadAloudReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="wl.read.PLAY" />
+                <action android:name="wl.read.NEXT" />
+                <action android:name="wl.read.PREV" />
+                <action android:name="wl.read.NEXTCH" />
+                <action android:name="wl.read.PREVCH" />
+                <action android:name="wl.read.STOP" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".MusicListener"
             android:exported="true"
