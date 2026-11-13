@@ -127,6 +127,20 @@ class AiBridge(
         return id
     }
 
+    /** Lira voice (Piper): speech of [text] with the Italian voice [voiceId]; onProgress reports the first download. */
+    fun piper(text: String, voiceId: String, onAudio: (String, String) -> Unit, onError: (String, String) -> Unit, onProgress: (String) -> Unit = {}): Int {
+        if (!supported()) { onError("Browser di sistema troppo vecchio", "old"); return 0 }
+        val id = nextId++
+        listeners[id] = object : Listener {
+            override fun onPartial(text: String) = onProgress(text)
+            override fun onDone(text: String, model: String) {}
+            override fun onAudio(base64: String, mime: String) = onAudio(base64, mime)
+            override fun onError(message: String, noKey: Boolean) = onError(message, "error")
+        }
+        run { web?.evaluateJavascript("wlPiper($id, ${JSONObject.quote(text)}, ${JSONObject.quote(voiceId)})", null) }
+        return id
+    }
+
     /** True when Mia AI has a Gemini key saved. */
     fun hasGeminiKey(callback: (Boolean) -> Unit) {
         if (!supported()) { callback(false); return }

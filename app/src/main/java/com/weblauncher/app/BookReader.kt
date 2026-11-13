@@ -24,6 +24,11 @@ class ReadPrefs(c: Context) {
     var mode: String get() = p.getString("mode", "system") ?: "system"; set(v) { p.edit().putString("mode", v).apply() }
     var sysVoice: String get() = p.getString("sysVoice", "") ?: ""; set(v) { p.edit().putString("sysVoice", v).apply() }
     var gVoice: String get() = p.getString("gVoice", "Sulafat") ?: "Sulafat"; set(v) { p.edit().putString("gVoice", v).apply() }
+    /** Lira voice (Piper): "it_IT-paola-medium" or "it_IT-riccardo-x_low". */
+    var lVoice: String get() = p.getString("lVoice", "it_IT-paola-medium") ?: "it_IT-paola-medium"; set(v) { p.edit().putString("lVoice", v).apply() }
+    /** Name of the voice in use for the saved audio files (natural voices only). */
+    fun naturalVoice() = if (mode == "lira") lVoice else gVoice
+    fun chunkChars() = if (mode == "lira") 380 else 1100
     var speed: Float get() = p.getFloat("speed", 1f); set(v) { p.edit().putFloat("speed", v).apply() }
     var pitch: Float get() = p.getFloat("pitch", 1f); set(v) { p.edit().putFloat("pitch", v).apply() }
 }
@@ -78,7 +83,8 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
     private val sleepRun = Runnable { sleepAt = 0L; pause() }
 
     val speed get() = prefs.speed
-    fun usingGemini() = prefs.mode == "gemini" && !fallback
+    fun usingGemini() = (prefs.mode == "gemini" || prefs.mode == "lira") && !fallback   // «natural»: audio made first, then played
+    var preparing: String? = null; private set
 
     // =================== public controls ===================
 
@@ -210,7 +216,7 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
     private fun begin() {
         if (!active || !playing) return
         if (sentences.isEmpty()) { chapterEnded(); return }
-        if (usingGemini()) { chunks = ReadText.chunks(sentences); chunkIdx = chunks.indexOfFirst { idx in it }.coerceAtLeast(0); playChunk(chunkIdx) }
+        if (usingGemini()) { chunks = ReadText.chunks(sentences, prefs.chunkChars()); chunkIdx = chunks.indexOfFirst { idx in it }.coerceAtLeast(0); playChunk(chunkIdx) }
         else speakFrom(idx)
     }
 
@@ -293,10 +299,8 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
 
     private fun audioDir() = File(Ebooks.dir(ctx), "audio/${book.id}").apply { mkdirs() }
     private fun chunkText(k: Int) = chunks[k].let { sentences.subList(it.first, it.last + 1).joinToString(" ") }
-    private fun chunkFile(k: Int): File {
-        val t = chunkText(k)
-        return File(audioDir(), "c${chapter}_${Integer.toHexString(t.hashCode())}_${t.length}_${prefs.gVoice}.wav")
-    }
+    private fun fileFor(ch: Int, t: String) = File(audioDir(), "c${ch}_${Integer.toHexString(t.hashCode())}_${t.length}_${prefs.naturalVoice()}.wav")
+    private fun chunkFile(k: Int) = fileFor(chapter, chunkText(k))
 
     private fun playChunk(k: Int) {
         if (k >= chunks.size) { chapterEnded(); return }
@@ -308,7 +312,8 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
             if (g != gen || !playing) return@fetchChunk
             if (file == null) { fellBack(k); return@fetchChunk }
             startFile(file, k, g)
-            if (k + 1 < chunks.size) fetchChunk(k + 1) { }
+            val ahead = if (prefs.mode == "lira") 2 else 1       // the phone voice is slower to make: keep two pieces ready
+            for (n in 1..ahead) if (k + n < chunks.size) fetchChunk(k + n) { }
         }
     }
 
@@ -318,23 +323,51 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
         speakFrom(chunks.getOrNull(k)?.first ?: idx)
     }
 
-    private fun fetchChunk(k: Int, cb: (File?) -> Unit) {
-        val file = chunkFile(k)
+    private fun fetchChunk(k: Int, cb: (File?) -> Unit) = fetchText(chunkText(k), chunkFile(k), cb)
+
+    /** Makes the audio of [text] (or finds it already saved) and hands the file to [cb]; null if it could not be made. */
+    private fun fetchText(text: String, file: File, cb: (File?) -> Unit) {
         if (file.exists() && file.length() > 100) { cb(file); return }
         val key = file.name
         val list = waiters[key]
         if (list != null) { list += cb; return }
         waiters[key] = mutableListOf(cb)
         loading = true; ui.stateChanged()
-        ui.bridge().tts(chunkText(k), prefs.gVoice, { b64, mime ->
+        val done = { b64: String, mime: String ->
             io.execute {
                 val ok = runCatching {
-                    val pcm = Base64.decode(b64, Base64.DEFAULT)
-                    file.writeBytes(ReadText.pcmToWav(pcm, ReadText.rateOf(mime)))
+                    val bytes = Base64.decode(b64, Base64.DEFAULT)
+                    file.writeBytes(if (mime.contains("wav", true)) bytes else ReadText.pcmToWav(bytes, ReadText.rateOf(mime)))
                 }.isSuccess
                 h.post { loading = false; waiters.remove(key)?.forEach { it(if (ok) file else null) }; ui.stateChanged() }
             }
-        }, { _, _ -> h.post { loading = false; waiters.remove(key)?.forEach { it(null) }; ui.stateChanged() } })
+            Unit
+        }
+        val failed = { _: String, _: String -> h.post { loading = false; waiters.remove(key)?.forEach { it(null) }; ui.stateChanged() }; Unit }
+        if (prefs.mode == "lira") ui.bridge().piper(text, prefs.lVoice, done, failed) { msg -> h.post { ui.say(msg) } }
+        else ui.bridge().tts(text, prefs.gVoice, done, failed)
+    }
+
+    /** Makes the audio of the whole chapter [ch] ahead of time, one piece after the other. */
+    fun prepareChapter(ch: Int) {
+        if (preparing != null) { ui.say("Sto già preparando un capitolo"); return }
+        if (prefs.mode == "system") { ui.say("Scegli prima una voce naturale"); return }
+        preparing = "Preparo il capitolo…"; ui.stateChanged()
+        io.execute {
+            val s = runCatching { ReadText.chapterSentences(File(Ebooks.dir(ctx), "${book.id}/${book.root}${book.spine[ch].substringBefore('#')}").readText()) }.getOrDefault(emptyList())
+            val parts = ReadText.chunks(s, prefs.chunkChars()).map { r -> s.subList(r.first, r.last + 1).joinToString(" ") }
+            h.post {
+                if (parts.isEmpty()) { preparing = null; ui.say("Questo capitolo non ha testo"); ui.stateChanged(); return@post }
+                fun step(i: Int) {
+                    if (i >= parts.size) { preparing = null; ui.say("Capitolo pronto: ora lo ascolti senza attese"); ui.stateChanged(); return }
+                    preparing = "Preparo il capitolo… ${i + 1}/${parts.size}"; ui.stateChanged()
+                    fetchText(parts[i], fileFor(ch, parts[i])) { f ->
+                        if (f == null) { preparing = null; ui.say("Non riesco a preparare la voce (internet o limite di uso)"); ui.stateChanged() } else step(i + 1)
+                    }
+                }
+                step(0)
+            }
+        }
     }
 
     private fun startFile(file: File, k: Int, g: Int) {

@@ -67,6 +67,12 @@ for page in instruments tabata altimeter ruler metal split waste finance stocks 
   n=$((n+1))
 done
 
+# voce Lira (Piper) nel WebView: scarica la voce piccola e prova a parlare (informativa, non blocca)
+adb shell am start -W -n $PKG/.MainActivity --es widget_action piperdemo >/dev/null
+for i in $(seq 1 60); do sleep 3; adb logcat -d -s WL_SELFTEST:* | grep -qE 'PIPER_(OK|ERR)' && break; done
+echo "PROVA VOCE LIRA: $(adb logcat -d -s WL_SELFTEST:* | grep -oE 'PIPER_(OK|ERR).*' | tail -1)"
+echo "PROVA VOCE LIRA (avanzamento): $(adb logcat -d -s WL_SELFTEST:* | grep -oE 'PIPER_PROGRESS.*' | tail -1)"
+
 # PDF dentro l'app (pagina con il visualizzatore, senza passare dal browser)
 adb shell am start -W -n $PKG/.MainActivity --es widget_action pdfpage >/dev/null
 shot 19-pdf-nell-app 7
