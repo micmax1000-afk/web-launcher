@@ -8,6 +8,7 @@
 <script>
 (function () {
   'use strict';
+  console.log('bridge loaded, providers=' + !!window.MiaProviders);
   var P = window.MiaProviders;
   var LS = 'miaai_v1_settings';
 
@@ -122,6 +123,7 @@
   }
   // one request at a time: the voice engine cannot work on two texts together
   window.wlPiper = function (id, text, voiceId) {
+    console.log('wlPiper called ' + voiceId);
     piperQ = piperQ.then(function () { return piperSpeak(id, text, voiceId); })
       .catch(function (e) { post({ id: id, t: 'error', message: String((e && e.message) || e) }); });
   };

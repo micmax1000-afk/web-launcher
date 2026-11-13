@@ -55,7 +55,11 @@ class AiBridge(
                 val url = request?.url ?: return null
                 return if (url.host == MiaAi.HOST) loader.shouldInterceptRequest(url) else null
             }
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                android.util.Log.i("WL_AI_JS", "bridge error ${request?.url} ${error?.description}")
+            }
             override fun onPageFinished(view: WebView?, url: String?) {
+                android.util.Log.i("WL_AI_JS", "bridge page finished $url ready=$ready")
                 if (ready) return
                 ready = true
                 val jobs = pending.toList()
