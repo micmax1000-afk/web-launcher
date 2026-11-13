@@ -86,6 +86,7 @@ class AiBridge(
         w.importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         android.util.Log.i("WL_AI_JS", "ensure: loading $BRIDGE_URL")
         w.loadUrl(BRIDGE_URL)
+        listOf(5000L, 20000L).forEach { t -> w.postDelayed({ android.util.Log.i("WL_AI_JS", "state after ${t / 1000}s: progress=${w.progress} url=${w.url} attached=${w.isAttachedToWindow} shown=${w.isShown} win=${w.windowVisibility}") }, t) }
         web = w
         return w
     }

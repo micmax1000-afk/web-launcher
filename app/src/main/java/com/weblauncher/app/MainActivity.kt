@@ -1128,10 +1128,13 @@ class MainActivity : AppCompatActivity() {
                 intent.removeExtra(EXTRA_WIDGET)
                 // automatic test: can the Lira voice (Piper) make speech in this phone's WebView?
                 android.util.Log.i("WL_SELFTEST", "PIPER_START supported=${ai.supported()}")
-                ai.piper("Ciao, questa è una prova della voce.", "it_IT-riccardo-x_low",
-                    { b64, mime -> android.util.Log.i("WL_SELFTEST", "PIPER_OK bytes=${b64.length} mime=$mime") },
-                    { msg, _ -> android.util.Log.i("WL_SELFTEST", "PIPER_ERR ${msg.take(300).replace('\n', ' ')}") },
-                    { p -> android.util.Log.i("WL_SELFTEST", "PIPER_PROGRESS $p") })
+                // wait until the screen is back in front (the page would not load while the app was still being resumed)
+                uiHandler.postDelayed({
+                    ai.piper("Ciao, questa è una prova della voce.", "it_IT-riccardo-x_low",
+                        { b64, mime -> android.util.Log.i("WL_SELFTEST", "PIPER_OK bytes=${b64.length} mime=$mime") },
+                        { msg, _ -> android.util.Log.i("WL_SELFTEST", "PIPER_ERR ${msg.take(300).replace('\n', ' ')}") },
+                        { p -> android.util.Log.i("WL_SELFTEST", "PIPER_PROGRESS $p") })
+                }, 2500)
                 return
             }
             "audiosettings" -> { intent.removeExtra(EXTRA_WIDGET); showAudioSettings(); return }
