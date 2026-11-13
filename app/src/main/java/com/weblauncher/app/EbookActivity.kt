@@ -486,6 +486,12 @@ class EbookActivity : AppCompatActivity() {
 })();
 """
     }
+    override fun onResume() {
+        super.onResume()
+        // the main screen pauses the timers of all WebViews when it stops: the reader must keep its own pages running
+        if (::web.isInitialized) { web.onResume(); web.resumeTimers() }
+    }
+
     override fun onPause() {
         super.onPause()
         if (!::web.isInitialized) return

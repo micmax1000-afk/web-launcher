@@ -85,6 +85,8 @@ class AiBridge(
         w.isFocusable = false
         w.importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         android.util.Log.i("WL_AI_JS", "ensure: loading $BRIDGE_URL")
+        // another screen of the app may have paused the timers of every WebView (pauseTimers is global): the page would stay stuck
+        w.resumeTimers()
         w.loadUrl(BRIDGE_URL)
         listOf(5000L, 20000L).forEach { t -> w.postDelayed({ android.util.Log.i("WL_AI_JS", "state after ${t / 1000}s: progress=${w.progress} url=${w.url} attached=${w.isAttachedToWindow} shown=${w.isShown} win=${w.windowVisibility}") }, t) }
         web = w
