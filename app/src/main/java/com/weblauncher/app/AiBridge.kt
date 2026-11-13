@@ -84,12 +84,14 @@ class AiBridge(
         w.alpha = 0f
         w.isFocusable = false
         w.importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        android.util.Log.i("WL_AI_JS", "ensure: loading $BRIDGE_URL")
         w.loadUrl(BRIDGE_URL)
         web = w
         return w
     }
 
     private fun run(job: () -> Unit) {
+        android.util.Log.i("WL_AI_JS", "run: web=${web != null} ready=$ready")
         ensure()
         if (ready) job() else pending.add(job)
     }

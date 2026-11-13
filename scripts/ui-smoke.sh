@@ -74,7 +74,7 @@ echo "PROVA VOCE LIRA: $(adb logcat -d -s WL_SELFTEST:* | grep -oE 'PIPER_(OK|ER
 echo "PROVA VOCE LIRA (avanzamento): $(adb logcat -d -s WL_SELFTEST:* | grep -oE 'PIPER_PROGRESS.*' | tail -1)"
 adb logcat -d -s WL_SELFTEST:* | grep -E 'PIPER_PROGRESS' | sed 's/^.*PIPER_PROGRESS/  avanzamento:/' | head -12
 adb logcat -d -s WL_SELFTEST:* | grep PIPER_START | sed 's/^/  /'
-adb logcat -d -s WL_AI_JS:* | tail -20 | sed 's/^/  console: /'
+adb logcat -d | grep -E "WL_AI_JS|chromium.*(CONSOLE|bridge|piper)|Piper|piper" | tail -25 | cut -c1-260 | sed 's/^/  console: /'
 
 # PDF dentro l'app (pagina con il visualizzatore, senza passare dal browser)
 adb shell am start -W -n $PKG/.MainActivity --es widget_action pdfpage >/dev/null
