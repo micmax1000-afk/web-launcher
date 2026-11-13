@@ -44,6 +44,12 @@ class AiBridge(
         w.settings.javaScriptEnabled = true
         w.settings.domStorageEnabled = true
         w.settings.allowFileAccess = false
+        w.webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onConsoleMessage(m: android.webkit.ConsoleMessage?): Boolean {
+                m?.let { android.util.Log.i("WL_AI_JS", "${it.messageLevel()} ${it.message().take(300)}") }
+                return true
+            }
+        }
         w.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val url = request?.url ?: return null

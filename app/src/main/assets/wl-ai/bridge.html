@@ -86,7 +86,8 @@
     if (piperLib) return piperLib;
     var last = null;
     for (var i = 0; i < PIPER_URLS.length; i++) {
-      try { piperLib = await import(PIPER_URLS[i]); if (piperLib && piperLib.TtsSession) return piperLib; } catch (e) { last = e; }
+      try { piperLib = await import(PIPER_URLS[i]); if (piperLib && piperLib.TtsSession) return piperLib; last = new Error('TtsSession mancante in ' + PIPER_URLS[i] + ' (' + Object.keys(piperLib || {}).join(',') + ')'); piperLib = null; }
+      catch (e) { last = e; console.log('piper import ' + i + ' fallito: ' + ((e && e.message) || e)); }
     }
     throw last || new Error('Libreria della voce non caricata');
   }
@@ -100,7 +101,9 @@
   }
   async function piperSpeak(id, text, voiceId) {
     try { Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, get: function () { return 1; } }); } catch (e) {}
+    post({ id: id, t: 'partial', text: 'Carico la libreria della voce' });
     var lib = await loadPiper();
+    post({ id: id, t: 'partial', text: 'Libreria pronta' });
     var T = lib.TtsSession;
     if (T._instance && T._instance.voiceId !== voiceId) T._instance = null;
     var session = new T({
@@ -113,6 +116,7 @@
       wasmPaths: { onnxWasm: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/', piperData: lib.WASM_BASE + '.data', piperWasm: lib.WASM_BASE + '.wasm' }
     });
     if (session.waitReady instanceof Promise) await session.waitReady;
+    post({ id: id, t: 'partial', text: 'Voce pronta, preparo il parlato' });
     var blob = await session.predict(text);
     post({ id: id, t: 'audio', data: await blobToBase64(blob), mime: 'audio/wav' });
   }
