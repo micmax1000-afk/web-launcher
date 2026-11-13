@@ -44,12 +44,22 @@ class AiBridge(
         w.settings.javaScriptEnabled = true
         w.settings.domStorageEnabled = true
         w.settings.allowFileAccess = false
+        w.webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onConsoleMessage(m: android.webkit.ConsoleMessage?): Boolean {
+                m?.let { android.util.Log.i("WL_AI_JS", "${it.messageLevel()} ${it.message().take(300)}") }
+                return true
+            }
+        }
         w.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val url = request?.url ?: return null
                 return if (url.host == MiaAi.HOST) loader.shouldInterceptRequest(url) else null
             }
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: android.webkit.WebResourceError?) {
+                android.util.Log.i("WL_AI_JS", "bridge error ${request?.url} ${error?.description}")
+            }
             override fun onPageFinished(view: WebView?, url: String?) {
+                android.util.Log.i("WL_AI_JS", "bridge page finished $url ready=$ready")
                 if (ready) return
                 ready = true
                 val jobs = pending.toList()
@@ -74,12 +84,17 @@ class AiBridge(
         w.alpha = 0f
         w.isFocusable = false
         w.importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        android.util.Log.i("WL_AI_JS", "ensure: loading $BRIDGE_URL")
+        // another screen of the app may have paused the timers of every WebView (pauseTimers is global): the page would stay stuck
+        w.resumeTimers()
         w.loadUrl(BRIDGE_URL)
+        listOf(5000L, 20000L).forEach { t -> w.postDelayed({ android.util.Log.i("WL_AI_JS", "state after ${t / 1000}s: progress=${w.progress} url=${w.url} attached=${w.isAttachedToWindow} shown=${w.isShown} win=${w.windowVisibility}") }, t) }
         web = w
         return w
     }
 
     private fun run(job: () -> Unit) {
+        android.util.Log.i("WL_AI_JS", "run: web=${web != null} ready=$ready")
         ensure()
         if (ready) job() else pending.add(job)
     }
@@ -124,6 +139,20 @@ class AiBridge(
             override fun onError(message: String, noKey: Boolean) = onError(message, if (noKey) "nokey" else "error")
         }
         run { web?.evaluateJavascript("wlTts($id, ${JSONObject.quote(text)}, ${JSONObject.quote(voice)})", null) }
+        return id
+    }
+
+    /** Lira voice (Piper): speech of [text] with the Italian voice [voiceId]; onProgress reports the first download. */
+    fun piper(text: String, voiceId: String, onAudio: (String, String) -> Unit, onError: (String, String) -> Unit, onProgress: (String) -> Unit = {}): Int {
+        if (!supported()) { onError("Browser di sistema troppo vecchio", "old"); return 0 }
+        val id = nextId++
+        listeners[id] = object : Listener {
+            override fun onPartial(text: String) = onProgress(text)
+            override fun onDone(text: String, model: String) {}
+            override fun onAudio(base64: String, mime: String) = onAudio(base64, mime)
+            override fun onError(message: String, noKey: Boolean) = onError(message, "error")
+        }
+        run { web?.evaluateJavascript("wlPiper($id, ${JSONObject.quote(text)}, ${JSONObject.quote(voiceId)})", null) }
         return id
     }
 

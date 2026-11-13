@@ -286,7 +286,7 @@ class EbookActivity : AppCompatActivity() {
             return
         }
         r!!
-        lbInfo.text = if (r.loading) "Preparo la lettura…"
+        lbInfo.text = if (r.preparing != null) r.preparing else if (r.loading) "Preparo la lettura…"
             else "Cap. ${r.chapter + 1} di ${book.spine.size} · ${(r.fraction() * 100).toInt()}% · −${r.minutesLeft()} min" + if (!r.playing) " · in pausa" else ""
         lbProgress.progress = (r.fraction() * 1000).toInt()
         lbPlay.setImageResource(if (r.playing) R.drawable.ic_pause else R.drawable.ic_play)
@@ -364,16 +364,20 @@ class EbookActivity : AppCompatActivity() {
         fun preview() {
             val sample = "Ciao! Questa è la voce con cui leggerò il tuo libro. Ti piace?"
             runCatching { pvMp?.release() }; pvMp = null
-            if (prefs.mode == "gemini") {
-                Toast.makeText(this, "Preparo l'esempio…", Toast.LENGTH_SHORT).show()
-                ai.tts(sample, prefs.gVoice, { b64, mime ->
+            if (prefs.mode == "gemini" || prefs.mode == "lira") {
+                Toast.makeText(this, if (prefs.mode == "lira") "Preparo l'esempio (la prima volta scarica la voce)…" else "Preparo l'esempio…", Toast.LENGTH_SHORT).show()
+                val played = { b64: String, mime: String ->
                     runCatching {
                         val f = File(cacheDir, "voice-sample.wav")
-                        f.writeBytes(ReadText.pcmToWav(android.util.Base64.decode(b64, android.util.Base64.DEFAULT), ReadText.rateOf(mime)))
-                        val m = android.media.MediaPlayer(); m.setDataSource(f.path)
-                        m.setOnPreparedListener { it.start() }; m.prepareAsync(); pvMp = m
+                        val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                        f.writeBytes(if (mime.contains("wav", true)) bytes else ReadText.pcmToWav(bytes, ReadText.rateOf(mime)))
+                        runOnUiThread { val m = android.media.MediaPlayer(); m.setDataSource(f.path); m.setOnPreparedListener { it.start() }; m.prepareAsync(); pvMp = m }
                     }
-                }, { msg, code -> runOnUiThread { Toast.makeText(this, if (code == "nokey") "Serve la chiave Gemini in Mia AI" else "Non riesco: $msg".take(120), Toast.LENGTH_LONG).show() } })
+                    Unit
+                }
+                val failed = { msg: String, code: String -> runOnUiThread { Toast.makeText(this, if (code == "nokey") "Serve la chiave Gemini in Mia AI" else "Non riesco: $msg".take(140), Toast.LENGTH_LONG).show() }; Unit }
+                if (prefs.mode == "lira") ai.piper(sample, prefs.lVoice, played, failed) { p -> runOnUiThread { Toast.makeText(this, p, Toast.LENGTH_SHORT).show() } }
+                else ai.tts(sample, prefs.gVoice, played, failed)
             } else {
                 val t = pvTts ?: return
                 t.language = Locale.ITALIAN; t.setSpeechRate(prefs.speed); t.setPitch(prefs.pitch)
@@ -385,6 +389,7 @@ class EbookActivity : AppCompatActivity() {
             root.removeAllViews()
             section("VOCE")
             row("📱 Voce del telefono (Google)", "Gratis · anche senza internet", prefs.mode == "system") { prefs.mode = "system"; applyChange(); render() }
+            row("🎙 Voce Lira (Paola, Riccardo)", "Neurale · gratis · offline dopo il primo scarico", prefs.mode == "lira") { prefs.mode = "lira"; applyChange(); render() }
             row("✨ Voce naturale (Gemini)", "Più umana · usa la tua chiave Gemini · serve internet", prefs.mode == "gemini") {
                 ai.hasGeminiKey { ok -> runOnUiThread {
                     if (!ok) MaterialAlertDialogBuilder(this).setTitle("Serve la chiave Gemini")
@@ -406,16 +411,27 @@ class EbookActivity : AppCompatActivity() {
                         .onFailure { runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS)) } }
                 }
             } else {
+                if (prefs.mode == "lira") {
+                    section("VOCE LIRA")
+                    row("Paola · donna", "Più curata · la prima volta scarica circa 63 MB", prefs.lVoice == "it_IT-paola-medium") { prefs.lVoice = "it_IT-paola-medium"; applyChange(); render(); preview() }
+                    row("Riccardo · uomo", "Più leggera e veloce · la prima volta scarica circa 28 MB", prefs.lVoice == "it_IT-riccardo-x_low") { prefs.lVoice = "it_IT-riccardo-x_low"; applyChange(); render(); preview() }
+                } else {
                 section("VOCE NATURALE")
                 listOf(Triple("Sulafat", "calda", "donna"), Triple("Kore", "ferma", "donna"), Triple("Charon", "chiara", "uomo"), Triple("Orus", "decisa", "uomo")).forEach { (n, style, who) ->
                     row("$n · $style", "Voce di $who", prefs.gVoice == n) { prefs.gVoice = n; applyChange(); render(); preview() }
+                }
+                }
+                section("PREPARA IN ANTICIPO")
+                row("⏬ Prepara il capitolo adesso", "Così lo ascolti senza attese, anche a schermo spento", false) {
+                    val r = reader ?: BookReader(applicationContext, book, readerUi).also { reader = it; ReadAloudService.current = it }
+                    r.prepareChapter(chapter)
                 }
                 val mb = BookReader.savedAudioBytes(this) / 1_000_000.0
                 section("AUDIO SALVATO")
                 row("🗂 ${String.format(Locale.ITALIAN, "%.1f", mb)} MB sul telefono", "Il libro già ascoltato si riascolta senza internet. Tocca per cancellare.", false) {
                     MaterialAlertDialogBuilder(this).setTitle("Cancellare l'audio salvato?").setPositiveButton("Cancella") { _, _ -> BookReader.clearSavedAudio(this); render() }.setNegativeButton("Annulla", null).show()
                 }
-                root.addView(TextView(this).apply { text = "Preparo l'audio un pezzo alla volta mentre ascolti e lo tengo salvato. Il piano gratuito di Gemini può avere limiti di uso: se finiscono passo alla voce del telefono."; textSize = 12f; alpha = 0.7f; setPadding(0, dp(8), 0, 0) })
+                root.addView(TextView(this).apply { text = "Preparo l'audio un pezzo alla volta mentre ascolti e lo tengo salvato. Sul telefono la voce Lira può essere più lenta della lettura: prepara il capitolo prima. Con Gemini il piano gratuito può avere limiti di uso. Se qualcosa non va passo alla voce del telefono."; textSize = 12f; alpha = 0.7f; setPadding(0, dp(8), 0, 0) })
             }
             section("VELOCITÀ E TONO")
             slider("Velocità", fmtSpeed(prefs.speed), ((prefs.speed - 0.6f) / 0.05f).toInt().coerceIn(0, 28), 28) { prefs.speed = 0.6f + it * 0.05f }
@@ -470,6 +486,12 @@ class EbookActivity : AppCompatActivity() {
 })();
 """
     }
+    override fun onResume() {
+        super.onResume()
+        // the main screen pauses the timers of all WebViews when it stops: the reader must keep its own pages running
+        if (::web.isInitialized) { web.onResume(); web.resumeTimers() }
+    }
+
     override fun onPause() {
         super.onPause()
         if (!::web.isInitialized) return

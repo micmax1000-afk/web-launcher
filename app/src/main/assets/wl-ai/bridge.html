@@ -8,6 +8,7 @@
 <script>
 (function () {
   'use strict';
+  console.log('bridge loaded, providers=' + !!window.MiaProviders);
   var P = window.MiaProviders;
   var LS = 'miaai_v1_settings';
 
@@ -74,6 +75,57 @@
       if (!d || !d.data) { post({ id: id, t: 'error', message: 'Gemini non ha restituito audio' }); return; }
       post({ id: id, t: 'audio', data: d.data, mime: d.mimeType || '' });
     } catch (e) { post({ id: id, t: 'error', message: String((e && e.message) || e) }); }
+  };
+
+  // ---------- Lira voice: Piper neural voices (same recipe as the Lira project), offline after the first download ----------
+  var piperLib = null, piperQ = Promise.resolve();
+  var PIPER_URLS = [
+    'https://esm.sh/@mintplex-labs/piper-tts-web@1.0.5?deps=onnxruntime-web@1.31.1',
+    'https://cdn.jsdelivr.net/npm/@mintplex-labs/piper-tts-web@1.0.5/+esm'
+  ];
+  async function loadPiper() {
+    if (piperLib) return piperLib;
+    var last = null;
+    for (var i = 0; i < PIPER_URLS.length; i++) {
+      try { piperLib = await import(PIPER_URLS[i]); if (piperLib && piperLib.TtsSession) return piperLib; last = new Error('TtsSession mancante in ' + PIPER_URLS[i] + ' (' + Object.keys(piperLib || {}).join(',') + ')'); piperLib = null; }
+      catch (e) { last = e; console.log('piper import ' + i + ' fallito: ' + ((e && e.message) || e)); }
+    }
+    throw last || new Error('Libreria della voce non caricata');
+  }
+  function blobToBase64(blob) {
+    return new Promise(function (res, rej) {
+      var fr = new FileReader();
+      fr.onload = function () { res(String(fr.result).split(',')[1]); };
+      fr.onerror = rej;
+      fr.readAsDataURL(blob);
+    });
+  }
+  async function piperSpeak(id, text, voiceId) {
+    try { Object.defineProperty(navigator, 'hardwareConcurrency', { configurable: true, get: function () { return 1; } }); } catch (e) {}
+    post({ id: id, t: 'partial', text: 'Carico la libreria della voce' });
+    var lib = await loadPiper();
+    post({ id: id, t: 'partial', text: 'Libreria pronta' });
+    var T = lib.TtsSession;
+    if (T._instance && T._instance.voiceId !== voiceId) T._instance = null;
+    var session = new T({
+      voiceId: voiceId,
+      progress: function (p) {
+        if (!p || (p.url && String(p.url).indexOf('tts://') === 0)) return;
+        var pct = p.total > 0 ? Math.min(99, Math.round(p.loaded / p.total * 100)) : 0;
+        post({ id: id, t: 'partial', text: pct > 0 ? 'Scarico la voce · ' + pct + '%' : 'Scarico la voce' });
+      },
+      wasmPaths: { onnxWasm: 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/', piperData: lib.WASM_BASE + '.data', piperWasm: lib.WASM_BASE + '.wasm' }
+    });
+    if (session.waitReady instanceof Promise) await session.waitReady;
+    post({ id: id, t: 'partial', text: 'Voce pronta, preparo il parlato' });
+    var blob = await session.predict(text);
+    post({ id: id, t: 'audio', data: await blobToBase64(blob), mime: 'audio/wav' });
+  }
+  // one request at a time: the voice engine cannot work on two texts together
+  window.wlPiper = function (id, text, voiceId) {
+    console.log('wlPiper called ' + voiceId);
+    piperQ = piperQ.then(function () { return piperSpeak(id, text, voiceId); })
+      .catch(function (e) { post({ id: id, t: 'error', message: String((e && e.message) || e) }); });
   };
 
   window.wlAbort = function () { try { P.abort(); } catch (e) {} };
