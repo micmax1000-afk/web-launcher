@@ -286,7 +286,7 @@ class EbookActivity : AppCompatActivity() {
             return
         }
         r!!
-        lbInfo.text = if (r.preparing != null) r.preparing else if (r.loading) "Preparo la lettura…"
+        lbInfo.text = if (r.preparing != null) r.preparing else if (r.loading) (if (r.prefs.mode == "lira") "Preparo la voce… (con Lira può volerci un po')" else "Preparo la lettura…")
             else "Cap. ${r.chapter + 1} di ${book.spine.size} · ${(r.fraction() * 100).toInt()}% · −${r.minutesLeft()} min" + if (!r.playing) " · in pausa" else ""
         lbProgress.progress = (r.fraction() * 1000).toInt()
         lbPlay.setImageResource(if (r.playing) R.drawable.ic_pause else R.drawable.ic_play)
@@ -332,7 +332,23 @@ class EbookActivity : AppCompatActivity() {
         var pvMp: android.media.MediaPlayer? = null
         var pvVoices: List<android.speech.tts.Voice>? = null
         lateinit var render: () -> Unit
+        var geminiKey: Boolean? = null
         fun applyChange() { reader?.settingsChanged() }
+        fun askGeminiKey(then: (Boolean) -> Unit) {
+            val et = android.widget.EditText(this).apply { hint = "Incolla qui la chiave Gemini"; setSingleLine(); setPadding(dp(20), dp(14), dp(20), dp(14)) }
+            (getSystemService(CLIPBOARD_SERVICE) as? android.content.ClipboardManager)?.primaryClip?.getItemAt(0)?.text?.toString()?.trim()
+                ?.takeIf { it.startsWith("AIza") && it.length in 30..60 }?.let { et.setText(it) }
+            MaterialAlertDialogBuilder(this).setTitle("Chiave Gemini")
+                .setMessage("La voce naturale usa Gemini. Serve una chiave, che si ottiene gratis su aistudio.google.com/apikey (accedi con Google e tocca «Create API key»). Incollala qui: la salvo in Mia AI e la usa anche lei.")
+                .setView(et)
+                .setPositiveButton("Salva") { _, _ ->
+                    val k = et.text.toString().trim()
+                    if (k.length < 20) { Toast.makeText(this, "La chiave sembra troppo corta", Toast.LENGTH_LONG).show(); then(false); return@setPositiveButton }
+                    ai.setGeminiKey(k) { ok -> runOnUiThread { Toast.makeText(this, if (ok) "Chiave salvata" else "Non sono riuscito a salvarla", Toast.LENGTH_SHORT).show(); then(ok) } }
+                }
+                .setNeutralButton("Ottieni la chiave") { _, _ -> runCatching { startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://aistudio.google.com/apikey"))) } }
+                .setNegativeButton("Annulla", null).show()
+        }
         fun section(t: String) = root.addView(TextView(this).apply { text = t; textSize = 12f; letterSpacing = 0.06f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(0xFF2563EB.toInt()); setPadding(0, dp(14), 0, dp(4)) })
         fun row(title: String, sub: String?, selected: Boolean, onClick: () -> Unit) = root.addView(LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = android.view.Gravity.CENTER_VERTICAL; setPadding(dp(12), dp(11), dp(12), dp(11))
@@ -390,12 +406,13 @@ class EbookActivity : AppCompatActivity() {
             section("VOCE")
             row("📱 Voce del telefono (Google)", "Gratis · anche senza internet", prefs.mode == "system") { prefs.mode = "system"; applyChange(); render() }
             row("🎙 Voce Lira (Paola, Riccardo)", "Neurale · gratis · offline dopo il primo scarico", prefs.mode == "lira") { prefs.mode = "lira"; applyChange(); render() }
-            row("✨ Voce naturale (Gemini)", "Più umana · usa la tua chiave Gemini · serve internet", prefs.mode == "gemini") {
-                ai.hasGeminiKey { ok -> runOnUiThread {
-                    if (!ok) MaterialAlertDialogBuilder(this).setTitle("Serve la chiave Gemini")
-                        .setMessage("La voce naturale usa la chiave Gemini salvata in Mia AI. Aprila da Strumenti → Mia AI, inserisci la chiave nelle impostazioni, poi torna qui.").setPositiveButton("OK", null).show()
-                    else { prefs.mode = "gemini"; applyChange(); render() }
-                } }
+            row("✨ Voce naturale (Gemini)", when (geminiKey) {
+                true -> "Più umana · chiave trovata ✓ · serve internet"
+                false -> "Serve la chiave Gemini: tocca per inserirla"
+                else -> "Controllo la chiave…"
+            }, prefs.mode == "gemini") {
+                if (geminiKey == true) { prefs.mode = "gemini"; applyChange(); render() }
+                else askGeminiKey { ok -> if (ok) { geminiKey = true; prefs.mode = "gemini"; applyChange(); render() } }
             }
             if (prefs.mode == "system") {
                 section("VOCI DEL TELEFONO")
@@ -450,6 +467,7 @@ class EbookActivity : AppCompatActivity() {
             } else runOnUiThread { pvVoices = emptyList(); if (dlg?.isShowing == true) render() }
         }
         render()
+        ai.hasGeminiKey { ok -> runOnUiThread { geminiKey = ok; if (dlg?.isShowing == true) render() } }
         dlg = MaterialAlertDialogBuilder(this).setTitle("🎙 Voce di lettura").setView(android.widget.ScrollView(this).apply { addView(root) })
             .setPositiveButton("Fatto", null).create()
         dlg.setOnDismissListener { runCatching { pvTts?.shutdown() }; runCatching { pvMp?.release() } }
