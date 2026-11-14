@@ -74,6 +74,8 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
     private var chunks: List<IntRange> = emptyList()
     private var chunkIdx = 0
     private val waiters = HashMap<String, MutableList<(File?) -> Unit>>()
+    private var nextParts: List<String> = emptyList()   // pieces of the next chapter, to have its first audio ready before the chapter changes
+    private var nextFor = -1
 
     private val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var focus: AudioFocusRequest? = null
@@ -138,7 +140,7 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
 
     /** Voice, speed or pitch changed in the voice page: apply it from the current sentence. */
     fun settingsChanged() {
-        fallback = false
+        fallback = false; nextFor = -1; nextParts = emptyList()
         if (!active) return
         applyVoice()
         stopSound()
@@ -312,18 +314,40 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
             if (g != gen || !playing) return@fetchChunk
             if (file == null) { fellBack(k); return@fetchChunk }
             startFile(file, k, g)
-            val ahead = if (prefs.mode == "lira") 2 else 1       // the phone voice is slower to make: keep two pieces ready
-            for (n in 1..ahead) if (k + n < chunks.size) fetchChunk(k + n) { }
+            prefetchAhead(k)
         }
     }
 
     private fun fellBack(k: Int) {
         fallback = true
-        ui.say("Voce naturale non disponibile (internet o limite di uso): uso la voce del telefono")
+        ui.say(if (prefs.mode == "lira") "La voce Lira è troppo lenta o non risponde: uso la voce del telefono. Prova «Prepara il capitolo adesso» prima di ascoltare."
+            else "Voce naturale non disponibile (internet o limite di uso): uso la voce del telefono")
         speakFrom(chunks.getOrNull(k)?.first ?: idx)
     }
 
     private fun fetchChunk(k: Int, cb: (File?) -> Unit) = fetchText(chunkText(k), chunkFile(k), cb)
+
+    /** Keeps the next pieces being made while one plays, also over the end of the chapter (so the chapter change does not stop). */
+    private fun prefetchAhead(k: Int) {
+        val depth = if (prefs.mode == "lira") 4 else 2
+        for (n in 1..depth) {
+            val t = k + n
+            if (t < chunks.size) { fetchChunk(t) { }; continue }
+            if (chapter >= book.spine.lastIndex) return
+            val nc = chapter + 1
+            if (nextFor != nc) { loadNextParts(nc) { if (active && playing && chapter + 1 == nc) prefetchAhead(chunkIdx) }; return }
+            nextParts.getOrNull(t - chunks.size)?.let { part -> fetchText(part, fileFor(nc, part)) { } }
+        }
+    }
+
+    private fun loadNextParts(nc: Int, then: () -> Unit) {
+        val size = prefs.chunkChars()
+        io.execute {
+            val s = runCatching { ReadText.chapterSentences(File(Ebooks.dir(ctx), "${book.id}/${book.root}${book.spine[nc].substringBefore('#')}").readText()) }.getOrDefault(emptyList())
+            val parts = ReadText.chunks(s, size).map { r -> s.subList(r.first, r.last + 1).joinToString(" ") }
+            h.post { nextParts = parts; nextFor = nc; then() }
+        }
+    }
 
     /** Makes the audio of [text] (or finds it already saved) and hands the file to [cb]; null if it could not be made. */
     private fun fetchText(text: String, file: File, cb: (File?) -> Unit) {
@@ -333,6 +357,8 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
         if (list != null) { list += cb; return }
         waiters[key] = mutableListOf(cb)
         loading = true; ui.stateChanged()
+        // if the voice never answers, do not stay silent for ever
+        h.postDelayed({ waiters.remove(key)?.let { list -> loading = false; list.forEach { it(null) }; ui.stateChanged() } }, if (prefs.mode == "lira") 150_000L else 60_000L)
         val done = { b64: String, mime: String ->
             io.execute {
                 val ok = runCatching {

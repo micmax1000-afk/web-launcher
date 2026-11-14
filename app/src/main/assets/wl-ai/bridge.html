@@ -46,6 +46,14 @@
   var ttsModel = null;
   function geminiKey() { var g = (settings().profiles || {}).gemini || {}; return g.apiKey || ''; }
   window.wlHasGemini = function () { return geminiKey() ? 'true' : 'false'; };
+  window.wlSetGeminiKey = function (k) {
+    try {
+      var s = settings(); s.profiles = s.profiles || {};
+      var g = s.profiles.gemini || {}; g.apiKey = String(k || '').trim(); s.profiles.gemini = g;
+      localStorage.setItem(LS, JSON.stringify(s)); ttsModel = null;
+      return 'true';
+    } catch (e) { return 'false'; }
+  };
   async function pickTtsModel(key) {
     if (ttsModel) return ttsModel;
     try {

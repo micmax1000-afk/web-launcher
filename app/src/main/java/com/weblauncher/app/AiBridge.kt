@@ -159,7 +159,16 @@ class AiBridge(
     /** True when Mia AI has a Gemini key saved. */
     fun hasGeminiKey(callback: (Boolean) -> Unit) {
         if (!supported()) { callback(false); return }
-        run { web?.evaluateJavascript("wlHasGemini()") { raw -> callback(raw?.trim('"') == "true") } }
+        var answered = false
+        val answer = { v: Boolean -> if (!answered) { answered = true; callback(v) } }
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ answer(false) }, 6000)   // never leave the screen waiting
+        run { web?.evaluateJavascript("wlHasGemini()") { raw -> answer(raw?.trim('"') == "true") } }
+    }
+
+    /** Saves the Gemini key in Mia AI's settings (it is the same key Mia AI uses for Gemini). */
+    fun setGeminiKey(key: String, callback: (Boolean) -> Unit) {
+        if (!supported()) { callback(false); return }
+        run { web?.evaluateJavascript("wlSetGeminiKey(${JSONObject.quote(key)})") { raw -> callback(raw?.trim('"') == "true") } }
     }
 
     fun cancel(id: Int) {
