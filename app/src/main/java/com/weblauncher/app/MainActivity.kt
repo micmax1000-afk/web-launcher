@@ -1250,6 +1250,16 @@ class MainActivity : AppCompatActivity() {
         webView.url?.let { if (it != "about:blank") tab.url = it }
         webView.title?.takeIf { it.isNotBlank() }?.let { tab.title = it }
         tab.lastUsed = System.currentTimeMillis()
+        if (webView.width > 40 && webView.height > 40) runCatching {
+            val w = 240
+            val h = (w.toFloat() * webView.height / webView.width).toInt().coerceIn(120, 420)
+            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bmp)
+            canvas.scale(w.toFloat() / webView.width, h.toFloat() / webView.height)
+            webView.draw(canvas)
+            tab.thumb?.recycle()
+            tab.thumb = bmp
+        }
     }
 
     fun openNewTab(privateMode: Boolean) {
@@ -1269,6 +1279,7 @@ class MainActivity : AppCompatActivity() {
     fun closeCurrentTab() {
         if (webTabs.isEmpty()) return
         val closing = webTabs[webTabIndex]
+        closing.thumb?.recycle(); closing.thumb = null
         if (closing.privateMode) {
             webView.clearHistory()
             webView.clearCache(true)
@@ -1285,6 +1296,7 @@ class MainActivity : AppCompatActivity() {
     fun closeTabAt(index: Int) {
         if (index !in webTabs.indices) return
         if (index == webTabIndex) { closeCurrentTab(); return }
+        webTabs[index].thumb?.recycle(); webTabs[index].thumb = null
         webTabs.removeAt(index)
         if (index < webTabIndex) webTabIndex -= 1
         renderTabStrip()
@@ -1364,78 +1376,80 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { sheet.dismiss(); openNewTab(false) }
         })
         root.addView(header)
+        val grid = android.widget.GridLayout(this).apply { columnCount = 2 }
         val grouped = webTabs.any { it.group.isNotBlank() }
-        if (!grouped && webTabs.size > 1) root.addView(TextView(this).apply {
-            text = "Tieni premuta una scheda per metterla in un gruppo (Lavoro, Casa, Viaggi…)"; textSize = 12f; setTextColor(palette.textMuted); setPadding(dp(4), 0, dp(4), dp(10))
-        })
         val order = webTabs.indices.sortedWith(compareBy({ if (webTabs[it].group.isBlank()) "\uFFFF" else webTabs[it].group.lowercase() }, { it }))
         var lastGroup: String? = null
         order.forEach { index -> val tab = webTabs[index]
             if (grouped && tab.group != lastGroup) {
                 lastGroup = tab.group
-                root.addView(TextView(this).apply {
-                    text = (if (tab.group.isBlank()) "SENZA GRUPPO" else "📁 " + tab.group.uppercase()) + " · " + webTabs.count { it.group == tab.group }
-                    textSize = 12f; letterSpacing = 0.06f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.textMuted); setPadding(dp(4), dp(8), 0, dp(6))
+                grid.addView(TextView(this).apply {
+                    text = if (tab.group.isBlank()) "SENZA GRUPPO" else tab.group.uppercase()
+                    textSize = 12f; letterSpacing = 0.06f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.textMuted)
+                    setPadding(dp(8), dp(10), dp(4), dp(4))
+                }, android.widget.GridLayout.LayoutParams().apply {
+                    columnSpec = android.widget.GridLayout.spec(0, 2)
+                    width = android.widget.GridLayout.LayoutParams.MATCH_PARENT
                 })
             }
             val active = index == webTabIndex
+            val title = when {
+                tab.title.isNotBlank() && tab.title != "about:blank" -> tab.title
+                else -> "Nuova scheda"
+            }
             val card = com.google.android.material.card.MaterialCardView(this).apply {
-                radius = dp(16).toFloat()
+                radius = dp(18).toFloat()
                 cardElevation = 0f
-                setCardBackgroundColor(palette.card)
+                setCardBackgroundColor(palette.elevated)
                 strokeWidth = dp(if (active) 2 else 1)
                 strokeColor = if (active) accent else palette.stroke
-                layoutParams = android.widget.LinearLayout.LayoutParams(
-                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(10) }
                 setOnClickListener {
                     sheet.dismiss()
                     if (index == webTabIndex) showTab(TAB_BROWSER) else switchToTab(index)
                 }
                 setOnLongClickListener { sheet.dismiss(); chooseTabGroup(tab) { showTabSwitcher() }; true }
             }
-            val row = android.widget.LinearLayout(this).apply {
+            val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+            val head = android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(dp(16), dp(14), dp(6), dp(14))
+                setPadding(dp(10), dp(6), dp(2), dp(6))
             }
-            val box = android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.VERTICAL
-                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            val title = when {
-                tab.title.isNotBlank() && tab.title != "about:blank" -> tab.title
-                else -> "Nuova scheda"
-            }
-            box.addView(TextView(this).apply {
+            head.addView(TextView(this).apply {
                 text = (if (tab.privateMode) "🕶 " else "") + title
-                textSize = 16f
-                setTextColor(palette.text)
-                if (active) setTypeface(typeface, android.graphics.Typeface.BOLD)
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            })
-            if (tab.url.startsWith("http")) box.addView(TextView(this).apply {
-                text = displayUrl(tab.url)
                 textSize = 13f
-                setTextColor(palette.textMuted)
+                setTextColor(palette.text)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(0, dp(2), 0, 0)
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
-            row.addView(box)
-            row.addView(ImageView(this).apply {
+            head.addView(ImageView(this).apply {
                 setImageResource(R.drawable.ic_web_close)
                 setColorFilter(palette.textMuted)
-                setPadding(dp(12), dp(12), dp(12), dp(12))
-                layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(36), dp(36))
                 contentDescription = "Chiudi scheda"
-                setOnClickListener { sheet.dismiss(); closeTabAt(index); showTabSwitcher() }
+                setOnClickListener {
+                    sheet.dismiss()
+                    closeTabAt(index)
+                    if (webTabs.size > 1 || browserHasPage) showTabSwitcher()
+                }
             })
-            card.addView(row)
-            root.addView(card)
+            col.addView(head)
+            col.addView(ImageView(this).apply {
+                val shot = tab.thumb
+                if (shot != null && !shot.isRecycled) setImageBitmap(shot) else setBackgroundColor(palette.card)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(168))
+            })
+            card.addView(col)
+            grid.addView(card, android.widget.GridLayout.LayoutParams().apply {
+                width = 0
+                columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+                setMargins(dp(6), dp(6), dp(6), dp(6))
+            })
         }
+        root.addView(grid)
         if (webTabs.size > 1) root.addView(com.google.android.material.button.MaterialButton(
             this, null, androidx.appcompat.R.attr.borderlessButtonStyle
         ).apply {
@@ -1449,6 +1463,15 @@ class MainActivity : AppCompatActivity() {
         })
         val scroll = android.widget.ScrollView(this).apply { addView(root) }
         sheet.setContentView(scroll)
+        sheet.setOnShowListener {
+            val b = sheet.behavior
+            b.skipCollapsed = true
+            b.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+            sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.let {
+                b.peekHeight = (resources.displayMetrics.heightPixels * 0.92f).toInt()
+                it.layoutParams.height = (resources.displayMetrics.heightPixels * 0.92f).toInt()
+            }
+        }
         sheet.show()
     }
 
@@ -2172,7 +2195,8 @@ class MainActivity : AppCompatActivity() {
         var privateMode: Boolean = false,
         var desktop: Boolean = false,
         var group: String = "",
-        var lastUsed: Long = System.currentTimeMillis()
+        var lastUsed: Long = System.currentTimeMillis(),
+        var thumb: android.graphics.Bitmap? = null
     )
 
     companion object {

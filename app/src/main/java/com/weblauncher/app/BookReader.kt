@@ -21,7 +21,9 @@ import java.util.concurrent.Executors
 /** Voice settings of the book reader. */
 class ReadPrefs(c: Context) {
     private val p = c.getSharedPreferences("wl_book_voice", Context.MODE_PRIVATE)
-    var mode: String get() = p.getString("mode", "system") ?: "system"; set(v) { p.edit().putString("mode", v).apply() }
+    var mode: String
+        get() = (p.getString("mode", "system") ?: "system").let { if (it == "lira") "system" else it }
+        set(v) { p.edit().putString("mode", v).apply() }
     var sysVoice: String get() = p.getString("sysVoice", "") ?: ""; set(v) { p.edit().putString("sysVoice", v).apply() }
     var gVoice: String get() = p.getString("gVoice", "Sulafat") ?: "Sulafat"; set(v) { p.edit().putString("gVoice", v).apply() }
     /** Lira voice (Piper): "it_IT-paola-medium" or "it_IT-riccardo-x_low". */

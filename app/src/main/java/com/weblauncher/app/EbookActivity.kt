@@ -286,7 +286,7 @@ class EbookActivity : AppCompatActivity() {
             return
         }
         r!!
-        lbInfo.text = if (r.preparing != null) r.preparing else if (r.loading) (if (r.prefs.mode == "lira") "Preparo la voce… (con Lira può volerci un po')" else "Preparo la lettura…")
+        lbInfo.text = if (r.preparing != null) r.preparing else if (r.loading) "Preparo la lettura…"
             else "Cap. ${r.chapter + 1} di ${book.spine.size} · ${(r.fraction() * 100).toInt()}% · −${r.minutesLeft()} min" + if (!r.playing) " · in pausa" else ""
         lbProgress.progress = (r.fraction() * 1000).toInt()
         lbPlay.setImageResource(if (r.playing) R.drawable.ic_pause else R.drawable.ic_play)
@@ -403,9 +403,8 @@ class EbookActivity : AppCompatActivity() {
         }
         render = {
             root.removeAllViews()
-            section("VOCE")
-            row("📱 Voce del telefono (Google)", "Gratis · anche senza internet", prefs.mode == "system") { prefs.mode = "system"; applyChange(); render() }
-            row("🎙 Voce Lira (Paola, Riccardo)", "Neurale · gratis · offline dopo il primo scarico", prefs.mode == "lira") { prefs.mode = "lira"; applyChange(); render() }
+            section("SINTESI VOCALE")
+            row("Voce del telefono", "Gratis · anche senza internet", prefs.mode == "system") { prefs.mode = "system"; applyChange(); render() }
             row("✨ Voce naturale (Gemini)", when (geminiKey) {
                 true -> "Più umana · chiave trovata ✓ · serve internet"
                 false -> "Serve la chiave Gemini: tocca per inserirla"
@@ -415,7 +414,7 @@ class EbookActivity : AppCompatActivity() {
                 else askGeminiKey { ok -> if (ok) { geminiKey = true; prefs.mode = "gemini"; applyChange(); render() } }
             }
             if (prefs.mode == "system") {
-                section("VOCI DEL TELEFONO")
+                section("VOCI INSTALLATE")
                 val vs = pvVoices
                 if (vs == null) row("Cerco le voci…", null, false) {}
                 else if (vs.isEmpty()) row("Nessuna voce italiana trovata", "Scaricane una dalle impostazioni di Android", false) {}
@@ -428,15 +427,9 @@ class EbookActivity : AppCompatActivity() {
                         .onFailure { runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS)) } }
                 }
             } else {
-                if (prefs.mode == "lira") {
-                    section("VOCE LIRA")
-                    row("Paola · donna", "Più curata · la prima volta scarica circa 63 MB", prefs.lVoice == "it_IT-paola-medium") { prefs.lVoice = "it_IT-paola-medium"; applyChange(); render(); preview() }
-                    row("Riccardo · uomo", "Più leggera e veloce · la prima volta scarica circa 28 MB", prefs.lVoice == "it_IT-riccardo-x_low") { prefs.lVoice = "it_IT-riccardo-x_low"; applyChange(); render(); preview() }
-                } else {
                 section("VOCE NATURALE")
                 listOf(Triple("Sulafat", "calda", "donna"), Triple("Kore", "ferma", "donna"), Triple("Charon", "chiara", "uomo"), Triple("Orus", "decisa", "uomo")).forEach { (n, style, who) ->
                     row("$n · $style", "Voce di $who", prefs.gVoice == n) { prefs.gVoice = n; applyChange(); render(); preview() }
-                }
                 }
                 section("PREPARA IN ANTICIPO")
                 row("⏬ Prepara il capitolo adesso", "Così lo ascolti senza attese, anche a schermo spento", false) {
@@ -448,7 +441,7 @@ class EbookActivity : AppCompatActivity() {
                 row("🗂 ${String.format(Locale.ITALIAN, "%.1f", mb)} MB sul telefono", "Il libro già ascoltato si riascolta senza internet. Tocca per cancellare.", false) {
                     MaterialAlertDialogBuilder(this).setTitle("Cancellare l'audio salvato?").setPositiveButton("Cancella") { _, _ -> BookReader.clearSavedAudio(this); render() }.setNegativeButton("Annulla", null).show()
                 }
-                root.addView(TextView(this).apply { text = "Preparo l'audio un pezzo alla volta mentre ascolti e lo tengo salvato. Sul telefono la voce Lira può essere più lenta della lettura: prepara il capitolo prima. Con Gemini il piano gratuito può avere limiti di uso. Se qualcosa non va passo alla voce del telefono."; textSize = 12f; alpha = 0.7f; setPadding(0, dp(8), 0, 0) })
+                root.addView(TextView(this).apply { text = "Con Gemini il piano gratuito può avere limiti di uso. Se qualcosa non va passo alla voce del telefono."; textSize = 12f; alpha = 0.7f; setPadding(0, dp(8), 0, 0) })
             }
             section("VELOCITÀ E TONO")
             slider("Velocità", fmtSpeed(prefs.speed), ((prefs.speed - 0.6f) / 0.05f).toInt().coerceIn(0, 28), 28) { prefs.speed = 0.6f + it * 0.05f }
