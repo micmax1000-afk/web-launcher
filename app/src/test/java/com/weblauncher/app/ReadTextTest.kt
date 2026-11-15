@@ -48,3 +48,15 @@ class ReadTextTest {
         assertEquals(24000, ReadText.rateOf("audio/L16;codec=pcm;rate=24000")); assertEquals(16000, ReadText.rateOf("audio/L16;rate=16000"))
     }
 }
+
+class VoiceNameTest {
+    @org.junit.Test fun readableVoiceNames() {
+        assertEquals("Paola", ReadText.voiceName("it-IT-paola"))
+        assertEquals("Miro", ReadText.voiceName("it-IT-miro"))
+        assertEquals("Sara (Kokoro)", ReadText.voiceName("kokoro-it-sara"))
+        assertEquals("Voce ITB", ReadText.voiceName("it-it-x-itb-local"))
+        assertEquals("Voce ITD", ReadText.voiceName("it-it-x-itd-network"))
+        assertEquals("Riccardo", ReadText.voiceName("it_IT-riccardo-x_low"))
+        assertEquals("Voce", ReadText.voiceName("it-IT"))
+    }
+}

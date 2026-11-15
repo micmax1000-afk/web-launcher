@@ -430,16 +430,15 @@ class EbookActivity : AppCompatActivity() {
                 val vs = pvVoices
                 if (vs == null) row("Cerco le voci…", null, false) {}
                 else if (vs.isEmpty()) row("Nessuna voce italiana trovata", "Scaricane una dalle impostazioni di Android", false) {}
-                else vs.forEach { v ->
-                    val hq = v.quality >= android.speech.tts.Voice.QUALITY_HIGH
-                    val n = v.name.lowercase(Locale.ITALIAN)
-                    val who = when {
-                        n.contains("female") || n.contains("-itd") || n.contains("kda") || n.contains("elsa") || n.contains("giorgia") || n.contains("paola") || n.contains("chiara") -> "Donna"
-                        n.contains("male") || n.contains("-itm") || n.contains("luca") || n.contains("marco") || n.contains("dario") -> "Uomo"
-                        else -> "Voce"
-                    }
-                    row("$who" + if (hq) " · alta qualità" else "", if (v.isNetworkConnectionRequired) "Online" else "Sul telefono", prefs.sysVoice == v.name) {
-                        prefs.mode = "system"; prefs.sysVoice = v.name; applyChange(); render(); preview()
+                else {
+                    val names = vs.map { ReadText.voiceName(it.name) }
+                    vs.forEachIndexed { i, v ->
+                        val hq = v.quality >= android.speech.tts.Voice.QUALITY_HIGH
+                        // two voices with the same name get a number, so they can be told apart
+                        val title = names[i] + if (names.count { it == names[i] } > 1) " ${names.take(i).count { it == names[i] } + 1}" else ""
+                        row(title + if (hq) " · alta qualità" else "", (if (v.isNetworkConnectionRequired) "Online" else "Sul telefono") + " · " + v.name, prefs.sysVoice == v.name) {
+                            prefs.mode = "system"; prefs.sysVoice = v.name; applyChange(); render(); preview()
+                        }
                     }
                 }
                 row("⬇ Scarica altre voci", "Si apre Impostazioni di Android → Sintesi vocale", false) {

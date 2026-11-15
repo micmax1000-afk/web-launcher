@@ -102,6 +102,20 @@ object ReadText {
         return b.array()
     }
 
+    /**
+     * A readable name for a speech voice: «it-IT-paola» → Paola, «kokoro-it-sara» → Sara (Kokoro),
+     * the Google codes «it-it-x-itb-local» → Voce ITB; anything else is cleaned and capitalised.
+     */
+    fun voiceName(raw: String): String {
+        val n = raw.trim()
+        if (Regex("^[a-zA-Z]{2,3}([-_][a-zA-Z]{2,4})?$").matches(n)) return "Voce"
+        Regex("^kokoro-[a-z]{2,3}-([a-z0-9]+)$", RegexOption.IGNORE_CASE).find(n)?.let { return it.groupValues[1].replaceFirstChar { c -> c.uppercase() } + " (Kokoro)" }
+        Regex("^[a-z]{2,3}[-_][a-z]{2,4}[-_]x[-_]([a-z0-9]+)(?:[-_](?:local|network))?$", RegexOption.IGNORE_CASE).find(n)?.let { return "Voce " + it.groupValues[1].uppercase() }
+        val t = n.replace(Regex("^[a-zA-Z]{2,3}[-_][a-zA-Z]{2,4}[-_]"), "").replace(Regex("[-_](x[-_])?(low|medium|high)$", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("[-_]+"), " ").trim()
+        return if (t.isEmpty()) "Voce" else t.split(' ').joinToString(" ") { w -> w.replaceFirstChar { c -> c.uppercase() } }
+    }
+
     /** «audio/L16;codec=pcm;rate=24000» → 24000 */
     fun rateOf(mime: String): Int = Regex("rate=(\\d+)").find(mime)?.groupValues?.get(1)?.toIntOrNull() ?: 24000
 }
