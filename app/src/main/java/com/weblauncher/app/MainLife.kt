@@ -170,7 +170,7 @@ internal fun MainActivity.showRecipesPage() {
                     dialog.dismiss(); openInBrowser(if (q.isBlank()) "https://www.giallozafferano.it/" else GialloZafferano.searchUrl(q))
                 }.setNegativeButton("Annulla", null).show()
             })
-            if (list.isEmpty()) { hintLabel(body, "Puoi salvare una ricetta da qualsiasi sito: menu ⋮ → «🍝 Salva ricetta»."); return }
+            if (list.isEmpty()) { hintLabel(body, "Apri una ricetta nel browser: nel menu compare «Salva ricetta»."); return }
             sectionLabel(body, "LE MIE RICETTE · ${list.size}")
             list.forEach { r ->
                 mediaRow(body, r.image, r.title, listOf(r.time, r.servings.takeIf { it.isNotBlank() }?.let { "$it porzioni" }).filterNotNull().filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "${r.ingredients.size} ingredienti" },

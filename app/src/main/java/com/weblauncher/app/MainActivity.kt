@@ -1512,7 +1512,6 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(palette.stroke)
             layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, d.toInt().coerceAtLeast(1))
         })
-        if (hasPage) menuQuickActions(root) { popup.dismiss() }
 
         fun item(label: String, enabled: Boolean = true, checked: Boolean? = null, action: () -> Unit) {
             val row = android.widget.LinearLayout(this).apply {
@@ -1541,37 +1540,22 @@ class MainActivity : AppCompatActivity() {
             root.addView(row)
         }
         item("Nuova scheda") { openNewTab(false) }
-        item("Nuova scheda senza cronologia") { openNewTab(true) }
-        item("Schede aperte (${webTabs.size})") { showTabSwitcher() }
-        if (YouTube.isYouTube(webView.url)) {
-            item("✨ Riassumi video") { summarizeVideo() }
-            item("✨ Chiedi al video") { askVideo() }
-            item("🎬 Finestrella") { enterVideoPip() }
-            item("⏩ Velocità (${ytPrefs.getFloat("speed", 1f)}x)") { ytSpeedDialog() }
-            item("⚙ Opzioni YouTube") { ytOptionsDialog() }
-        }
-        if (hostOf(webView.url) == "mail.google.com") item("📧 Riassumi email") { summarizeEmail() }
-        item("🔖 Leggi dopo", hasPage) { saveCurrentForLater() }
-        item("📥 Salva pagina completa offline", hasPage) { saveOfflinePage() }
-        item("🍪 Dimentica questo sito alla chiusura", hasPage, SiteCookies.has(this, pageHost ?: Uri.parse(webView.url ?: "").host)) {
-            val h = Uri.parse(webView.url ?: "").host ?: return@item
-            val on = SiteCookies.toggle(this, h)
-            toast(if (on) "Cookie e dati di ${PhishingGuard.registered(h)} cancellati quando chiudi la scheda o l'app" else "Il sito non verrà più dimenticato")
-        }
-        item("✨ Traduci con AI", hasPage) { translatePageWithAi() }
-        item("✨ Scrivi con AI", hasPage) { writeWithAi() }
-        item("🛒 Confronta prezzi", hasPage) { comparePrices() }
-        item("🍝 Salva ricetta", hasPage) { saveRecipeFromPage() }
+        item("Nuova scheda privata") { openNewTab(true) }
         item("Cronologia") { showHistoryPage() }
         item("Download") { showDownloadsPage() }
-        item("📷 Scansiona QR code") { scanQr() }
-        item("📸 Screenshot", hasPage) { screenshotPage() }
-        if (isPdfViewer(webView.url)) item("🖨 Stampa") { printPdfUrl(webView.url) }
-        else item("🖨 Stampa", hasPage) { savePageAsPdf() }
-        item("🕵️ Apri nel profilo 2", hasPage) {
-            startActivity(Intent(this, IsolatedBrowserActivity::class.java).putExtra(IsolatedBrowserActivity.EXTRA_URL, webView.url))
+        item("Trova nella pagina", hasPage) { showFindDialog() }
+        item("Modalità lettura", hasPage) { openReaderMode() }
+        item("Traduci", hasPage) { translateCurrentPage() }
+        if (isPdfViewer(webView.url)) item("Stampa") { printPdfUrl(webView.url) }
+        else item("Stampa", hasPage) { savePageAsPdf() }
+        val pageUrl = webView.url.orEmpty()
+        val watching = YouTube.isYouTube(pageUrl) && (pageUrl.contains("/watch") || pageUrl.contains("/shorts/") || pageUrl.contains("youtu.be/"))
+        if (watching) {
+            item("Finestrella") { enterVideoPip() }
+            item("Velocità (${ytPrefs.getFloat("speed", 1f)}×)") { ytSpeedDialog() }
+            item("Segui il canale") { followCurrentChannel() }
         }
-        item("Dimensione testo (${repo.textZoom()}%)") { showTextZoomDialog() }
+        if (GialloZafferano.isRecipePage(pageUrl)) item("Salva ricetta") { saveRecipeFromPage() }
         item("Sito desktop", hasPage, tab.desktop) {
             tab.desktop = !tab.desktop
             applyTabChrome()
@@ -1583,10 +1567,6 @@ class MainActivity : AppCompatActivity() {
                     .setNegativeButton("Solo ora", null).show()
             }
         }
-        item("🎫 Salva nei biglietti", hasPage) { saveCurrentToWallet() }
-        item("Apri in Chrome / altro browser", hasPage) { openExternally() }
-        item("🕘 Recenti") { showRecentsPage() }
-        item("Chiudi scheda") { closeCurrentTab() }
         item("Impostazioni") { showTab(TAB_SETTINGS) }
         if (blockAdsOn && hasPage) root.addView(TextView(this).apply {
             text = "🛡 ${AdBlocker.blockedCount} pubblicità e tracker bloccati · report ›"

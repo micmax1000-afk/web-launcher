@@ -43,7 +43,14 @@ internal fun MainActivity.showForgetSites() {
         fun render() {
             body.removeAllViews()
             val list = SiteCookies.list(this).sorted()
-            hintLabel(body, "Per questi siti cookie e dati salvati si cancellano quando chiudi la scheda o esci dall'app: al prossimo accesso sei un visitatore nuovo.\n\nPer aggiungerne uno: nel browser, menu ⋮ → 🍪 Dimentica questo sito alla chiusura.")
+            hintLabel(body, "Per questi siti cookie e dati si cancellano quando chiudi la scheda o esci dall'app: al prossimo accesso sei un visitatore nuovo.")
+            val openHost = if (browserHasPage) hostOf(webView.url) else null
+            if (!openHost.isNullOrBlank()) {
+                val on = SiteCookies.has(this, openHost)
+                listRow(body, if (on) "Non dimenticare più $openHost" else "Dimentica $openHost alla chiusura", null, onClick = {
+                    SiteCookies.toggle(this, openHost); render()
+                })
+            }
             if (list.isEmpty()) return
             sectionLabel(body, "SITI · ${list.size}")
             list.forEach { reg ->
@@ -131,7 +138,10 @@ internal fun MainActivity.showOfflinePages() {
         fun render() {
             body.removeAllViews()
             val list = loadOfflinePages()
-            if (list.isEmpty()) { emptyLabel(body, "Nessuna pagina salvata.\nNel browser: menu ⋮ → 📥 Salva pagina completa offline"); return }
+            if (browserHasPage && webView.url?.startsWith("http") == true) {
+                listRow(body, "Salva la pagina aperta", webView.title?.takeIf { it.isNotBlank() }, onClick = { saveOfflinePage() })
+            }
+            if (list.isEmpty()) { emptyLabel(body, "Nessuna pagina salvata."); return }
             sectionLabel(body, "PAGINE · ${list.size} · %.1f MB".format(list.sumOf { it.size } / 1048576.0))
             list.forEach { p ->
                 listRow(body, p.title, "${hostOf(p.url) ?: ""} · ${NewsAdapter.ago(p.time)}",

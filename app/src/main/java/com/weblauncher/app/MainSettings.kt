@@ -319,13 +319,9 @@ internal fun MainActivity.renderSettings() {
         MaterialAlertDialogBuilder(this).setTitle("✨ AI nel launcher")
             .setMessage(
                 "• Tasto ✦ nella barra del browser: riassume la pagina, il video o l'email. Tieni premuto per aprire Mia AI\n" +
-                "• Menu ⋮ → Riassumi pagina\n" +
-                "• Menu ⋮ → Chiedi alla pagina\n" +
                 "• Scrivi una domanda nella ricerca → «Chiedi all'AI»\n" +
-                "• Seleziona del testo in una pagina → «Chiedi all'AI»\n" +
-                "• Microfono: comandi lunghi, es. «apri Amazon e cerca cuffie bluetooth»\n" +
-                "• Seleziona testo o tocca una casella → «✨ Riscrivi»: migliora, correggi, traduci\n" +
-                "• Menu ⋮ → 🛒 Confronta prezzi, 📧 Riassumi email (in Gmail)\n\n" +
+                "• Seleziona del testo in una pagina → «Chiedi all'AI» o «Riscrivi»\n" +
+                "• Microfono: comandi lunghi, es. «apri Amazon e cerca cuffie bluetooth»\n\n" +
                 "Il testo viene inviato al provider scelto in Mia AI solo quando usi queste funzioni."
             )
             .setPositiveButton("OK", null).show()

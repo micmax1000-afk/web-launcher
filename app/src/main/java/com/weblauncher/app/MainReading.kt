@@ -317,7 +317,7 @@ internal fun MainActivity.showReadLaterPage() {
             val offline = loadOfflinePages().size
             if (offline > 0) listRow(body, "📥 Pagine complete offline", "$offline pagine salvate con immagini", onClick = { showOfflinePages() })
             if (list.isEmpty()) {
-                emptyLabel(body, "Nessun articolo salvato.\nNel browser: menu ⋮ → 🔖 Leggi dopo")
+                emptyLabel(body, "Nessun articolo salvato.")
                 return
             }
             listOf(false to "DA LEGGERE", true to "LETTI").forEach { (read, label) ->
