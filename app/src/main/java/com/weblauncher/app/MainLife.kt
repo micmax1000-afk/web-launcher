@@ -163,6 +163,7 @@ internal fun MainActivity.showRecipesPage() {
             val list = Recipes.load(this)
             sectionLabel(body, "NUOVA RICETTA")
             listRow(body, "✨ Crea con l'AI", "Dimmi cosa vuoi o cosa hai in frigo: l'AI scrive la ricetta", onClick = { createRecipeWithAi { dialog.dismiss(); showRecipesPage() } })
+            listRow(body, "📷 Cosa cucino con quello che ho?", "Fotografa il frigo: l'AI propone ricette e cosa manca", onClick = { fridgePhoto() })
             listRow(body, "🔎 Cerca su Giallo Zafferano", "Si apre qui: con un tocco la salvi nelle tue ricette", onClick = {
                 val et = field("Cosa vuoi cucinare? (es. carbonara)", null)
                 MaterialAlertDialogBuilder(this).setTitle("Giallo Zafferano").setView(form(et)).setPositiveButton("Cerca") { _, _ ->

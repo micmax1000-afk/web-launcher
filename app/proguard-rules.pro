@@ -18,3 +18,8 @@
 # Stack trace leggibili nei rapporti di errore
 -keepattributes SourceFile, LineNumberTable
 -dontobfuscate
+
+# PDFBox (modifica dei PDF): il lettore JPEG2000 è facoltativo
+-dontwarn com.gemalto.jp2.**
+-keep class com.tom_roush.pdfbox.** { *; }
+-keep class com.tom_roush.fontbox.** { *; }

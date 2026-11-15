@@ -87,6 +87,32 @@ shot 19-pdf-nell-app 7
 alive || { echo "::error::L'app si e' chiusa aprendo il PDF"; why; exit 1; }
 adb shell input keyevent KEYCODE_BACK
 
+# modifiche ai PDF: firma, evidenziatore, pagine (motore e schermate)
+adb logcat -c
+adb shell am start -W -n $PKG/.MainActivity --es widget_action pdfedit >/dev/null
+for i in $(seq 1 20); do sleep 2; adb logcat -d -s WL_SELFTEST:* | grep -q 'PDFEDIT_' && break; done
+PE=$(adb logcat -d -s WL_SELFTEST:* | grep -o 'PDFEDIT_.*' | tail -1)
+echo "Modifica PDF: $PE"
+case "$PE" in
+  PDFEDIT_OK\ pagine=3\ render=true*) ;;
+  *) echo "::error::La modifica dei PDF non funziona ($PE)"; adb logcat -d -s AndroidRuntime:E | tail -30; exit 1;;
+esac
+shot 19b-pdf-strumenti 3
+alive || { echo "::error::L'app si e' chiusa negli strumenti PDF"; why; exit 1; }
+adb shell input keyevent KEYCODE_BACK
+adb shell am start -W -n $PKG/.MainActivity --es widget_action pdfsign >/dev/null
+shot 19c-pdf-evidenzia 6
+alive || { echo "::error::L'app si e' chiusa nell'editor PDF"; why; exit 1; }
+adb shell input keyevent KEYCODE_BACK
+adb shell am start -W -n $PKG/.MainActivity --es widget_action pdfpages >/dev/null
+shot 19d-pdf-pagine 6
+alive || { echo "::error::L'app si e' chiusa nelle pagine PDF"; why; exit 1; }
+adb shell input keyevent KEYCODE_BACK
+adb shell am start -W -n $PKG/.MainActivity --es widget_action writeforme >/dev/null
+shot 19e-scrivi-per-me 4
+alive || { echo "::error::L'app si e' chiusa in Scrivi per me"; why; exit 1; }
+adb shell input keyevent KEYCODE_BACK
+
 # estrazione del testo da un PDF (e' quello che l'AI legge per il calendario dei rifiuti)
 adb shell am start -W -n $PKG/.MainActivity --es widget_action pdftext >/dev/null
 for i in $(seq 1 24); do sleep 2; adb logcat -d -s WL_SELFTEST:* | grep -q 'PDF_TEXT=' && break; done
