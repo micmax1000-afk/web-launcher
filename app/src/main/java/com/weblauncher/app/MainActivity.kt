@@ -69,6 +69,8 @@ class MainActivity : AppCompatActivity() {
     val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
     var relockPending = false
     var webPaused = false
+    var webThemeNight = -1
+    private val pauseWebTask = Runnable { pauseWebForBattery() }
     /** Disk work (history, backup) off the UI thread: keeps scrolling and page loads smooth. */
     val io = java.util.concurrent.Executors.newSingleThreadExecutor()
     var lastRecorded = ""
@@ -386,6 +388,8 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.btnMic).setOnClickListener { requestMicAndListen() }
         findViewById<View>(R.id.btnWebHome).setOnClickListener { showTab(TAB_HOME) }
+        findViewById<View>(R.id.btnWebAi).setOnClickListener { askMia() }
+        findViewById<View>(R.id.btnWebAi).setOnLongClickListener { openMiaAi(); true }
         findViewById<View>(R.id.btnWebMenu).setOnClickListener { showBrowserMenu(it) }
         findViewById<View>(R.id.btnTabs).setOnClickListener { showTabSwitcher() }
         webAddress.addTextChangedListener(object : TextWatcher {
@@ -961,10 +965,9 @@ class MainActivity : AppCompatActivity() {
         // except a YouTube video playing with «audio a schermo spento» or picture-in-picture
         val keepAudio = (YouTube.isYouTube(webView.url) && ytPlaying || musicWebPlaying || Music.webFromMusic && Music.web?.playing == true) && ytPrefs.getBoolean("background", true)
         if (!keepAudio && !inPip && !isChangingConfigurations) {
-            webView.onPause()
-            musicWeb?.onPause()
-            webView.pauseTimers()
-            webPaused = true
+            // a moment later: coming straight back must not blank the page (the white flash)
+            uiHandler.removeCallbacks(pauseWebTask)
+            uiHandler.postDelayed(pauseWebTask, 700)
         }
         vaultDialog?.dismiss()
         if (speakFromWeb && !isChangingConfigurations) stopSpeaking()
@@ -976,7 +979,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (webPaused && ::webView.isInitialized) { webView.onResume(); musicWeb?.onResume(); webView.resumeTimers(); webPaused = false }
+        uiHandler.removeCallbacks(pauseWebTask)
+        if (webPaused && ::webView.isInitialized) {
+            webView.setBackgroundColor(if (AppRepository.isLightUi(this)) android.graphics.Color.WHITE else AppRepository.palette(this).bg)
+            webView.onResume(); musicWeb?.onResume(); webView.resumeTimers(); webPaused = false
+        }
         if (lockEnabled() && !inPip) {
             val delay = lockPrefs.getInt("delayMin", 1) * 60_000L
             if (lockedSince == 0L || System.currentTimeMillis() - lockedSince >= delay) { showLockOverlay(); unlockApp() }
@@ -1591,10 +1598,28 @@ class MainActivity : AppCompatActivity() {
         popup.showAsDropDown(anchor, -dp(228), -anchor.height + dp(4))
     }
 
-    /** WebView resets the theme to the phone's when it is created: put the app's back and tell the WebView. */
+    /** WebView resets the theme to the phone's when it is created: put the app's back.
+     *  Telling the page about it redraws it from white, so that happens only when the theme really changes. */
     fun syncWebViewTheme() {
         AppRepository.restoreUiMode(this)
-        if (::webView.isInitialized) runCatching { webView.dispatchConfigurationChanged(resources.configuration) }
+        if (!::webView.isInitialized) return
+        val night = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        val bg = if (AppRepository.isLightUi(this)) android.graphics.Color.WHITE else AppRepository.palette(this).bg
+        webView.setBackgroundColor(bg)
+        findViewById<View>(R.id.webViewHost)?.setBackgroundColor(bg)
+        if (night == webThemeNight) return
+        webThemeNight = night
+        runCatching { webView.dispatchConfigurationChanged(resources.configuration) }
+    }
+
+    private fun pauseWebForBattery() {
+        if (isFinishing || isDestroyed || !::webView.isInitialized || webPaused || inPip) return
+        val keepAudio = (YouTube.isYouTube(webView.url) && ytPlaying || musicWebPlaying || Music.webFromMusic && Music.web?.playing == true) && ytPrefs.getBoolean("background", true)
+        if (keepAudio) return
+        webView.onPause()
+        musicWeb?.onPause()
+        webView.pauseTimers()
+        webPaused = true
     }
 
     fun applyDarkSites() {
@@ -1654,6 +1679,7 @@ class MainActivity : AppCompatActivity() {
      * (used to turn a lock on); otherwise the action runs anyway with a warning.
      */
     override fun onDestroy() {
+        uiHandler.removeCallbacks(pauseWebTask)
         Music.webControl = null; Music.web = null
         io.shutdown()
         controllerFuture?.let { androidx.media3.session.MediaController.releaseFuture(it) }

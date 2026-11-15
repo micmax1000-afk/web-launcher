@@ -101,6 +101,18 @@ internal fun MainActivity.readPage(onText: (title: String, url: String, text: St
     }
 }
 
+/** The sparkle on the browser bar. A page is summarised here; a long press opens the full Mia AI chat. */
+internal fun MainActivity.askMia() {
+    val url = if (::webView.isInitialized) webView.url.orEmpty() else ""
+    val watch = url.contains("/watch") || url.contains("/shorts/") || url.contains("youtu.be/")
+    when {
+        !browserHasPage || !url.startsWith("http") || MiaAi.isMiaUrl(url) -> openMiaAi()
+        YouTube.isYouTube(url) && watch -> summarizeVideo()
+        hostOf(url) == "mail.google.com" -> summarizeEmail()
+        else -> summarizePage()
+    }
+}
+
 internal fun MainActivity.summarizePage() {
     if (!aiReady()) return
     readPage { title, url, text ->

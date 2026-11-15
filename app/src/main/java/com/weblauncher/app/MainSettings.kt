@@ -318,6 +318,7 @@ internal fun MainActivity.renderSettings() {
     row("Cosa sa fare", "Riassumi, chiedi alla pagina, spiega il testo selezionato…") {
         MaterialAlertDialogBuilder(this).setTitle("✨ AI nel launcher")
             .setMessage(
+                "• Tasto ✦ nella barra del browser: riassume la pagina, il video o l'email. Tieni premuto per aprire Mia AI\n" +
                 "• Menu ⋮ → Riassumi pagina\n" +
                 "• Menu ⋮ → Chiedi alla pagina\n" +
                 "• Scrivi una domanda nella ricerca → «Chiedi all'AI»\n" +
