@@ -539,7 +539,10 @@ internal fun MainActivity.openPdfPage(pdf: java.io.File, title: String) {
         wv.webViewClient = object : android.webkit.WebViewClient() {
             override fun shouldInterceptRequest(view: WebView?, request: android.webkit.WebResourceRequest?): android.webkit.WebResourceResponse? =
                 request?.url?.let { assetLoader.shouldInterceptRequest(it) }
-            override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean = true
+            override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
+                if (request?.url?.toString()?.startsWith("wl://print") == true) printPdfUrl(view?.url)
+                return true
+            }
         }
         root.addView(wv, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
         wv.loadUrl(url)

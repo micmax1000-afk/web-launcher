@@ -538,6 +538,10 @@ class MainActivity : AppCompatActivity() {
                     Uri.parse(url).getQueryParameter("u")?.let { startDownload(it, null, null, "application/pdf", save = true) }
                     return true
                 }
+                if (url.startsWith("wl://print")) {
+                    printPdfUrl(view?.url)
+                    return true
+                }
                 if (url.startsWith("http://") || url.startsWith("https://")) {
                     if (request?.isForMainFrame == true && !guardUrl(url) { view?.loadUrl(url) }) return true
                     if (request?.isForMainFrame == true && request?.hasGesture() == true && request?.isRedirect == false &&
@@ -1562,7 +1566,8 @@ class MainActivity : AppCompatActivity() {
         item("Download") { showDownloadsPage() }
         item("📷 Scansiona QR code") { scanQr() }
         item("📸 Screenshot", hasPage) { screenshotPage() }
-        item("📄 Salva come PDF", hasPage) { savePageAsPdf() }
+        if (isPdfViewer(webView.url)) item("🖨 Stampa") { printPdfUrl(webView.url) }
+        else item("🖨 Stampa", hasPage) { savePageAsPdf() }
         item("🕵️ Apri nel profilo 2", hasPage) {
             startActivity(Intent(this, IsolatedBrowserActivity::class.java).putExtra(IsolatedBrowserActivity.EXTRA_URL, webView.url))
         }
