@@ -64,6 +64,36 @@ internal fun MainActivity.syncHealthConnect(then: (() -> Unit)? = null) {
     }
 }
 
+/** Opens the watch app that is installed, or a short list if there are several. */
+internal fun MainActivity.openWatchAppRow(body: android.widget.LinearLayout) {
+    val apps = listOf(
+        "com.sec.android.app.shealth" to "Samsung Health",
+        "com.google.android.apps.fitness" to "Fitbit",
+        "com.garmin.android.apps.connectmobile" to "Garmin Connect",
+        "com.huami.watch.hmwatchmanager" to "Zepp",
+        "com.xiaomi.wearable" to "Mi Fitness",
+        "com.huawei.health" to "Huawei Salute",
+        "fi.polar.polarflow" to "Polar Flow"
+    )
+    val installed = apps.mapNotNull { (pkg, name) ->
+        packageManager.getLaunchIntentForPackage(pkg)?.let { name to it }
+    }
+    when (installed.size) {
+        0 -> listRow(body, "Apri l'app dell'orologio", "Samsung Health, Zepp, Garmin, Mi Fitness… poi attiva Health Connect", onClick = {
+            toast("Non trovo l'app dell'orologio: aprila dal telefono")
+        })
+        1 -> listRow(body, "Apri ${installed[0].first}", "Qui si attiva la condivisione con Health Connect", onClick = {
+            runCatching { startActivity(installed[0].second) }.onFailure { toast("Non riesco ad aprirla") }
+        })
+        else -> listRow(body, "Apri l'app dell'orologio", installed.joinToString { it.first }, onClick = {
+            val names = installed.map { it.first }.toTypedArray()
+            MaterialAlertDialogBuilder(this).setTitle("Quale orologio?").setItems(names) { _, w ->
+                runCatching { startActivity(installed[w].second) }
+            }.show()
+        })
+    }
+}
+
 internal fun MainActivity.showHealthConnectPage() {
     openPage("Orologio e app fitness") { _, body, dialog ->
         val palette = AppRepository.palette(this)
@@ -84,8 +114,9 @@ internal fun MainActivity.showHealthConnectPage() {
             }
             val snap = Hc.cached(this)
             sectionLabel(body, "COLLEGAMENTO")
-            listRow(body, "🔗 Scegli i dati da leggere", "Si apre la finestra di Android: consenti passi, battito, sonno, peso, allenamenti…", onClick = { hcPermission.launch(Hc.PERMISSIONS) })
-            listRow(body, "🔄 Aggiorna ora", if (snap != null) "Ultima lettura ${NewsAdapter.ago(snap.time)}" else "Mai letto", onClick = {
+            listRow(body, "1. Consenti la lettura", "Passi, battito, sonno, peso, allenamenti", onClick = { hcPermission.launch(Hc.PERMISSIONS) })
+            openWatchAppRow(body)
+            listRow(body, "2. Aggiorna ora", if (snap != null) "Ultima lettura ${NewsAdapter.ago(snap.time)}" else "Mai letto", onClick = {
                 toast("Leggo i dati…"); syncHealthConnect { render(); wellnessRefresh?.invoke(); toast("Dati aggiornati") }
             })
             listRow(body, "⚙️ Apri Health Connect", "Qui vedi quali app scrivono i dati e puoi revocare i permessi", onClick = {
@@ -94,7 +125,12 @@ internal fun MainActivity.showHealthConnectPage() {
             if (snap != null) {
                 sectionLabel(body, "DA CHI ARRIVANO I DATI")
                 if (snap.sources.isEmpty()) hintLabel(body, "Nessun dato ricevuto negli ultimi 30 giorni. Controlla che nell'app del tuo orologio la condivisione con Health Connect sia attiva (vedi sotto).")
-                else listRow(body, "🧭 Le mie sorgenti", snap.sources.joinToString { Hc.sourceName(it) } + " · tocca per vedere chi scrive cosa", onClick = { showSourcesPage() })
+                else {
+                    val who = snap.sources.map { Hc.sourceName(this, it) }.distinct()
+                    val sub = if (who == listOf("Telefono")) "Solo il telefono: l'orologio non sta ancora scrivendo"
+                    else who.joinToString()
+                    listRow(body, "🧭 Le mie sorgenti", sub, onClick = { showSourcesPage() })
+                }
 
                 sectionLabel(body, "ULTIMA LETTURA")
                 val today = Hc.today(snap)
@@ -114,24 +150,10 @@ internal fun MainActivity.showHealthConnectPage() {
                 if (rows.isEmpty()) hintLabel(body, "Ancora nessun dato: tocca «Scegli i dati da leggere» e poi «Aggiorna ora».")
                 rows.forEach { (l, v) -> listRow(body, l, v, onClick = {}) }
             }
-            sectionLabel(body, "COME COLLEGARE IL TUO OROLOGIO")
-            hintLabel(body, "Funziona con qualsiasi orologio o app che condivide i dati con Health Connect. In genere:\n" +
-                "1. Apri l'app del tuo orologio o di fitness → Impostazioni (o Profilo / Account e privacy).\n" +
-                "2. Cerca «Health Connect», «Connessione Salute» o «Condividi i dati» e attiva passi, battito, sonno, peso e allenamenti.\n" +
-                "3. Torna qui, tocca «Scegli i dati da leggere» e poi «Aggiorna ora».")
-            sectionLabel(body, "APP CHE DI SOLITO LO SUPPORTANO")
-            listOf(
-                "Samsung Health" to "Galaxy Watch e anelli Samsung",
-                "Fitbit e Google Pixel Watch" to "",
-                "Garmin Connect" to "Orologi Garmin",
-                "Zepp" to "Amazfit",
-                "Polar Flow, Suunto, COROS" to "Orologi sportivi",
-                "Withings" to "Orologi, bilance e misuratori Withings",
-                "Oura" to "Anello Oura",
-                "Huawei Salute, Xiaomi e altri" to "Dipende dalla versione dell'app"
-            ).forEach { (n, d) -> listRow(body, "⌚ $n", d.ifBlank { null }, onClick = {}) }
-            hintLabel(body, "L'elenco è indicativo: il supporto cambia da marca a marca e da versione a versione. Se la tua app non ha la voce Health Connect, prova ad aggiornarla.")
-            hintLabel(body, "I dati restano sul telefono: Web Launcher li legge soltanto, non li scrive e non li invia a nessun server.")
+            sectionLabel(body, "L'OROLOGIO")
+            hintLabel(body, "Web Launcher non si accoppia all'orologio. Lo fa la sua app.\n" +
+                "Apri quella app, cerca «Health Connect» o «Condividi i dati» e attiva passi, battito, sonno e allenamenti. Poi torna qui e tocca «Aggiorna ora».")
+            hintLabel(body, "I dati restano sul telefono: Web Launcher li legge soltanto.")
         }
         render()
         hcRefresh = { render() }
@@ -259,16 +281,18 @@ internal fun MainActivity.showSourcesPage() {
             hintLabel(body, "Ancora nessuna informazione: apri «Orologio e app fitness» e tocca «Aggiorna ora».")
             return@openPage
         }
-        val doubled = map.filterValues { it.size > 1 }
+        val names = map.mapValues { (_, pkgs) -> pkgs.map { Hc.sourceName(this, it) }.distinct() }
+        val doubled = names.filterValues { it.size > 1 }
         if (doubled.isNotEmpty()) {
-            sectionLabel(body, "⚠️ ATTENZIONE AI DOPPIONI")
-            hintLabel(body, "Questi dati arrivano da più app: ${doubled.keys.joinToString().lowercase(Locale.ITALIAN)}. " +
-                "Health Connect di solito tiene conto solo della app con la priorità più alta, ma se i numeri ti sembrano raddoppiati " +
-                "apri Health Connect → Dati e accesso → (tipo di dato) → Priorità delle app e metti in cima l'app del tuo orologio.")
+            sectionLabel(body, "DUE APP PER GLI STESSI DATI")
+            hintLabel(body, "${doubled.keys.joinToString { it.lowercase(Locale.ITALIAN) }} arrivano da più app. " +
+                "Se il numero è il doppio, apri Health Connect e metti in cima l'app dell'orologio.")
         }
-        sectionLabel(body, "CHI SCRIVE COSA (ULTIMI 30 GIORNI)")
-        map.forEach { (label, pkgs) ->
-            listRow(body, (if (pkgs.size > 1) "⚠️ " else "✅ ") + label, pkgs.joinToString { Hc.sourceName(it) }, onClick = {})
+        val onlyPhone = names.values.flatten().distinct() == listOf("Telefono")
+        if (onlyPhone) hintLabel(body, "Questi dati li scrive il telefono. L'orologio non è ancora collegato.")
+        sectionLabel(body, "CHI SCRIVE COSA")
+        names.forEach { (label, who) ->
+            listRow(body, (if (who.size > 1) "⚠️ " else "") + label, who.joinToString(), onClick = {})
         }
         listRow(body, "⚙️ Apri Health Connect", "Per cambiare le priorità o togliere un'app", onClick = {
             runCatching { startActivity(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) }.onFailure { toast("Non riesco ad aprire Health Connect") }
