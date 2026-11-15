@@ -162,59 +162,84 @@ internal fun MainActivity.showWellnessHub() {
 
             sectionLabel(body, "OGGI")
             body.addView(statRow(
-                statTile("Passi", String.format(Locale.ITALIAN, "%,d", steps), "obiettivo ${String.format(Locale.ITALIAN, "%,d", goalSteps)}", if (steps >= goalSteps) 0xFF16A34A.toInt() else null),
-                statTile("Acqua", "%.1f L".format(Locale.ITALIAN, water / 1000.0), "di %.1f".format(Locale.ITALIAN, waterGoal / 1000.0), if (water >= waterGoal) 0xFF16A34A.toInt() else null),
-                statTile("Calorie", "${eaten.kcal.toInt()}", target?.let { "di ${it.kcal}" } ?: "mangiate")))
+                statTile("Passi", String.format(Locale.ITALIAN, "%,d", steps), "obiettivo ${String.format(Locale.ITALIAN, "%,d", goalSteps)}", if (steps >= goalSteps) 0xFF16A34A.toInt() else null).apply { setOnClickListener { showStepsPage() } },
+                statTile("Acqua", "%.1f L".format(Locale.ITALIAN, water / 1000.0), "di %.1f".format(Locale.ITALIAN, waterGoal / 1000.0), if (water >= waterGoal) 0xFF16A34A.toInt() else null).apply { setOnClickListener { showWaterPage() } },
+                statTile("Calorie", "${eaten.kcal.toInt()}", target?.let { "di ${it.kcal}" } ?: "mangiate").apply { setOnClickListener { showFoodDiary() } }))
             body.addView(statRow(
-                statTile("Sonno", night?.let { Hc.duration(it.sleepMin) } ?: "—", if (night != null) "ultima notte" else "dall'orologio"),
-                statTile("Battito a riposo", if (restHr > 0) "$restHr bpm" else "—"),
-                statTile("Allenamenti", "$week / $goal", "questa settimana", if (week >= goal) 0xFF16A34A.toInt() else null)))
+                statTile("Sonno", night?.let { Hc.duration(it.sleepMin) } ?: "—", if (night != null) "ultima notte" else "dall'orologio").apply { setOnClickListener { showSleepPage() } },
+                statTile("Battito a riposo", if (restHr > 0) "$restHr bpm" else "—").apply { setOnClickListener { showHrPage() } },
+                statTile("Allenamenti", "$week / $goal", "questa settimana", if (week >= goal) 0xFF16A34A.toInt() else null).apply { setOnClickListener { showWorkoutHistory() } }))
 
-            sectionLabel(body, "OROLOGIO E APP FITNESS")
             listRow(body, "⌚ Orologio e app fitness",
-                if (!hcOn) "Non disponibile su questo telefono" else if (snap == null) "Samsung, Fitbit, Garmin, Amazfit… tramite Health Connect: tocca per collegare" else "Collegato · ultima lettura ${NewsAdapter.ago(snap.time)}",
+                if (!hcOn) "Non disponibile su questo telefono" else if (snap == null) "Samsung, Fitbit, Garmin, Amazfit… tocca per collegare" else "Collegato · ultima lettura ${NewsAdapter.ago(snap.time)}",
                 onClick = { showHealthConnectPage() })
             if (snap != null && snap.sources.isNotEmpty()) listRow(body, "🧭 Le mie sorgenti", "Da quale app arriva ogni dato", onClick = { showSourcesPage() })
-            listRow(body, "🩺 Misuratori Bluetooth", BleHealth.savedSummary(this) ?: "Pressione, bilancia, termometro, saturimetro, glucometro", onClick = { showBleDevicesPage() })
 
-            sectionLabel(body, "ALIMENTAZIONE")
-            listRow(body, "🔍 Scansiona un prodotto", "Codice a barre: calorie, Nutri-Score, allergeni e additivi", onClick = { scanFoodBarcode() })
-            listRow(body, "📸 Foto di un piatto", "L'AI stima cosa c'è e le calorie (indicative)", onClick = { foodFromPhoto() })
-            listRow(body, "🍽 Diario alimentare", "Oggi ${eaten.kcal.toInt()} kcal" + (target?.let { " su ${it.kcal}" } ?: ""), onClick = { showFoodDiary() })
-            listRow(body, "💧 Acqua", "Oggi ${water} ml su $waterGoal", onClick = { showWaterPage() })
-            listRow(body, "🧮 Fabbisogno di calorie", if (target != null) "Il tuo obiettivo: ${target.kcal} kcal al giorno" else "Calcolo da peso, altezza, età e attività", onClick = { showCalorieCalculator() })
-
-            sectionLabel(body, "ALLENAMENTO")
-            listRow(body, "▶️ Registra un allenamento", "Corsa, camminata o bici con il GPS, anche a schermo spento", onClick = { showWorkoutRecorder() })
-            listRow(body, "📋 Schede di esercizi", "Serie, ripetizioni e pause con il timer", onClick = { showPlansPage() })
-            listRow(body, "📈 Storico", "Gli allenamenti fatti, con percorso e dati", onClick = { showWorkoutHistory() })
-            listRow(body, "❤️‍🔥 Fascia cardio", if (HrBand.current() > 0) "Collegata: ${HrBand.current()} bpm" else HrBand.savedName(this)?.let { "Salvata: $it" } ?: "Battito in diretta, zone, recupero", onClick = { showHrPage() })
-            val streak = Fitness.streakWeeks(times, goal)
-            listRow(body, "🎯 Obiettivo settimanale", "$week su $goal questa settimana" + if (streak > 0) " · serie di $streak settiman${if (streak == 1) "a" else "e"} 🔥" else "", onClick = { goalDialog() })
-
-            sectionLabel(body, "CORPO")
-            listRow(body, "⚖️ Peso, BMI e misure", Food.lastWeight(this).takeIf { it > 0 }?.let { w ->
-                val h = Food.profile(this).heightCm
-                "%.1f kg".format(Locale.ITALIAN, w) + if (h > 0) " · BMI %.1f (${Nutrition.bmiLabel(Nutrition.bmi(w, h))})".format(Locale.ITALIAN, Nutrition.bmi(w, h)) else ""
-            } ?: "Grafici di peso, vita e fianchi", onClick = { healthType = "peso"; showHealthPage() })
-            listRow(body, "📏 Obiettivo e promemoria misure", "Peso obiettivo, grafici di vita e fianchi, pesata settimanale", onClick = { showBodyPage() })
-            listRow(body, "😴 Sonno", night?.let { "Ultima notte ${Hc.duration(it.sleepMin)}" } ?: "Dall'orologio o a mano, con promemoria per andare a letto", onClick = { showSleepPage() })
-            listRow(body, "❤️ Pressione, glicemia e altre misure", "Il diario con i grafici", onClick = { healthType = "pressione"; showHealthPage() })
-            listRow(body, "👟 Passi", null, onClick = { showStepsPage() })
-
-            sectionLabel(body, "SALUTE")
-            val low = Meds.lowStock(this)
-            listRow(body, "💊 Farmaci", if (low.isNotEmpty()) "⚠️ Scorte in esaurimento: ${low.joinToString { it.name }}" else "Promemoria e scorte", onClick = { showMedsPage() })
-            listRow(body, "📝 Diario dei sintomi", Symptoms.load(this).firstOrNull()?.let { "Ultimo: ${it.what} (${it.level}/10)" } ?: "Mal di testa, dolori… con data e intensità", onClick = { showSymptomsPage() })
-            listRow(body, "🩺 Visite e analisi", Visits.load(this).firstOrNull { it.time > System.currentTimeMillis() }?.let { "Prossima: ${it.title} · ${SimpleDateFormat("EEE d MMM HH:mm", Locale.ITALIAN).format(Date(it.time))}" } ?: "Appuntamenti con promemoria", onClick = { showVisitsPage() })
-            listRow(body, "🆘 Scheda d'emergenza", if (Emergency.isEmpty(Emergency.load(this))) "Gruppo sanguigno, allergie, contatti" else "Pronta" + if (Emergency.onLockScreen(this)) " · visibile a telefono bloccato" else "", onClick = { showEmergencyPage() })
-            listRow(body, "📄 Report per il medico", "PDF con pressione, peso, glicemia e attività dell'ultimo mese", onClick = { showReportPage() })
+            sectionLabel(body, "SEZIONI")
+            listRow(body, "🍽 Alimentazione", "Diario, acqua, barcode e foto", onClick = { showWellnessFood() })
+            listRow(body, "🏃 Allenamento", "GPS, schede, Tabata e fascia cardio", onClick = { showWellnessTrain() })
+            listRow(body, "⚖️ Corpo", "Peso, sonno, passi e misure", onClick = { showWellnessBody() })
+            listRow(body, "💊 Salute", "Farmaci, visite, sintomi e referto", onClick = { showWellnessCare() })
             hintLabel(body, "Le stime (calorie, fabbisogno, foto dei piatti) sono indicative e non sostituiscono il parere del medico o del nutrizionista.")
         }
         render()
         wellnessRefresh = { render() }
         dialog.setOnDismissListener { wellnessRefresh = null }
         if (Hc.status(this) == Hc.SDK_AVAILABLE && Hc.cached(this) != null) syncHealthConnect { render() }   // refresh quietly
+    }
+}
+
+internal fun MainActivity.showWellnessFood() {
+    openPage("Alimentazione") { _, body, _ ->
+        val day = Food.dayKey(System.currentTimeMillis())
+        val eaten = Food.totals(Food.day(Food.load(this), day))
+        val target = Food.targets(this)
+        val water = Food.waterMl(this); val waterGoal = Food.waterGoal(this)
+        listRow(body, "🔍 Scansiona un prodotto", "Codice a barre: calorie, Nutri-Score, allergeni e additivi", onClick = { scanFoodBarcode() })
+        listRow(body, "📸 Foto di un piatto", "L'AI stima cosa c'è e le calorie (indicative)", onClick = { foodFromPhoto() })
+        listRow(body, "🍽 Diario alimentare", "Oggi ${eaten.kcal.toInt()} kcal" + (target?.let { " su ${it.kcal}" } ?: ""), onClick = { showFoodDiary() })
+        listRow(body, "💧 Acqua", "Oggi ${water} ml su $waterGoal", onClick = { showWaterPage() })
+        listRow(body, "🧮 Fabbisogno di calorie", if (target != null) "Il tuo obiettivo: ${target.kcal} kcal al giorno" else "Calcolo da peso, altezza, età e attività", onClick = { showCalorieCalculator() })
+    }
+}
+
+internal fun MainActivity.showWellnessTrain() {
+    openPage("Allenamento") { _, body, _ ->
+        val times = Fitness.allTimes(this); val goal = Fitness.weeklyGoal(this); val week = Fitness.weekCount(times)
+        val streak = Fitness.streakWeeks(times, goal)
+        listRow(body, "▶️ Registra un allenamento", "Corsa, camminata o bici con il GPS, anche a schermo spento", onClick = { showWorkoutRecorder() })
+        listRow(body, "⏱ Tabata", "Intervalli con segnali acustici", onClick = { showTabata() })
+        listRow(body, "📋 Schede di esercizi", "Serie, ripetizioni e pause con il timer", onClick = { showPlansPage() })
+        listRow(body, "📈 Storico", "Gli allenamenti fatti, con percorso e dati", onClick = { showWorkoutHistory() })
+        listRow(body, "❤️‍🔥 Fascia cardio", if (HrBand.current() > 0) "Collegata: ${HrBand.current()} bpm" else HrBand.savedName(this)?.let { "Salvata: $it" } ?: "Battito in diretta, zone, recupero", onClick = { showHrPage() })
+        listRow(body, "🎯 Obiettivo settimanale", "$week su $goal questa settimana" + if (streak > 0) " · serie di $streak settiman${if (streak == 1) "a" else "e"} 🔥" else "", onClick = { goalDialog() })
+    }
+}
+
+internal fun MainActivity.showWellnessBody() {
+    openPage("Corpo") { _, body, _ ->
+        val snap = Hc.cached(this)
+        val night = Hc.lastNight(snap)
+        listRow(body, "⚖️ Peso, BMI e misure", Food.lastWeight(this).takeIf { it > 0 }?.let { w ->
+            val h = Food.profile(this).heightCm
+            "%.1f kg".format(Locale.ITALIAN, w) + if (h > 0) " · BMI %.1f (${Nutrition.bmiLabel(Nutrition.bmi(w, h))})".format(Locale.ITALIAN, Nutrition.bmi(w, h)) else ""
+        } ?: "Grafici di peso, vita e fianchi", onClick = { healthType = "peso"; showHealthPage() })
+        listRow(body, "📏 Obiettivo e promemoria misure", "Peso obiettivo, grafici di vita e fianchi, pesata settimanale", onClick = { showBodyPage() })
+        listRow(body, "😴 Sonno", night?.let { "Ultima notte ${Hc.duration(it.sleepMin)}" } ?: "Dall'orologio o a mano, con promemoria per andare a letto", onClick = { showSleepPage() })
+        listRow(body, "❤️ Pressione, glicemia e altre misure", "Il diario con i grafici", onClick = { healthType = "pressione"; showHealthPage() })
+        listRow(body, "👟 Passi", null, onClick = { showStepsPage() })
+        listRow(body, "🩺 Misuratori Bluetooth", BleHealth.savedSummary(this) ?: "Pressione, bilancia, termometro, saturimetro, glucometro", onClick = { showBleDevicesPage() })
+    }
+}
+
+internal fun MainActivity.showWellnessCare() {
+    openPage("Salute") { _, body, _ ->
+        val low = Meds.lowStock(this)
+        listRow(body, "💊 Farmaci", if (low.isNotEmpty()) "⚠️ Scorte in esaurimento: ${low.joinToString { it.name }}" else "Promemoria e scorte", onClick = { showMedsPage() })
+        listRow(body, "📝 Diario dei sintomi", Symptoms.load(this).firstOrNull()?.let { "Ultimo: ${it.what} (${it.level}/10)" } ?: "Mal di testa, dolori… con data e intensità", onClick = { showSymptomsPage() })
+        listRow(body, "🩺 Visite e analisi", Visits.load(this).firstOrNull { it.time > System.currentTimeMillis() }?.let { "Prossima: ${it.title} · ${SimpleDateFormat("EEE d MMM HH:mm", Locale.ITALIAN).format(Date(it.time))}" } ?: "Appuntamenti con promemoria", onClick = { showVisitsPage() })
+        listRow(body, "🆘 Scheda d'emergenza", if (Emergency.isEmpty(Emergency.load(this))) "Gruppo sanguigno, allergie, contatti" else "Pronta" + if (Emergency.onLockScreen(this)) " · visibile a telefono bloccato" else "", onClick = { showEmergencyPage() })
+        listRow(body, "📄 Report per il medico", "PDF con pressione, peso, glicemia e attività dell'ultimo mese", onClick = { showReportPage() })
     }
 }
 

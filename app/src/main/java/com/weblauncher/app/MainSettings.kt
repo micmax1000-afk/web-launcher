@@ -375,7 +375,7 @@ internal fun MainActivity.renderSettings() {
         renderSettings()
     }
     row("Password e compilazione", "Autofill di Android") { showPasswordInfo() }
-    row("Chiedi di cancellare la cronologia", "Quando esci dal browser", switch = homePrefs.getBoolean("askClearOnLeave", false)) {
+    row("Chiedi di cancellare la cronologia", "Quando chiudi l'ultima scheda", switch = homePrefs.getBoolean("askClearOnLeave", false)) {
         homePrefs.edit().putBoolean("askClearOnLeave", !homePrefs.getBoolean("askClearOnLeave", false)).apply(); renderSettings()
     }
     row("Cancella cronologia", "Recenti e cronologia del browser") { confirmClear("Cancellare cronologia e recenti?") { clearHistoryAndRecents(); toast("Cronologia cancellata") } }

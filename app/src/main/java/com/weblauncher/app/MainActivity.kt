@@ -142,7 +142,6 @@ class MainActivity : AppCompatActivity() {
     var currentTab = TAB_HOME
     var browserHasPage = false
     private var leavePromptShowing = false
-    private var suppressLeavePrompt = false
 
     val speechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -822,7 +821,8 @@ class MainActivity : AppCompatActivity() {
                 when {
                     customView != null -> exitFullscreen()
                     currentTab == TAB_BROWSER && webView.canGoBack() -> webView.goBack()
-                    currentTab == TAB_BROWSER -> showTab(TAB_HOME)
+                    currentTab == TAB_BROWSER && webTabs.size > 1 -> closeCurrentTab()
+                    currentTab == TAB_BROWSER -> confirmLeaveBrowser { closeBrowser() }
                     currentTab == TAB_SETTINGS -> showTab(TAB_TOOLS)
                     currentTab == TAB_TOOLS -> showTab(TAB_HOME)
                     currentTab == TAB_NEWS -> showTab(TAB_HOME)
@@ -836,32 +836,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun showTab(tab: Int) {
-        if (!suppressLeavePrompt && homePrefs.getBoolean("askClearOnLeave", false) && currentTab == TAB_BROWSER && tab != TAB_BROWSER &&
-            (browserHasPage || repo.loadHistory().isNotEmpty())
-        ) {
-            if (leavePromptShowing) return
-            leavePromptShowing = true
-            MaterialAlertDialogBuilder(this)
-                .setTitle("Chiudi il browser")
-                .setMessage("Vuoi cancellare la cronologia?")
-                .setPositiveButton("Cancella") { _, _ ->
-                    leavePromptShowing = false
-                    clearHistoryAndRecents()
-                    suppressLeavePrompt = true
-                    showTab(tab)
-                    suppressLeavePrompt = false
-                }
-                .setNegativeButton("Tieni") { _, _ ->
-                    leavePromptShowing = false
-                    suppressLeavePrompt = true
-                    showTab(tab)
-                    suppressLeavePrompt = false
-                }
-                .setNeutralButton("Annulla") { _, _ -> leavePromptShowing = false }
-                .setOnCancelListener { leavePromptShowing = false }
-                .show()
-            return
-        }
         AppRepository.restoreUiMode(this)
         if (tab != TAB_BROWSER && speakFromWeb) stopSpeaking()   // the page's voice must not go on in another screen
         syncWebViewTheme()
@@ -1232,6 +1206,39 @@ class MainActivity : AppCompatActivity() {
         openInBrowser(url)
     }
 
+    /** Asks about history only when the browser is actually closed, not on every tab change. */
+    fun confirmLeaveBrowser(then: () -> Unit) {
+        val ask = homePrefs.getBoolean("askClearOnLeave", false) && (browserHasPage || repo.loadHistory().isNotEmpty())
+        if (!ask) { then(); return }
+        if (leavePromptShowing) return
+        leavePromptShowing = true
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Chiudi il browser")
+            .setMessage("Vuoi cancellare la cronologia?")
+            .setPositiveButton("Cancella") { _, _ -> leavePromptShowing = false; clearHistoryAndRecents(); then() }
+            .setNegativeButton("Tieni") { _, _ -> leavePromptShowing = false; then() }
+            .setNeutralButton("Annulla") { _, _ -> leavePromptShowing = false }
+            .setOnCancelListener { leavePromptShowing = false }
+            .show()
+    }
+
+    /** Closes every tab and returns home. One empty tab stays, ready for the next time. */
+    fun closeBrowser() {
+        val wipe = webTabs.any { it.privateMode }
+        webView.stopLoading()
+        webView.loadUrl("about:blank")
+        webView.clearHistory()
+        if (wipe) { webView.clearCache(true); webView.clearFormData() }
+        webTabs.clear()
+        webTabs.add(WebTab())
+        webTabIndex = 0
+        browserHasPage = false
+        if (!webAddress.isFocused) webAddress.setText("")
+        renderTabStrip()
+        updateBrowserBody()
+        showTab(TAB_HOME)
+    }
+
     fun currentTab(): WebTab = webTabs[webTabIndex]
 
     fun saveCurrentTab() {
@@ -1437,11 +1444,7 @@ class MainActivity : AppCompatActivity() {
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.danger))
             setOnClickListener {
                 sheet.dismiss()
-                webTabs.clear()
-                webTabs.add(WebTab())
-                webTabIndex = 0
-                restoreTab(webTabs[0])
-                renderTabStrip()
+                confirmLeaveBrowser { closeBrowser() }
             }
         })
         val scroll = android.widget.ScrollView(this).apply { addView(root) }

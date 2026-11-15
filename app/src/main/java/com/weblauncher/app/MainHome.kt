@@ -201,8 +201,7 @@ internal fun MainActivity.renderTools() {
         Triple("📈", "Borsa") { showStocksPage() }
     ))
     group("SALUTE E SPORT", listOf(
-        Triple("💚", "Benessere") { showWellnessHub() },
-        Triple("⏱", "Tabata") { showTabata() }
+        Triple("💚", "Benessere") { showWellnessHub() }
     ))
     group("AI", listOf(
         Triple("✨", "Mia AI") { openMiaAi() },
@@ -240,6 +239,7 @@ internal fun MainActivity.renderTools() {
     // trovati con la ricerca anche se non hanno un riquadro (sono dentro altre pagine)
     val searchOnly = listOf<Triple<String, String, () -> Unit>>(
         Triple("👟", "Passi") { showStepsPage() },
+        Triple("⏱", "Tabata") { showTabata() },
         Triple("❤️", "Salute") { showHealthPage() },
         Triple("⛰", "Altimetro") { showAltimeter() },
         Triple("🔦", "Torcia e bussola") { showUtilitiesPage() },
