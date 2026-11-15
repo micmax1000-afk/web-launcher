@@ -361,6 +361,10 @@ internal fun MainActivity.renderAudio() {
     // Musica: the YouTube Music page instead of the list
     val musicBox = findViewById<android.widget.LinearLayout>(R.id.audioMusicBox)
     val refresh = findViewById<View>(R.id.audioRefresh)
+    // Musica: the big title and the section row are hidden, so YouTube Music gets the whole screen
+    val heading = findViewById<View>(R.id.audioHeading).parent as View
+    heading.visibility = if (audioTab == "music") View.GONE else View.VISIBLE
+    if (audioTab == "music") (tabs.parent as View).visibility = View.GONE
     if (audioTab == "music") {
         refresh.visibility = View.GONE; musicBox.visibility = View.VISIBLE
         renderMusicBox(musicBox)

@@ -64,6 +64,11 @@ internal fun MainActivity.updateMiniPlayer() {
     val hidden = n == null || (n.source == "web" && !Music.webFromMusic && currentTab == MainActivity.TAB_BROWSER) ||
         (n.source == "web" && Music.webFromMusic && currentTab == MainActivity.TAB_AUDIO && audioTab == "music") || (n.source == "web" && miniClosedFor == n.title)
     card.isVisible = !hidden
+    quickFab?.let { f ->
+        val lp = f.layoutParams as? androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+        val target = if (hidden) R.id.bottomBar else R.id.miniPlayer
+        if (lp != null && lp.bottomToTop != target) { lp.bottomToTop = target; f.layoutParams = lp }
+    }
     if (hidden) return
     findViewById<TextView>(R.id.miniTitle).text = n!!.title
     findViewById<TextView>(R.id.miniSub).text = if (n.source == "local" && controller?.playbackState == androidx.media3.common.Player.STATE_BUFFERING) "Caricamento…"
