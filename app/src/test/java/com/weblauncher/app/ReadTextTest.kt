@@ -60,3 +60,12 @@ class VoiceNameTest {
         assertEquals("Voce", ReadText.voiceName("it-IT"))
     }
 }
+
+class BackupSafetyTest {
+    @org.junit.Test fun doesNotOverwriteAGoodBackupWhenAlmostEverythingIsGone() {
+        org.junit.Assert.assertTrue(FullBackup.safeToOverwrite(5_000_000, 6_000_000))
+        org.junit.Assert.assertFalse(FullBackup.safeToOverwrite(1_000_000, 6_000_000))
+        org.junit.Assert.assertTrue(FullBackup.safeToOverwrite(10_000, 200_000))     // small backups: always fine
+        org.junit.Assert.assertTrue(FullBackup.safeToOverwrite(10_000, 0))           // first backup
+    }
+}
