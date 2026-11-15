@@ -21,8 +21,11 @@ import java.util.concurrent.Executors
 /** Voice settings of the book reader. */
 class ReadPrefs(c: Context) {
     private val p = c.getSharedPreferences("wl_book_voice", Context.MODE_PRIVATE)
-    var mode: String get() = p.getString("mode", "system") ?: "system"; set(v) { p.edit().putString("mode", v).apply() }
+    var mode: String
+        get() = (p.getString("mode", "system") ?: "system").let { if (it == "lira") "system" else it }
+        set(v) { p.edit().putString("mode", v).apply() }
     var sysVoice: String get() = p.getString("sysVoice", "") ?: ""; set(v) { p.edit().putString("sysVoice", v).apply() }
+    var sysEngine: String get() = p.getString("sysEngine", "") ?: ""; set(v) { p.edit().putString("sysEngine", v).apply() }
     var gVoice: String get() = p.getString("gVoice", "Sulafat") ?: "Sulafat"; set(v) { p.edit().putString("gVoice", v).apply() }
     /** Lira voice (Piper): "it_IT-paola-medium" or "it_IT-riccardo-x_low". */
     var lVoice: String get() = p.getString("lVoice", "it_IT-paola-medium") ?: "it_IT-paola-medium"; set(v) { p.edit().putString("lVoice", v).apply() }
@@ -141,6 +144,9 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
     /** Voice, speed or pitch changed in the voice page: apply it from the current sentence. */
     fun settingsChanged() {
         fallback = false; nextFor = -1; nextParts = emptyList()
+        if (tts != null && prefs.sysEngine.isNotBlank() && tts?.defaultEngine != prefs.sysEngine) {
+            tts?.shutdown(); tts = null; ttsReady = false
+        }
         if (!active) return
         applyVoice()
         stopSound()
@@ -243,7 +249,8 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
         if (ttsReady) { then(); return }
         pendingStart = then
         if (tts != null) return
-        tts = TextToSpeech(ctx) { st ->
+        val eng = prefs.sysEngine.takeIf { it.isNotBlank() }
+        val ready: (Int) -> Unit = { st ->
             h.post {
                 val t = tts
                 if (st != TextToSpeech.SUCCESS || t == null) { ui.say("Lettura vocale non disponibile su questo telefono"); stop(); return@post }
@@ -255,6 +262,7 @@ class BookReader(private val ctx: Context, val book: Book, private val ui: Ui) {
                 pendingStart?.invoke(); pendingStart = null
             }
         }
+        tts = if (eng == null) TextToSpeech(ctx, ready) else TextToSpeech(ctx, ready, eng)
     }
 
     private fun applyVoice() {

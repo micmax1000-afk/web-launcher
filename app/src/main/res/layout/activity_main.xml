@@ -336,6 +336,8 @@
                     android:textColor="@color/text" />
             </FrameLayout>
 
+            <ImageButton android:id="@+id/btnWebAi" android:layout_width="44dp" android:layout_height="44dp" android:padding="10dp" android:scaleType="fitCenter" android:background="?attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_ai" app:tint="?attr/colorPrimary" android:contentDescription="Mia AI" />
+
             <ImageButton android:id="@+id/btnWebMenu" android:layout_width="44dp" android:layout_height="44dp" android:padding="10dp" android:scaleType="fitCenter" android:background="?attr/selectableItemBackgroundBorderless" android:src="@drawable/ic_web_more" app:tint="@color/text" android:contentDescription="Menu browser" />
             <TextView android:id="@+id/webTitle" android:layout_width="0dp" android:layout_height="0dp" android:visibility="gone" />
         </LinearLayout>

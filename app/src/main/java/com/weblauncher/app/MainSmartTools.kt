@@ -274,7 +274,54 @@ internal fun MainActivity.savePageAsPdf() {
     val pm = getSystemService(PRINT_SERVICE) as android.print.PrintManager
     val name = (webView.title ?: "Pagina").take(60)
     pm.print(name, webView.createPrintDocumentAdapter(name), android.print.PrintAttributes.Builder().build())
-    toast("Scegli «Salva come PDF» come stampante")
+    toast("Scegli la stampante, oppure «Salva come PDF»")
+}
+
+/** Prints the PDF file itself. The page viewer is drawn on screen, and printing that only gives a blank sheet. */
+internal fun MainActivity.printPdfUrl(url: String?) {
+    val fileParam = runCatching { Uri.parse(url).getQueryParameter("file") }.getOrNull()
+    if (fileParam.isNullOrBlank()) { toast("PDF non trovato"); return }
+    val base = if ("/wallet/" in fileParam) walletDir else pdfDir
+    val file = java.io.File(base, fileParam.substringAfterLast('/'))
+    if (!file.exists() || file.length() == 0L) { toast("PDF non trovato"); return }
+    val title = pdfName(url).substringBeforeLast('.').ifBlank { "PDF" }
+    val pm = getSystemService(PRINT_SERVICE) as android.print.PrintManager
+    pm.print(title.take(80), object : android.print.PrintDocumentAdapter() {
+        override fun onLayout(
+            oldAttributes: android.print.PrintAttributes?,
+            newAttributes: android.print.PrintAttributes?,
+            cancellationSignal: android.os.CancellationSignal?,
+            callback: LayoutResultCallback?,
+            extras: android.os.Bundle?
+        ) {
+            if (cancellationSignal?.isCanceled == true) { callback?.onLayoutCancelled(); return }
+            val pages = runCatching {
+                android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                    android.graphics.pdf.PdfRenderer(pfd).use { it.pageCount }
+                }
+            }.getOrDefault(1).coerceAtLeast(1)
+            callback?.onLayoutFinished(
+                android.print.PrintDocumentInfo.Builder("$title.pdf")
+                    .setContentType(android.print.PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
+                    .setPageCount(pages)
+                    .build(),
+                true
+            )
+        }
+        override fun onWrite(
+            pages: Array<out android.print.PageRange>?,
+            destination: android.os.ParcelFileDescriptor?,
+            cancellationSignal: android.os.CancellationSignal?,
+            callback: WriteResultCallback?
+        ) {
+            if (destination == null) { callback?.onWriteFailed("File mancante"); return }
+            val ok = runCatching {
+                file.inputStream().use { input -> java.io.FileOutputStream(destination.fileDescriptor).use { input.copyTo(it) } }
+            }.isSuccess
+            if (ok) callback?.onWriteFinished(arrayOf(android.print.PageRange.ALL_PAGES))
+            else callback?.onWriteFailed("Impossibile stampare")
+        }
+    }, null)
 }
 
 internal fun MainActivity.screenshotPage() {

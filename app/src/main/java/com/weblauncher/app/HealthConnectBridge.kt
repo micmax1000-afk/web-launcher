@@ -77,8 +77,19 @@ object Hc {
     /** Sleep of the most recent night that has any. */
     fun lastNight(s: Snapshot?): Day? = s?.days?.sortedByDescending { it.date }?.firstOrNull { it.sleepMin > 0 }
 
-    /** A friendly name for the common apps that write into Health Connect (unknown ones keep the package name). */
-    fun sourceName(pkg: String) = when {
+    /** A name a person can read. Internal Health Connect ids (the phone's own counter) are not app names. */
+    fun sourceName(pkg: String): String = knownSource(pkg) ?: pkg
+
+    fun sourceName(c: android.content.Context, pkg: String): String {
+        knownSource(pkg)?.let { return it }
+        return runCatching {
+            val pm = c.packageManager
+            pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+        }.getOrNull()?.takeIf { it.isNotBlank() && it != pkg } ?: "Un'altra app"
+    }
+
+    private fun knownSource(pkg: String) = when {
+        pkg.startsWith("com.android.healthconnect") || pkg.contains("healthdata") -> "Telefono"
         pkg.contains("xiaomi.wearable") || pkg.contains("mi.health") -> "Mi Fitness"
         pkg.contains("huawei") -> "Huawei Salute"
         pkg.contains("withings") -> "Withings"
@@ -87,7 +98,6 @@ object Hc {
         pkg.contains("suunto") -> "Suunto"
         pkg.contains("coros") -> "COROS"
         pkg.contains("whoop") -> "WHOOP"
-        pkg.contains("healthdata") -> "Health Connect"
         pkg.contains("weblauncher") -> "Web Launcher"
         pkg.contains("google.android.apps.fitness") -> "Google Fit"
         pkg.contains("samsung") -> "Samsung Health"
@@ -95,7 +105,7 @@ object Hc {
         pkg.contains("garmin") -> "Garmin Connect"
         pkg.contains("zepp") || pkg.contains("huami") -> "Zepp"
         pkg.contains("strava") -> "Strava"
-        else -> pkg
+        else -> null
     }
 
     fun exerciseLabel(type: Int): String = when (type) {

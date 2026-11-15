@@ -69,6 +69,9 @@ class MainActivity : AppCompatActivity() {
     val uiHandler = android.os.Handler(android.os.Looper.getMainLooper())
     var relockPending = false
     var webPaused = false
+    var webThemeNight = -1
+    private var lastWebBg = Int.MIN_VALUE
+    private val pauseWebTask = Runnable { pauseWebForBattery() }
     /** Disk work (history, backup) off the UI thread: keeps scrolling and page loads smooth. */
     val io = java.util.concurrent.Executors.newSingleThreadExecutor()
     var lastRecorded = ""
@@ -140,7 +143,6 @@ class MainActivity : AppCompatActivity() {
     var currentTab = TAB_HOME
     var browserHasPage = false
     private var leavePromptShowing = false
-    private var suppressLeavePrompt = false
 
     val speechLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -386,6 +388,8 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<View>(R.id.btnMic).setOnClickListener { requestMicAndListen() }
         findViewById<View>(R.id.btnWebHome).setOnClickListener { showTab(TAB_HOME) }
+        findViewById<View>(R.id.btnWebAi).setOnClickListener { askMia() }
+        findViewById<View>(R.id.btnWebAi).setOnLongClickListener { openMiaAi(); true }
         findViewById<View>(R.id.btnWebMenu).setOnClickListener { showBrowserMenu(it) }
         findViewById<View>(R.id.btnTabs).setOnClickListener { showTabSwitcher() }
         webAddress.addTextChangedListener(object : TextWatcher {
@@ -532,6 +536,10 @@ class MainActivity : AppCompatActivity() {
                 val url = request?.url?.toString() ?: return false
                 if (url.startsWith("wl://save")) {
                     Uri.parse(url).getQueryParameter("u")?.let { startDownload(it, null, null, "application/pdf", save = true) }
+                    return true
+                }
+                if (url.startsWith("wl://print")) {
+                    printPdfUrl(view?.url)
                     return true
                 }
                 if (url.startsWith("http://") || url.startsWith("https://")) {
@@ -814,7 +822,8 @@ class MainActivity : AppCompatActivity() {
                 when {
                     customView != null -> exitFullscreen()
                     currentTab == TAB_BROWSER && webView.canGoBack() -> webView.goBack()
-                    currentTab == TAB_BROWSER -> showTab(TAB_HOME)
+                    currentTab == TAB_BROWSER && webTabs.size > 1 -> closeCurrentTab()
+                    currentTab == TAB_BROWSER -> confirmLeaveBrowser { closeBrowser() }
                     currentTab == TAB_SETTINGS -> showTab(TAB_TOOLS)
                     currentTab == TAB_TOOLS -> showTab(TAB_HOME)
                     currentTab == TAB_NEWS -> showTab(TAB_HOME)
@@ -828,32 +837,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun showTab(tab: Int) {
-        if (!suppressLeavePrompt && homePrefs.getBoolean("askClearOnLeave", false) && currentTab == TAB_BROWSER && tab != TAB_BROWSER &&
-            (browserHasPage || repo.loadHistory().isNotEmpty())
-        ) {
-            if (leavePromptShowing) return
-            leavePromptShowing = true
-            MaterialAlertDialogBuilder(this)
-                .setTitle("Chiudi il browser")
-                .setMessage("Vuoi cancellare la cronologia?")
-                .setPositiveButton("Cancella") { _, _ ->
-                    leavePromptShowing = false
-                    clearHistoryAndRecents()
-                    suppressLeavePrompt = true
-                    showTab(tab)
-                    suppressLeavePrompt = false
-                }
-                .setNegativeButton("Tieni") { _, _ ->
-                    leavePromptShowing = false
-                    suppressLeavePrompt = true
-                    showTab(tab)
-                    suppressLeavePrompt = false
-                }
-                .setNeutralButton("Annulla") { _, _ -> leavePromptShowing = false }
-                .setOnCancelListener { leavePromptShowing = false }
-                .show()
-            return
-        }
         AppRepository.restoreUiMode(this)
         if (tab != TAB_BROWSER && speakFromWeb) stopSpeaking()   // the page's voice must not go on in another screen
         syncWebViewTheme()
@@ -961,10 +944,9 @@ class MainActivity : AppCompatActivity() {
         // except a YouTube video playing with «audio a schermo spento» or picture-in-picture
         val keepAudio = (YouTube.isYouTube(webView.url) && ytPlaying || musicWebPlaying || Music.webFromMusic && Music.web?.playing == true) && ytPrefs.getBoolean("background", true)
         if (!keepAudio && !inPip && !isChangingConfigurations) {
-            webView.onPause()
-            musicWeb?.onPause()
-            webView.pauseTimers()
-            webPaused = true
+            // a moment later: coming straight back must not blank the page (the white flash)
+            uiHandler.removeCallbacks(pauseWebTask)
+            uiHandler.postDelayed(pauseWebTask, 700)
         }
         vaultDialog?.dismiss()
         if (speakFromWeb && !isChangingConfigurations) stopSpeaking()
@@ -976,7 +958,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (webPaused && ::webView.isInitialized) { webView.onResume(); musicWeb?.onResume(); webView.resumeTimers(); webPaused = false }
+        uiHandler.removeCallbacks(pauseWebTask)
+        if (webPaused && ::webView.isInitialized) {
+            webView.setBackgroundColor(if (AppRepository.isLightUi(this)) android.graphics.Color.WHITE else AppRepository.palette(this).bg)
+            webView.onResume(); musicWeb?.onResume(); webView.resumeTimers(); webPaused = false
+        }
         if (lockEnabled() && !inPip) {
             val delay = lockPrefs.getInt("delayMin", 1) * 60_000L
             if (lockedSince == 0L || System.currentTimeMillis() - lockedSince >= delay) { showLockOverlay(); unlockApp() }
@@ -1221,6 +1207,39 @@ class MainActivity : AppCompatActivity() {
         openInBrowser(url)
     }
 
+    /** Asks about history only when the browser is actually closed, not on every tab change. */
+    fun confirmLeaveBrowser(then: () -> Unit) {
+        val ask = homePrefs.getBoolean("askClearOnLeave", false) && (browserHasPage || repo.loadHistory().isNotEmpty())
+        if (!ask) { then(); return }
+        if (leavePromptShowing) return
+        leavePromptShowing = true
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Chiudi il browser")
+            .setMessage("Vuoi cancellare la cronologia?")
+            .setPositiveButton("Cancella") { _, _ -> leavePromptShowing = false; clearHistoryAndRecents(); then() }
+            .setNegativeButton("Tieni") { _, _ -> leavePromptShowing = false; then() }
+            .setNeutralButton("Annulla") { _, _ -> leavePromptShowing = false }
+            .setOnCancelListener { leavePromptShowing = false }
+            .show()
+    }
+
+    /** Closes every tab and returns home. One empty tab stays, ready for the next time. */
+    fun closeBrowser() {
+        val wipe = webTabs.any { it.privateMode }
+        webView.stopLoading()
+        webView.loadUrl("about:blank")
+        webView.clearHistory()
+        if (wipe) { webView.clearCache(true); webView.clearFormData() }
+        webTabs.clear()
+        webTabs.add(WebTab())
+        webTabIndex = 0
+        browserHasPage = false
+        if (!webAddress.isFocused) webAddress.setText("")
+        renderTabStrip()
+        updateBrowserBody()
+        showTab(TAB_HOME)
+    }
+
     fun currentTab(): WebTab = webTabs[webTabIndex]
 
     fun saveCurrentTab() {
@@ -1232,6 +1251,16 @@ class MainActivity : AppCompatActivity() {
         webView.url?.let { if (it != "about:blank") tab.url = it }
         webView.title?.takeIf { it.isNotBlank() }?.let { tab.title = it }
         tab.lastUsed = System.currentTimeMillis()
+        if (webView.width > 40 && webView.height > 40) runCatching {
+            val w = 240
+            val h = (w.toFloat() * webView.height / webView.width).toInt().coerceIn(120, 420)
+            val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+            val canvas = android.graphics.Canvas(bmp)
+            canvas.scale(w.toFloat() / webView.width, h.toFloat() / webView.height)
+            webView.draw(canvas)
+            tab.thumb?.recycle()
+            tab.thumb = bmp
+        }
     }
 
     fun openNewTab(privateMode: Boolean) {
@@ -1251,6 +1280,7 @@ class MainActivity : AppCompatActivity() {
     fun closeCurrentTab() {
         if (webTabs.isEmpty()) return
         val closing = webTabs[webTabIndex]
+        closing.thumb?.recycle(); closing.thumb = null
         if (closing.privateMode) {
             webView.clearHistory()
             webView.clearCache(true)
@@ -1267,6 +1297,7 @@ class MainActivity : AppCompatActivity() {
     fun closeTabAt(index: Int) {
         if (index !in webTabs.indices) return
         if (index == webTabIndex) { closeCurrentTab(); return }
+        webTabs[index].thumb?.recycle(); webTabs[index].thumb = null
         webTabs.removeAt(index)
         if (index < webTabIndex) webTabIndex -= 1
         renderTabStrip()
@@ -1346,78 +1377,80 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { sheet.dismiss(); openNewTab(false) }
         })
         root.addView(header)
+        val grid = android.widget.GridLayout(this).apply { columnCount = 2 }
         val grouped = webTabs.any { it.group.isNotBlank() }
-        if (!grouped && webTabs.size > 1) root.addView(TextView(this).apply {
-            text = "Tieni premuta una scheda per metterla in un gruppo (Lavoro, Casa, Viaggi…)"; textSize = 12f; setTextColor(palette.textMuted); setPadding(dp(4), 0, dp(4), dp(10))
-        })
         val order = webTabs.indices.sortedWith(compareBy({ if (webTabs[it].group.isBlank()) "\uFFFF" else webTabs[it].group.lowercase() }, { it }))
         var lastGroup: String? = null
         order.forEach { index -> val tab = webTabs[index]
             if (grouped && tab.group != lastGroup) {
                 lastGroup = tab.group
-                root.addView(TextView(this).apply {
-                    text = (if (tab.group.isBlank()) "SENZA GRUPPO" else "📁 " + tab.group.uppercase()) + " · " + webTabs.count { it.group == tab.group }
-                    textSize = 12f; letterSpacing = 0.06f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.textMuted); setPadding(dp(4), dp(8), 0, dp(6))
+                grid.addView(TextView(this).apply {
+                    text = if (tab.group.isBlank()) "SENZA GRUPPO" else tab.group.uppercase()
+                    textSize = 12f; letterSpacing = 0.06f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(palette.textMuted)
+                    setPadding(dp(8), dp(10), dp(4), dp(4))
+                }, android.widget.GridLayout.LayoutParams().apply {
+                    columnSpec = android.widget.GridLayout.spec(0, 2)
+                    width = android.widget.GridLayout.LayoutParams.MATCH_PARENT
                 })
             }
             val active = index == webTabIndex
+            val title = when {
+                tab.title.isNotBlank() && tab.title != "about:blank" -> tab.title
+                else -> "Nuova scheda"
+            }
             val card = com.google.android.material.card.MaterialCardView(this).apply {
-                radius = dp(16).toFloat()
+                radius = dp(18).toFloat()
                 cardElevation = 0f
-                setCardBackgroundColor(palette.card)
+                setCardBackgroundColor(palette.elevated)
                 strokeWidth = dp(if (active) 2 else 1)
                 strokeColor = if (active) accent else palette.stroke
-                layoutParams = android.widget.LinearLayout.LayoutParams(
-                    android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
-                    android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(10) }
                 setOnClickListener {
                     sheet.dismiss()
                     if (index == webTabIndex) showTab(TAB_BROWSER) else switchToTab(index)
                 }
                 setOnLongClickListener { sheet.dismiss(); chooseTabGroup(tab) { showTabSwitcher() }; true }
             }
-            val row = android.widget.LinearLayout(this).apply {
+            val col = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+            val head = android.widget.LinearLayout(this).apply {
                 orientation = android.widget.LinearLayout.HORIZONTAL
                 gravity = android.view.Gravity.CENTER_VERTICAL
-                setPadding(dp(16), dp(14), dp(6), dp(14))
+                setPadding(dp(10), dp(6), dp(2), dp(6))
             }
-            val box = android.widget.LinearLayout(this).apply {
-                orientation = android.widget.LinearLayout.VERTICAL
-                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            }
-            val title = when {
-                tab.title.isNotBlank() && tab.title != "about:blank" -> tab.title
-                else -> "Nuova scheda"
-            }
-            box.addView(TextView(this).apply {
+            head.addView(TextView(this).apply {
                 text = (if (tab.privateMode) "🕶 " else "") + title
-                textSize = 16f
-                setTextColor(palette.text)
-                if (active) setTypeface(typeface, android.graphics.Typeface.BOLD)
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            })
-            if (tab.url.startsWith("http")) box.addView(TextView(this).apply {
-                text = displayUrl(tab.url)
                 textSize = 13f
-                setTextColor(palette.textMuted)
+                setTextColor(palette.text)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(0, dp(2), 0, 0)
+                layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
             })
-            row.addView(box)
-            row.addView(ImageView(this).apply {
+            head.addView(ImageView(this).apply {
                 setImageResource(R.drawable.ic_web_close)
                 setColorFilter(palette.textMuted)
-                setPadding(dp(12), dp(12), dp(12), dp(12))
-                layoutParams = android.widget.LinearLayout.LayoutParams(dp(48), dp(48))
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+                layoutParams = android.widget.LinearLayout.LayoutParams(dp(36), dp(36))
                 contentDescription = "Chiudi scheda"
-                setOnClickListener { sheet.dismiss(); closeTabAt(index); showTabSwitcher() }
+                setOnClickListener {
+                    sheet.dismiss()
+                    closeTabAt(index)
+                    if (webTabs.size > 1 || browserHasPage) showTabSwitcher()
+                }
             })
-            card.addView(row)
-            root.addView(card)
+            col.addView(head)
+            col.addView(ImageView(this).apply {
+                val shot = tab.thumb
+                if (shot != null && !shot.isRecycled) setImageBitmap(shot) else setBackgroundColor(palette.card)
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, dp(168))
+            })
+            card.addView(col)
+            grid.addView(card, android.widget.GridLayout.LayoutParams().apply {
+                width = 0
+                columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, 1f)
+                setMargins(dp(6), dp(6), dp(6), dp(6))
+            })
         }
+        root.addView(grid)
         if (webTabs.size > 1) root.addView(com.google.android.material.button.MaterialButton(
             this, null, androidx.appcompat.R.attr.borderlessButtonStyle
         ).apply {
@@ -1426,15 +1459,20 @@ class MainActivity : AppCompatActivity() {
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.danger))
             setOnClickListener {
                 sheet.dismiss()
-                webTabs.clear()
-                webTabs.add(WebTab())
-                webTabIndex = 0
-                restoreTab(webTabs[0])
-                renderTabStrip()
+                confirmLeaveBrowser { closeBrowser() }
             }
         })
         val scroll = android.widget.ScrollView(this).apply { addView(root) }
         sheet.setContentView(scroll)
+        sheet.setOnShowListener {
+            val b = sheet.behavior
+            b.skipCollapsed = true
+            b.state = com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED
+            sheet.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)?.let {
+                b.peekHeight = (resources.displayMetrics.heightPixels * 0.92f).toInt()
+                it.layoutParams.height = (resources.displayMetrics.heightPixels * 0.92f).toInt()
+            }
+        }
         sheet.show()
     }
 
@@ -1501,7 +1539,6 @@ class MainActivity : AppCompatActivity() {
             setBackgroundColor(palette.stroke)
             layoutParams = android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.MATCH_PARENT, d.toInt().coerceAtLeast(1))
         })
-        if (hasPage) menuQuickActions(root) { popup.dismiss() }
 
         fun item(label: String, enabled: Boolean = true, checked: Boolean? = null, action: () -> Unit) {
             val row = android.widget.LinearLayout(this).apply {
@@ -1530,36 +1567,22 @@ class MainActivity : AppCompatActivity() {
             root.addView(row)
         }
         item("Nuova scheda") { openNewTab(false) }
-        item("Nuova scheda senza cronologia") { openNewTab(true) }
-        item("Schede aperte (${webTabs.size})") { showTabSwitcher() }
-        if (YouTube.isYouTube(webView.url)) {
-            item("✨ Riassumi video") { summarizeVideo() }
-            item("✨ Chiedi al video") { askVideo() }
-            item("🎬 Finestrella") { enterVideoPip() }
-            item("⏩ Velocità (${ytPrefs.getFloat("speed", 1f)}x)") { ytSpeedDialog() }
-            item("⚙ Opzioni YouTube") { ytOptionsDialog() }
-        }
-        if (hostOf(webView.url) == "mail.google.com") item("📧 Riassumi email") { summarizeEmail() }
-        item("🔖 Leggi dopo", hasPage) { saveCurrentForLater() }
-        item("📥 Salva pagina completa offline", hasPage) { saveOfflinePage() }
-        item("🍪 Dimentica questo sito alla chiusura", hasPage, SiteCookies.has(this, pageHost ?: Uri.parse(webView.url ?: "").host)) {
-            val h = Uri.parse(webView.url ?: "").host ?: return@item
-            val on = SiteCookies.toggle(this, h)
-            toast(if (on) "Cookie e dati di ${PhishingGuard.registered(h)} cancellati quando chiudi la scheda o l'app" else "Il sito non verrà più dimenticato")
-        }
-        item("✨ Traduci con AI", hasPage) { translatePageWithAi() }
-        item("✨ Scrivi con AI", hasPage) { writeWithAi() }
-        item("🛒 Confronta prezzi", hasPage) { comparePrices() }
-        item("🍝 Salva ricetta", hasPage) { saveRecipeFromPage() }
+        item("Nuova scheda privata") { openNewTab(true) }
         item("Cronologia") { showHistoryPage() }
         item("Download") { showDownloadsPage() }
-        item("📷 Scansiona QR code") { scanQr() }
-        item("📸 Screenshot", hasPage) { screenshotPage() }
-        item("📄 Salva come PDF", hasPage) { savePageAsPdf() }
-        item("🕵️ Apri nel profilo 2", hasPage) {
-            startActivity(Intent(this, IsolatedBrowserActivity::class.java).putExtra(IsolatedBrowserActivity.EXTRA_URL, webView.url))
+        item("Trova nella pagina", hasPage) { showFindDialog() }
+        item("Modalità lettura", hasPage) { openReaderMode() }
+        item("Traduci", hasPage) { translateCurrentPage() }
+        if (isPdfViewer(webView.url)) item("Stampa") { printPdfUrl(webView.url) }
+        else item("Stampa", hasPage) { savePageAsPdf() }
+        val pageUrl = webView.url.orEmpty()
+        val watching = YouTube.isYouTube(pageUrl) && (pageUrl.contains("/watch") || pageUrl.contains("/shorts/") || pageUrl.contains("youtu.be/"))
+        if (watching) {
+            item("Finestrella") { enterVideoPip() }
+            item("Velocità (${ytPrefs.getFloat("speed", 1f)}×)") { ytSpeedDialog() }
+            item("Segui il canale") { followCurrentChannel() }
         }
-        item("Dimensione testo (${repo.textZoom()}%)") { showTextZoomDialog() }
+        if (GialloZafferano.isRecipePage(pageUrl)) item("Salva ricetta") { saveRecipeFromPage() }
         item("Sito desktop", hasPage, tab.desktop) {
             tab.desktop = !tab.desktop
             applyTabChrome()
@@ -1571,10 +1594,6 @@ class MainActivity : AppCompatActivity() {
                     .setNegativeButton("Solo ora", null).show()
             }
         }
-        item("🎫 Salva nei biglietti", hasPage) { saveCurrentToWallet() }
-        item("Apri in Chrome / altro browser", hasPage) { openExternally() }
-        item("🕘 Recenti") { showRecentsPage() }
-        item("Chiudi scheda") { closeCurrentTab() }
         item("Impostazioni") { showTab(TAB_SETTINGS) }
         if (blockAdsOn && hasPage) root.addView(TextView(this).apply {
             text = "🛡 ${AdBlocker.blockedCount} pubblicità e tracker bloccati · report ›"
@@ -1591,10 +1610,32 @@ class MainActivity : AppCompatActivity() {
         popup.showAsDropDown(anchor, -dp(228), -anchor.height + dp(4))
     }
 
-    /** WebView resets the theme to the phone's when it is created: put the app's back and tell the WebView. */
+    /** WebView resets the theme to the phone's when it is created: put the app's back.
+     *  Telling the page about it redraws it from white, so that happens only when the theme really changes. */
     fun syncWebViewTheme() {
         AppRepository.restoreUiMode(this)
-        if (::webView.isInitialized) runCatching { webView.dispatchConfigurationChanged(resources.configuration) }
+        if (!::webView.isInitialized) return
+        val night = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        val bg = if (AppRepository.isLightUi(this)) android.graphics.Color.WHITE else AppRepository.palette(this).bg
+        if (bg != lastWebBg) {
+            lastWebBg = bg
+            webView.setBackgroundColor(bg)
+            findViewById<View>(R.id.webViewHost)?.setBackgroundColor(bg)
+        }
+        if (night == webThemeNight) return
+        webThemeNight = night
+        installDarkPaint()
+        runCatching { webView.dispatchConfigurationChanged(resources.configuration) }
+    }
+
+    private fun pauseWebForBattery() {
+        if (isFinishing || isDestroyed || !::webView.isInitialized || webPaused || inPip) return
+        val keepAudio = (YouTube.isYouTube(webView.url) && ytPlaying || musicWebPlaying || Music.webFromMusic && Music.web?.playing == true) && ytPrefs.getBoolean("background", true)
+        if (keepAudio) return
+        webView.onPause()
+        musicWeb?.onPause()
+        webView.pauseTimers()
+        webPaused = true
     }
 
     fun applyDarkSites() {
@@ -1604,6 +1645,20 @@ class MainActivity : AppCompatActivity() {
                 repo.darkSites() && !AppRepository.isLightUi(this)
             )
         }
+        installDarkPaint()
+    }
+
+    /** Paints the page dark before the site draws white, so news sites do not flash. */
+    fun installDarkPaint() {
+        runCatching { darkScript?.remove() }
+        darkScript = null
+        if (AppRepository.isLightUi(this) || !::repo.isInitialized || !repo.darkSites()) return
+        if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        val bg = String.format("#%06X", 0xFFFFFF and AppRepository.palette(this).bg)
+        val js = "(function(){try{var s=document.createElement('style');s.textContent='html,body{background:" + bg + "!important;color-scheme:dark}';document.documentElement.appendChild(s);}catch(e){}})();"
+        darkScript = runCatching {
+            androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, js, setOf("*"))
+        }.getOrNull()
     }
 
     fun openInNewTab(url: String) {
@@ -1654,6 +1709,7 @@ class MainActivity : AppCompatActivity() {
      * (used to turn a lock on); otherwise the action runs anyway with a warning.
      */
     override fun onDestroy() {
+        uiHandler.removeCallbacks(pauseWebTask)
         Music.webControl = null; Music.web = null
         io.shutdown()
         controllerFuture?.let { androidx.media3.session.MediaController.releaseFuture(it) }
@@ -1783,6 +1839,7 @@ class MainActivity : AppCompatActivity() {
     val ytPrefs by lazy { getSharedPreferences("wl_yt", MODE_PRIVATE) }
     var ytScript: androidx.webkit.ScriptHandler? = null
     var cookieScript: androidx.webkit.ScriptHandler? = null
+    var darkScript: androidx.webkit.ScriptHandler? = null
     @Volatile var pageHost: String? = null
     /** Tools page tiles by group: (group, [(label, emoji)]) — filled by renderTools, used by customizeTools. */
     var settingsQuery = ""
@@ -2158,7 +2215,8 @@ class MainActivity : AppCompatActivity() {
         var privateMode: Boolean = false,
         var desktop: Boolean = false,
         var group: String = "",
-        var lastUsed: Long = System.currentTimeMillis()
+        var lastUsed: Long = System.currentTimeMillis(),
+        var thumb: android.graphics.Bitmap? = null
     )
 
     companion object {

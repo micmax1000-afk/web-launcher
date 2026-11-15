@@ -286,7 +286,7 @@ class EbookActivity : AppCompatActivity() {
             return
         }
         r!!
-        lbInfo.text = if (r.preparing != null) r.preparing else if (r.loading) (if (r.prefs.mode == "lira") "Preparo la voce… (con Lira può volerci un po')" else "Preparo la lettura…")
+        lbInfo.text = if (r.preparing != null) r.preparing else if (r.loading) "Preparo la lettura…"
             else "Cap. ${r.chapter + 1} di ${book.spine.size} · ${(r.fraction() * 100).toInt()}% · −${r.minutesLeft()} min" + if (!r.playing) " · in pausa" else ""
         lbProgress.progress = (r.fraction() * 1000).toInt()
         lbPlay.setImageResource(if (r.playing) R.drawable.ic_pause else R.drawable.ic_play)
@@ -401,11 +401,11 @@ class EbookActivity : AppCompatActivity() {
                 t.speak(sample, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "sample")
             }
         }
+        var openPreviewTts: (String?) -> Unit = {}
         render = {
             root.removeAllViews()
-            section("VOCE")
-            row("📱 Voce del telefono (Google)", "Gratis · anche senza internet", prefs.mode == "system") { prefs.mode = "system"; applyChange(); render() }
-            row("🎙 Voce Lira (Paola, Riccardo)", "Neurale · gratis · offline dopo il primo scarico", prefs.mode == "lira") { prefs.mode = "lira"; applyChange(); render() }
+            section("SINTESI VOCALE")
+            row("Voce del telefono", "Gratis · anche senza internet", prefs.mode == "system") { prefs.mode = "system"; applyChange(); render() }
             row("✨ Voce naturale (Gemini)", when (geminiKey) {
                 true -> "Più umana · chiave trovata ✓ · serve internet"
                 false -> "Serve la chiave Gemini: tocca per inserirla"
@@ -415,28 +415,41 @@ class EbookActivity : AppCompatActivity() {
                 else askGeminiKey { ok -> if (ok) { geminiKey = true; prefs.mode = "gemini"; applyChange(); render() } }
             }
             if (prefs.mode == "system") {
-                section("VOCI DEL TELEFONO")
+                val engines = pvTts?.engines.orEmpty().filter { it.name.isNotBlank() }
+                if (engines.size > 1) {
+                    section("QUALE SINTESI")
+                    engines.forEach { e ->
+                        val on = prefs.sysEngine == e.name || (prefs.sysEngine.isBlank() && e.name == pvTts?.defaultEngine)
+                        row(e.label, null, on) {
+                            prefs.mode = "system"; prefs.sysEngine = e.name; prefs.sysVoice = ""
+                            applyChange(); openPreviewTts(e.name)
+                        }
+                    }
+                }
+                section("VOCI INSTALLATE")
                 val vs = pvVoices
                 if (vs == null) row("Cerco le voci…", null, false) {}
                 else if (vs.isEmpty()) row("Nessuna voce italiana trovata", "Scaricane una dalle impostazioni di Android", false) {}
-                else vs.forEachIndexed { i, v ->
+                else vs.forEach { v ->
                     val hq = v.quality >= android.speech.tts.Voice.QUALITY_HIGH
-                    row("Voce ${i + 1}" + if (hq) " · alta qualità" else "", (if (v.isNetworkConnectionRequired) "Serve internet" else "Sul telefono") + " · ${v.name}", prefs.sysVoice == v.name) { prefs.sysVoice = v.name; applyChange(); render(); preview() }
+                    val n = v.name.lowercase(Locale.ITALIAN)
+                    val who = when {
+                        n.contains("female") || n.contains("-itd") || n.contains("kda") || n.contains("elsa") || n.contains("giorgia") || n.contains("paola") || n.contains("chiara") -> "Donna"
+                        n.contains("male") || n.contains("-itm") || n.contains("luca") || n.contains("marco") || n.contains("dario") -> "Uomo"
+                        else -> "Voce"
+                    }
+                    row("$who" + if (hq) " · alta qualità" else "", if (v.isNetworkConnectionRequired) "Online" else "Sul telefono", prefs.sysVoice == v.name) {
+                        prefs.mode = "system"; prefs.sysVoice = v.name; applyChange(); render(); preview()
+                    }
                 }
                 row("⬇ Scarica altre voci", "Si apre Impostazioni di Android → Sintesi vocale", false) {
                     runCatching { startActivity(android.content.Intent("com.android.settings.TTS_SETTINGS")) }
                         .onFailure { runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS)) } }
                 }
             } else {
-                if (prefs.mode == "lira") {
-                    section("VOCE LIRA")
-                    row("Paola · donna", "Più curata · la prima volta scarica circa 63 MB", prefs.lVoice == "it_IT-paola-medium") { prefs.lVoice = "it_IT-paola-medium"; applyChange(); render(); preview() }
-                    row("Riccardo · uomo", "Più leggera e veloce · la prima volta scarica circa 28 MB", prefs.lVoice == "it_IT-riccardo-x_low") { prefs.lVoice = "it_IT-riccardo-x_low"; applyChange(); render(); preview() }
-                } else {
                 section("VOCE NATURALE")
                 listOf(Triple("Sulafat", "calda", "donna"), Triple("Kore", "ferma", "donna"), Triple("Charon", "chiara", "uomo"), Triple("Orus", "decisa", "uomo")).forEach { (n, style, who) ->
                     row("$n · $style", "Voce di $who", prefs.gVoice == n) { prefs.gVoice = n; applyChange(); render(); preview() }
-                }
                 }
                 section("PREPARA IN ANTICIPO")
                 row("⏬ Prepara il capitolo adesso", "Così lo ascolti senza attese, anche a schermo spento", false) {
@@ -448,7 +461,7 @@ class EbookActivity : AppCompatActivity() {
                 row("🗂 ${String.format(Locale.ITALIAN, "%.1f", mb)} MB sul telefono", "Il libro già ascoltato si riascolta senza internet. Tocca per cancellare.", false) {
                     MaterialAlertDialogBuilder(this).setTitle("Cancellare l'audio salvato?").setPositiveButton("Cancella") { _, _ -> BookReader.clearSavedAudio(this); render() }.setNegativeButton("Annulla", null).show()
                 }
-                root.addView(TextView(this).apply { text = "Preparo l'audio un pezzo alla volta mentre ascolti e lo tengo salvato. Sul telefono la voce Lira può essere più lenta della lettura: prepara il capitolo prima. Con Gemini il piano gratuito può avere limiti di uso. Se qualcosa non va passo alla voce del telefono."; textSize = 12f; alpha = 0.7f; setPadding(0, dp(8), 0, 0) })
+                root.addView(TextView(this).apply { text = "Con Gemini il piano gratuito può avere limiti di uso. Se qualcosa non va passo alla voce del telefono."; textSize = 12f; alpha = 0.7f; setPadding(0, dp(8), 0, 0) })
             }
             section("VELOCITÀ E TONO")
             slider("Velocità", fmtSpeed(prefs.speed), ((prefs.speed - 0.6f) / 0.05f).toInt().coerceIn(0, 28), 28) { prefs.speed = 0.6f + it * 0.05f }
@@ -460,12 +473,18 @@ class EbookActivity : AppCompatActivity() {
                 setOnClickListener { preview() }
             })
         }
-        pvTts = android.speech.tts.TextToSpeech(this) { st ->
-            if (st == android.speech.tts.TextToSpeech.SUCCESS) runOnUiThread {
-                pvVoices = runCatching { pvTts?.voices?.filter { it.locale.language == "it" }?.sortedWith(compareByDescending<android.speech.tts.Voice> { it.quality }.thenBy { it.name }) }.getOrNull() ?: emptyList()
-                if (dlg?.isShowing == true) render()
-            } else runOnUiThread { pvVoices = emptyList(); if (dlg?.isShowing == true) render() }
+        openPreviewTts = { engine ->
+            runCatching { pvTts?.stop(); pvTts?.shutdown() }
+            pvVoices = null
+            val cb = android.speech.tts.TextToSpeech.OnInitListener { st ->
+                if (st == android.speech.tts.TextToSpeech.SUCCESS) runOnUiThread {
+                    pvVoices = runCatching { pvTts?.voices?.filter { it.locale.language == "it" }?.sortedWith(compareByDescending<android.speech.tts.Voice> { it.quality }.thenBy { it.name }) }.getOrNull() ?: emptyList()
+                    if (dlg?.isShowing == true) render()
+                } else runOnUiThread { pvVoices = emptyList(); if (dlg?.isShowing == true) render() }
+            }
+            pvTts = if (engine.isNullOrBlank()) android.speech.tts.TextToSpeech(this, cb) else android.speech.tts.TextToSpeech(this, cb, engine)
         }
+        openPreviewTts(prefs.sysEngine.takeIf { it.isNotBlank() })
         render()
         ai.hasGeminiKey { ok -> runOnUiThread { geminiKey = ok; if (dlg?.isShowing == true) render() } }
         dlg = MaterialAlertDialogBuilder(this).setTitle("🎙 Voce di lettura").setView(android.widget.ScrollView(this).apply { addView(root) })

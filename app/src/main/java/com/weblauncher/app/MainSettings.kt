@@ -318,13 +318,10 @@ internal fun MainActivity.renderSettings() {
     row("Cosa sa fare", "Riassumi, chiedi alla pagina, spiega il testo selezionato…") {
         MaterialAlertDialogBuilder(this).setTitle("✨ AI nel launcher")
             .setMessage(
-                "• Menu ⋮ → Riassumi pagina\n" +
-                "• Menu ⋮ → Chiedi alla pagina\n" +
+                "• Tasto ✦ nella barra del browser: riassume la pagina, il video o l'email. Tieni premuto per aprire Mia AI\n" +
                 "• Scrivi una domanda nella ricerca → «Chiedi all'AI»\n" +
-                "• Seleziona del testo in una pagina → «Chiedi all'AI»\n" +
-                "• Microfono: comandi lunghi, es. «apri Amazon e cerca cuffie bluetooth»\n" +
-                "• Seleziona testo o tocca una casella → «✨ Riscrivi»: migliora, correggi, traduci\n" +
-                "• Menu ⋮ → 🛒 Confronta prezzi, 📧 Riassumi email (in Gmail)\n\n" +
+                "• Seleziona del testo in una pagina → «Chiedi all'AI» o «Riscrivi»\n" +
+                "• Microfono: comandi lunghi, es. «apri Amazon e cerca cuffie bluetooth»\n\n" +
                 "Il testo viene inviato al provider scelto in Mia AI solo quando usi queste funzioni."
             )
             .setPositiveButton("OK", null).show()
@@ -378,7 +375,7 @@ internal fun MainActivity.renderSettings() {
         renderSettings()
     }
     row("Password e compilazione", "Autofill di Android") { showPasswordInfo() }
-    row("Chiedi di cancellare la cronologia", "Quando esci dal browser", switch = homePrefs.getBoolean("askClearOnLeave", false)) {
+    row("Chiedi di cancellare la cronologia", "Quando chiudi l'ultima scheda", switch = homePrefs.getBoolean("askClearOnLeave", false)) {
         homePrefs.edit().putBoolean("askClearOnLeave", !homePrefs.getBoolean("askClearOnLeave", false)).apply(); renderSettings()
     }
     row("Cancella cronologia", "Recenti e cronologia del browser") { confirmClear("Cancellare cronologia e recenti?") { clearHistoryAndRecents(); toast("Cronologia cancellata") } }

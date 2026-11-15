@@ -39,6 +39,7 @@
 <div id="bar">
   <input id="q" type="search" placeholder="Cerca nel PDF" enterkeyhint="search">
   <span id="info"></span>
+  <button id="print" type="button">Stampa</button>
   <button id="save" hidden>Salva</button>
 </div>
 <div id="pages"></div>
@@ -55,6 +56,7 @@
   const $ = (s) => document.querySelector(s);
   const info = $('#info'), msg = $('#msg'), pagesEl = $('#pages');
   if (src) { const b = $('#save'); b.hidden = false; b.onclick = () => { location.href = 'wl://save?u=' + encodeURIComponent(src); }; }
+  $('#print').onclick = () => { location.href = 'wl://print'; };
 
   window.__pdfText = '';
   const pageTexts = [];

@@ -201,8 +201,7 @@ internal fun MainActivity.renderTools() {
         Triple("📈", "Borsa") { showStocksPage() }
     ))
     group("SALUTE E SPORT", listOf(
-        Triple("💚", "Benessere") { showWellnessHub() },
-        Triple("⏱", "Tabata") { showTabata() }
+        Triple("💚", "Benessere") { showWellnessHub() }
     ))
     group("AI", listOf(
         Triple("✨", "Mia AI") { openMiaAi() },
@@ -221,10 +220,7 @@ internal fun MainActivity.renderTools() {
     group("UTILITÀ", listOf(
         Triple("📷", "QR code") { scanQr() },
         Triple("🧰", "Misure e sensori") { showInstrumentsPage() },
-        Triple("🧮", "Calcoli") {
-            showTab(TAB_HOME); searchInput.requestFocus()
-            toast("Scrivi nella ricerca: «15% di 230», «10 km in miglia», «50 dollari in euro»")
-        }
+        Triple("🧮", "Calcoli") { showCalculator() }
     ))
     group("BROWSER E APP", listOf(
         Triple("📚", "Catalogo app") { showCatalogPage() },
@@ -240,6 +236,7 @@ internal fun MainActivity.renderTools() {
     // trovati con la ricerca anche se non hanno un riquadro (sono dentro altre pagine)
     val searchOnly = listOf<Triple<String, String, () -> Unit>>(
         Triple("👟", "Passi") { showStepsPage() },
+        Triple("⏱", "Tabata") { showTabata() },
         Triple("❤️", "Salute") { showHealthPage() },
         Triple("⛰", "Altimetro") { showAltimeter() },
         Triple("🔦", "Torcia e bussola") { showUtilitiesPage() },

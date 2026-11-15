@@ -290,7 +290,7 @@ internal fun MainActivity.showWalletPage() {
                                 askWalletTitle("Biglietto") { t -> addToWallet(t, "code", null, format = Barcodes.fromMlKit(b.format), text = b.rawValue.orEmpty()) }
                             }
                     } catch (_: Throwable) { toast("Scanner non disponibile") }
-                    2 -> MaterialAlertDialogBuilder(this).setMessage("Apri il biglietto (PDF o pagina con il QR) nel browser, poi menu ⋮ → «🎫 Salva nei biglietti».")
+                    2 -> MaterialAlertDialogBuilder(this).setMessage("Aggiungi un PDF o una foto con i tasti qui sopra.")
                         .setPositiveButton("OK", null).show()
                 }
             }.show()

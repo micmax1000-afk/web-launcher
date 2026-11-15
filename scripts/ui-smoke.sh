@@ -15,7 +15,12 @@ adb logcat -c
 
 shot() { sleep "${2:-4}"; adb exec-out screencap -p > "$OUT/$1.png"; echo "schermata: $1"; }
 alive() { adb shell pidof $PKG >/dev/null; }
-why() { why; echo "--- perché il processo è finito ---"; adb logcat -d | grep -iE "Fatal signal|ANR in|lowmemorykiller|Killing .*weblauncher|weblauncher.*(died|crash)|Force stopping|am_kill|am_proc_died" | tail -25; adb shell dumpsys meminfo | head -12; }
+why() {
+  echo "--- perché il processo è finito ---"
+  adb logcat -d -s AndroidRuntime:E | tail -80
+  adb logcat -d | grep -iE "Fatal signal|ANR in|Killing .*weblauncher" | tail -20
+  adb logcat -d -s AndroidRuntime:E | tail -80 > "$OUT/crash.txt" || true
+}
 pdfprobe() {   # diagnosi: la lettura del testo dei PDF funziona in questo momento? (non fa fallire la prova)
   adb logcat -c
   adb shell am start -W -n $PKG/.MainActivity --es widget_action pdftext >/dev/null
