@@ -17,7 +17,7 @@ import java.util.Locale
 // ======================= Common pieces =======================
 
 /** A small rounded box with a label, a value and an optional line under it. */
-internal fun MainActivity.statTile(label: String, value: String, sub: String? = null, color: Int? = null): LinearLayout {
+internal fun MainActivity.statTile(label: String, value: String, sub: String? = null, color: Int? = null, fraction: Double? = null): LinearLayout {
     val palette = AppRepository.palette(this)
     val d = resources.displayMetrics.density
     fun dp(v: Int) = (v * d).toInt()
@@ -33,6 +33,7 @@ internal fun MainActivity.statTile(label: String, value: String, sub: String? = 
             setAutoSizeTextTypeUniformWithConfiguration(11, 17, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
         })
         if (sub != null) addView(TextView(this@statTile).apply { text = sub; textSize = 11f; setTextColor(palette.textMuted); gravity = Gravity.CENTER; maxLines = 1 })
+        if (fraction != null) addView(progressBar(fraction, color ?: 0xFF2563EB.toInt()))
     }
 }
 
@@ -184,9 +185,9 @@ internal fun MainActivity.showWellnessHub() {
 
             sectionLabel(body, "OGGI")
             body.addView(statRow(
-                statTile("Passi", String.format(Locale.ITALIAN, "%,d", steps), "obiettivo ${String.format(Locale.ITALIAN, "%,d", goalSteps)}", if (steps >= goalSteps) 0xFF16A34A.toInt() else null).apply { setOnClickListener { showStepsPage() } },
-                statTile("Acqua", "%.1f L".format(Locale.ITALIAN, water / 1000.0), "di %.1f".format(Locale.ITALIAN, waterGoal / 1000.0), if (water >= waterGoal) 0xFF16A34A.toInt() else null).apply { setOnClickListener { showWaterPage() } },
-                statTile("Calorie", "${eaten.kcal.toInt()}", target?.let { "di ${it.kcal}" } ?: "mangiate").apply { setOnClickListener { showFoodDiary() } }))
+                statTile("Passi", String.format(Locale.ITALIAN, "%,d", steps), "obiettivo ${String.format(Locale.ITALIAN, "%,d", goalSteps)}", if (steps >= goalSteps) 0xFF16A34A.toInt() else null, if (goalSteps > 0) steps.toDouble() / goalSteps else null).apply { setOnClickListener { showStepsPage() } },
+                statTile("Acqua", "%.1f L".format(Locale.ITALIAN, water / 1000.0), "di %.1f".format(Locale.ITALIAN, waterGoal / 1000.0), if (water >= waterGoal) 0xFF16A34A.toInt() else null, if (waterGoal > 0) water.toDouble() / waterGoal else null).apply { setOnClickListener { showWaterPage() } },
+                statTile("Calorie", "${eaten.kcal.toInt()}", target?.let { "di ${it.kcal}" } ?: "mangiate", null, target?.let { eaten.kcal / it.kcal }).apply { setOnClickListener { showFoodDiary() } }))
             body.addView(statRow(
                 statTile("Sonno", night?.let { Hc.duration(it.sleepMin) } ?: "—", if (night != null) "ultima notte" else "dall'orologio").apply { setOnClickListener { showSleepPage() } },
                 statTile("Battito a riposo", if (restHr > 0) "$restHr bpm" else "—").apply { setOnClickListener { showHrPage() } },

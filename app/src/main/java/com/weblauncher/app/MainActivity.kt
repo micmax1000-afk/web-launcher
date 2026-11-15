@@ -70,6 +70,7 @@ class MainActivity : AppCompatActivity() {
     var relockPending = false
     var webPaused = false
     var webThemeNight = -1
+    private var lastWebBg = Int.MIN_VALUE
     private val pauseWebTask = Runnable { pauseWebForBattery() }
     /** Disk work (history, backup) off the UI thread: keeps scrolling and page loads smooth. */
     val io = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -1616,10 +1617,14 @@ class MainActivity : AppCompatActivity() {
         if (!::webView.isInitialized) return
         val night = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
         val bg = if (AppRepository.isLightUi(this)) android.graphics.Color.WHITE else AppRepository.palette(this).bg
-        webView.setBackgroundColor(bg)
-        findViewById<View>(R.id.webViewHost)?.setBackgroundColor(bg)
+        if (bg != lastWebBg) {
+            lastWebBg = bg
+            webView.setBackgroundColor(bg)
+            findViewById<View>(R.id.webViewHost)?.setBackgroundColor(bg)
+        }
         if (night == webThemeNight) return
         webThemeNight = night
+        installDarkPaint()
         runCatching { webView.dispatchConfigurationChanged(resources.configuration) }
     }
 
@@ -1640,6 +1645,20 @@ class MainActivity : AppCompatActivity() {
                 repo.darkSites() && !AppRepository.isLightUi(this)
             )
         }
+        installDarkPaint()
+    }
+
+    /** Paints the page dark before the site draws white, so news sites do not flash. */
+    fun installDarkPaint() {
+        runCatching { darkScript?.remove() }
+        darkScript = null
+        if (AppRepository.isLightUi(this) || !repo.darkSites()) return
+        if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        val bg = String.format("#%06X", 0xFFFFFF and AppRepository.palette(this).bg)
+        val js = "(function(){try{var s=document.createElement('style');s.textContent='html,body{background:" + bg + "!important;color-scheme:dark}';document.documentElement.appendChild(s);}catch(e){}})();"
+        darkScript = runCatching {
+            androidx.webkit.WebViewCompat.addDocumentStartJavaScript(webView, js, setOf("*"))
+        }.getOrNull()
     }
 
     fun openInNewTab(url: String) {
@@ -1820,6 +1839,7 @@ class MainActivity : AppCompatActivity() {
     val ytPrefs by lazy { getSharedPreferences("wl_yt", MODE_PRIVATE) }
     var ytScript: androidx.webkit.ScriptHandler? = null
     var cookieScript: androidx.webkit.ScriptHandler? = null
+    var darkScript: androidx.webkit.ScriptHandler? = null
     @Volatile var pageHost: String? = null
     /** Tools page tiles by group: (group, [(label, emoji)]) — filled by renderTools, used by customizeTools. */
     var settingsQuery = ""

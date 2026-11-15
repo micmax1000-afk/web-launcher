@@ -16,6 +16,7 @@ object CookieBanners {
     val SCRIPT = """
 (function(){
   if (window.__wlCookie) return; window.__wlCookie = true;
+  try { if (sessionStorage.getItem('wlck') === location.hostname) return; } catch (e) {}
   var SEL = ['#onetrust-reject-all-handler','.ot-pc-refuse-all-handler','#didomi-notice-disagree-button',
     '.didomi-continue-without-agreeing','.iubenda-cs-reject-btn','.qc-cmp2-summary-buttons button[mode="secondary"]',
     '#CybotCookiebotDialogBodyButtonDecline','#CybotCookiebotDialogBodyLevelButtonLevelOptinDeclineAll',
@@ -38,6 +39,7 @@ object CookieBanners {
     var hosts = document.querySelectorAll('#usercentrics-root, #cmpwrapper, [id^="sp_message"]');
     for (var i = 0; i < hosts.length; i++) if (hosts[i].shadowRoot) out.push(hosts[i].shadowRoot);
     return out; }
+  function mark(){ try { sessionStorage.setItem('wlck', location.hostname); } catch (e) {} }
   var tries = 0, done = false;
   function attempt(){
     if (done || tries++ > 40) return;
@@ -45,12 +47,12 @@ object CookieBanners {
     for (var r = 0; r < rs.length; r++) {
       for (var s = 0; s < SEL.length; s++) {
         var el = rs[r].querySelector(SEL[s]);
-        if (el && visible(el)) { el.click(); done = true; report(); return; }
+        if (el && visible(el)) { mark(); el.click(); done = true; report(); return; }
       }
       var btns = rs[r].querySelectorAll('button, a[role="button"], [role="button"], input[type="button"], input[type="submit"]');
       for (var b = 0; b < btns.length; b++) {
         var t = (btns[b].innerText || btns[b].value || '').trim().replace(/\s+/g, ' ');
-        if (t.length > 0 && t.length < 45 && WORDS.test(t) && visible(btns[b]) && inBanner(btns[b])) { btns[b].click(); done = true; report(); return; }
+        if (t.length > 0 && t.length < 45 && WORDS.test(t) && visible(btns[b]) && inBanner(btns[b])) { mark(); btns[b].click(); done = true; report(); return; }
       }
     }
     setTimeout(attempt, tries < 10 ? 500 : 1500);

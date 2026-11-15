@@ -220,10 +220,7 @@ internal fun MainActivity.renderTools() {
     group("UTILITÀ", listOf(
         Triple("📷", "QR code") { scanQr() },
         Triple("🧰", "Misure e sensori") { showInstrumentsPage() },
-        Triple("🧮", "Calcoli") {
-            showTab(TAB_HOME); searchInput.requestFocus()
-            toast("Scrivi nella ricerca: «15% di 230», «10 km in miglia», «50 dollari in euro»")
-        }
+        Triple("🧮", "Calcoli") { showCalculator() }
     ))
     group("BROWSER E APP", listOf(
         Triple("📚", "Catalogo app") { showCatalogPage() },

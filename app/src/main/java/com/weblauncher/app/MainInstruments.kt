@@ -870,3 +870,75 @@ internal fun MainActivity.showWeeklySummary() {
         }
     }
 }
+
+internal fun MainActivity.showCalculator() {
+    openPage("Calcolatrice") { _, body, _ ->
+        val palette = AppRepository.palette(this)
+        val d = resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        var expr = ""
+        val display = TextView(this).apply {
+            text = "0"; textSize = 36f; gravity = Gravity.END
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            setTextColor(palette.text)
+            setPadding(dp(12), dp(12), dp(12), 0)
+        }
+        val live = TextView(this).apply {
+            textSize = 18f; gravity = Gravity.END; setTextColor(palette.textMuted)
+            setPadding(dp(12), 0, dp(12), dp(8)); minHeight = dp(28)
+        }
+        fun showExpr() {
+            display.text = expr.ifBlank { "0" }
+            live.text = Calc.evaluate(expr)?.removePrefix("= ")?.trim().orEmpty()
+        }
+        sectionLabel(body, "A PAROLE")
+        val phraseOut = TextView(this).apply {
+            textSize = 16f; setTextColor(palette.text); setPadding(dp(12), dp(4), dp(12), dp(8))
+        }
+        body.addView(EditText(this).apply {
+            hint = "15% di 230, 10 km in miglia, 50 euro in dollari"
+            setTextColor(palette.text); setHintTextColor(palette.textMuted); textSize = 16f
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    val q = s?.toString().orEmpty().trim()
+                    if (q.isBlank()) { phraseOut.text = ""; return }
+                    val cur = Calc.currencyQuery(q)
+                    if (cur != null) {
+                        phraseOut.text = "…"
+                        io.execute {
+                            val r = Calc.convert(cur.first, cur.second, cur.third)
+                            runOnUiThread { if (!isFinishing) phraseOut.text = r ?: "Cambio non disponibile" }
+                        }
+                    } else phraseOut.text = Calc.evaluate(q) ?: ""
+                }
+            })
+        })
+        body.addView(phraseOut)
+        sectionLabel(body, "TASTIERA")
+        body.addView(display)
+        body.addView(live)
+        val grid = android.widget.GridLayout(this).apply { columnCount = 4 }
+        listOf("C", "⌫", "%", "÷", "7", "8", "9", "×", "4", "5", "6", "−", "1", "2", "3", "+", "0", ",", "=").forEach { k ->
+            grid.addView(MaterialButton(this, null, com.google.android.material.R.attr.materialButtonOutlinedStyle).apply {
+                text = k; isAllCaps = false; textSize = 20f
+                setOnClickListener {
+                    when (k) {
+                        "C" -> expr = ""
+                        "⌫" -> if (expr.isNotEmpty()) expr = expr.dropLast(1)
+                        "=" -> Calc.evaluate(expr)?.substringAfter("=", "")?.trim()?.substringBefore(" ")?.takeIf { it.isNotBlank() }?.let { expr = it }
+                        else -> expr += when (k) { "×" -> "*"; "÷" -> "/"; "−" -> "-"; else -> k }
+                    }
+                    showExpr()
+                }
+            }, android.widget.GridLayout.LayoutParams().apply {
+                width = 0
+                columnSpec = android.widget.GridLayout.spec(android.widget.GridLayout.UNDEFINED, if (k == "=") 2 else 1, 1f)
+                setMargins(dp(4), dp(4), dp(4), dp(4))
+            })
+        }
+        body.addView(grid)
+    }
+}
