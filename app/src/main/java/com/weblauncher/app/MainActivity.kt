@@ -1843,6 +1843,8 @@ class MainActivity : AppCompatActivity() {
     @Volatile var pageHost: String? = null
     /** Tools page tiles by group: (group, [(label, emoji)]) — filled by renderTools, used by customizeTools. */
     var settingsQuery = ""
+    /** Settings pages whose «Altre impostazioni» are open. */
+    val settingsMoreOpen = mutableSetOf<String>()
     var settingsPage: String? = null
     var toolsCatalog: List<Pair<String, List<Pair<String, String>>>> = emptyList()
     var ytPlaying = false
@@ -2152,7 +2154,7 @@ class MainActivity : AppCompatActivity() {
         toast("Creo il backup completo…")
         io.execute {
             val ok = runCatching { contentResolver.openOutputStream(uri, "wt")!!.use { FullBackup.write(this, it) } }.isSuccess
-            if (ok) syncPrefs.edit().putLong("fullLast", System.currentTimeMillis()).apply()
+            if (ok) syncPrefs.edit().putLong("fullLast", System.currentTimeMillis()).putLong("fullBytes", FullBackup.dataBytes(this)).putBoolean("fullHeld", false).apply()
             runOnUiThread { toast(if (ok) "✓ Backup completo salvato" + (if (auto) " · si aggiornerà ogni notte" else "") else "Backup non riuscito"); if (currentTab == TAB_SETTINGS) renderSettings() }
         }
     }

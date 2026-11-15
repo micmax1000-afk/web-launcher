@@ -78,6 +78,15 @@ object FullBackup {
         return n
     }
 
+    /** How much the backup would hold now (app files and settings), to notice when almost everything has disappeared. */
+    fun dataBytes(c: Context): Long {
+        fun size(f: File): Long = if (f.isDirectory) f.listFiles()?.filter { it.name !in SKIP_DIRS && it.name !in SKIP_FILES }?.sumOf { size(it) } ?: 0L else f.length()
+        return size(c.filesDir) + size(prefsDir(c))
+    }
+
+    /** False when the data now is less than 40% of the last backup: probably deleted by mistake, keep the good backup. */
+    fun safeToOverwrite(now: Long, lastBackup: Long) = lastBackup < 300_000L || now >= lastBackup * 0.4
+
     fun schedule(c: Context) {
         val p = c.getSharedPreferences("wl_sync", Context.MODE_PRIVATE)
         val wm = WorkManager.getInstance(c)
@@ -92,10 +101,15 @@ class FullBackupWorker(context: Context, params: WorkerParameters) : Worker(cont
     override fun doWork(): Result {
         val p = applicationContext.getSharedPreferences("wl_sync", Context.MODE_PRIVATE)
         val uri = p.getString("fullUri", null) ?: return Result.success()
+        val now = FullBackup.dataBytes(applicationContext)
+        if (!FullBackup.safeToOverwrite(now, p.getLong("fullBytes", 0L))) {
+            p.edit().putBoolean("fullHeld", true).apply()       // shown in Impostazioni → Backup
+            return Result.success()
+        }
         return runCatching {
             val cr = applicationContext.contentResolver
             (cr.openOutputStream(Uri.parse(uri), "wt") ?: cr.openOutputStream(Uri.parse(uri)))!!.use { FullBackup.write(applicationContext, it) }
-            p.edit().putLong("fullLast", System.currentTimeMillis()).putInt("fullFails", 0).apply()
+            p.edit().putLong("fullLast", System.currentTimeMillis()).putInt("fullFails", 0).putLong("fullBytes", now).putBoolean("fullHeld", false).apply()
             Result.success()
         }.getOrElse {
             p.edit().putInt("fullFails", p.getInt("fullFails", 0) + 1).apply()

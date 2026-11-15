@@ -81,7 +81,14 @@ internal fun MainActivity.renderSettings() {
             if (settingsPage == null) showTab(TAB_TOOLS) else { settingsPage = null; renderSettings() }
         }
     })
+    // five pages: the small ones live together (Aspetto + Home, Notizie + AI, Backup + Aggiornamenti)
+    val pageOf = mapOf("HOME" to "ASPETTO", "AI" to "NOTIZIE", "AGGIORNAMENTI" to "BACKUP")
+    settingsPage = settingsPage?.let { pageOf[it] ?: it }
     val pageTitle = mapOf(
+        "ASPETTO" to "Aspetto e Home", "BROWSER" to "Browser", "PRIVACY" to "Privacy e sicurezza",
+        "NOTIZIE" to "Notizie e AI", "BACKUP" to "Backup e aggiornamenti"
+    )
+    val secTitle = mapOf(
         "ASPETTO" to "Aspetto", "HOME" to "Home", "BROWSER" to "Browser", "PRIVACY" to "Privacy",
         "NOTIZIE" to "Notizie e YouTube", "BACKUP" to "Backup", "AI" to "Intelligenza artificiale",
         "AGGIORNAMENTI" to "Aggiornamenti"
@@ -109,16 +116,16 @@ internal fun MainActivity.renderSettings() {
     val secs = mutableListOf<Sec>()
     var group: android.widget.LinearLayout? = null
     fun section(title: String) {
-        if (hub || (settingsPage != null && settingsPage != title)) { group = null; return }
+        if (hub || (settingsPage != null && settingsPage != (pageOf[title] ?: title))) { group = null; return }
         val head = TextView(this).apply {
-            text = pageTitle[title] ?: title
+            text = secTitle[title] ?: title
             setTextColor(palette.textMuted)
             textSize = 13f
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             letterSpacing = 0.06f
             setPadding(dp(6), dp(18), dp(8), dp(8))
         }
-        if (settingsPage == null) settingsList.addView(head)
+        if (settingsPage == null || settingsPage in setOf("ASPETTO", "NOTIZIE", "BACKUP")) settingsList.addView(head)
         val card = com.google.android.material.card.MaterialCardView(this).apply {
             radius = dp(20).toFloat()
             cardElevation = 0f
@@ -192,6 +199,14 @@ internal fun MainActivity.renderSettings() {
         g.addView(r)
         secs.lastOrNull()?.rows?.add(Triple(r, divider, (label + " " + sub.orEmpty()).lowercase(Locale.ITALIAN)))
     }
+    fun more(key: String, body: () -> Unit) {
+        if (settingsQuery.isNotBlank()) { body(); return }
+        val open = key in settingsMoreOpen
+        row("Altre impostazioni", if (open) null else "Le scelte che servono di rado", value = if (open) "Chiudi" else "Apri") {
+            if (open) settingsMoreOpen.remove(key) else settingsMoreOpen.add(key); renderSettings()
+        }
+        if (open) body()
+    }
     fun applyFilter(q: String) {
         val query = q.trim().lowercase(Locale.ITALIAN)
         secs.forEach { sec ->
@@ -261,43 +276,18 @@ internal fun MainActivity.renderSettings() {
     row("Barra degli indirizzi in basso", "Più comoda da raggiungere con una mano", switch = homePrefs.getBoolean("barBottom", false)) {
         homePrefs.edit().putBoolean("barBottom", !homePrefs.getBoolean("barBottom", false)).apply(); applyBarPosition(); renderSettings()
     }
-    row("Scorri dal bordo per tornare indietro", "Da sinistra: pagina precedente · da destra: successiva", switch = homePrefs.getBoolean("edgeSwipe", true)) {
-        homePrefs.edit().putBoolean("edgeSwipe", !homePrefs.getBoolean("edgeSwipe", true)).apply(); renderSettings()
-    }
-    val tabDays = homePrefs.getInt("tabAutoCloseDays", 0)
-    row("Chiudi le schede non usate", value = if (tabDays == 0) "Mai" else "Dopo $tabDays giorni") {
-        val opts = intArrayOf(0, 1, 7, 30)
-        MaterialAlertDialogBuilder(this).setTitle("Chiudi le schede non usate")
-            .setSingleChoiceItems(arrayOf("Mai", "Dopo 1 giorno", "Dopo 7 giorni", "Dopo 30 giorni"), opts.indexOf(tabDays).coerceAtLeast(0)) { dl, w ->
-                homePrefs.edit().putInt("tabAutoCloseDays", opts[w]).apply(); dl.dismiss(); renderSettings()
-            }.show()
-    }
-    row("Browser predefinito", "Apri qui i link di WhatsApp, email…", value = if (isDefaultBrowser()) "Sì" else "No") { requestDefaultBrowser() }
     row("Motore di ricerca", value = engine.label) { showSearchEnginePicker() }
-    row("🔎 Cosa cercare nei tuoi dati", "Scegli cosa mostrare sotto la barra di ricerca") {
-        val sp = getSharedPreferences("wl_search", MODE_PRIVATE)
-        val keys = listOf("note" to "📝 Note e liste", "spese" to "💰 Spese", "scadenze" to "📆 Scadenze", "biglietti" to "🎫 Biglietti e documenti",
-            "carte" to "💳 Carte fedeltà", "luoghi" to "📍 Luoghi", "libri" to "📖 Libri", "leggi" to "🔖 Leggi dopo", "cronologia" to "🕘 Cronologia")
-        val off = sp.getStringSet("off", emptySet()).orEmpty()
-        val checked = BooleanArray(keys.size) { keys[it].first !in off }
-        MaterialAlertDialogBuilder(this).setTitle("Cosa cercare")
-            .setMultiChoiceItems(keys.map { it.second }.toTypedArray(), checked) { _, i, on -> checked[i] = on }
-            .setPositiveButton("Salva") { _, _ -> sp.edit().putStringSet("off", keys.filterIndexed { i, _ -> !checked[i] }.map { it.first }.toSet()).apply() }
-            .setNegativeButton("Annulla", null).show()
-    }
-    row("Suggerimenti di ricerca", "Mentre scrivi l'indirizzo (dal motore scelto)", switch = repo.searchSuggestions()) {
-        repo.setSearchSuggestions(!repo.searchSuggestions()); renderSettings()
-    }
-    row("Nascondi barre scorrendo", "Più spazio, ma lo scorrimento è meno fluido", switch = repo.hideBarsOnScroll()) {
-        repo.setHideBarsOnScroll(!repo.hideBarsOnScroll()); hideBarsOn = repo.hideBarsOnScroll(); renderSettings()
-    }
-    row("Link e app", "Scelte «apri nell'app o qui»: ${openInPrefs.all.size}") {
+    row("Browser predefinito", "Apri qui i link di WhatsApp, email…" + if (openInPrefs.all.isNotEmpty()) " · scelte «apri nell'app o qui»: ${openInPrefs.all.size}" else "", value = if (isDefaultBrowser()) "Sì" else "No") {
         val entries = openInPrefs.all.entries.sortedBy { it.key }
-        if (entries.isEmpty()) { toast("Nessuna scelta salvata"); return@row }
-        MaterialAlertDialogBuilder(this).setTitle("Tocca per dimenticare la scelta")
-            .setItems(entries.map { "${it.key} → ${if (it.value == "app") "app" else "qui"}" }.toTypedArray()) { _, w ->
-                openInPrefs.edit().remove(entries[w].key).apply(); renderSettings()
-            }.setNeutralButton("Dimentica tutte") { _, _ -> openInPrefs.edit().clear().apply(); renderSettings() }.show()
+        if (entries.isEmpty()) { requestDefaultBrowser(); return@row }
+        MaterialAlertDialogBuilder(this).setTitle("Browser predefinito")
+            .setItems(arrayOf(if (isDefaultBrowser()) "È già il browser predefinito" else "Usa Web Launcher per aprire i link", "Rivedi le scelte «apri nell'app o qui» (${entries.size})")) { _, w ->
+                if (w == 0) { if (!isDefaultBrowser()) requestDefaultBrowser() }
+                else MaterialAlertDialogBuilder(this).setTitle("Tocca per dimenticare la scelta")
+                    .setItems(entries.map { "${it.key} → ${if (it.value == "app") "app" else "qui"}" }.toTypedArray()) { _, k ->
+                        openInPrefs.edit().remove(entries[k].key).apply(); renderSettings()
+                    }.setNeutralButton("Dimentica tutte") { _, _ -> openInPrefs.edit().clear().apply(); renderSettings() }.show()
+            }.show()
     }
     row("🍪 Rifiuta i banner dei cookie", "Tocca «Rifiuta» al posto tuo, quando il sito lo permette", switch = CookieBanners.enabled(this)) {
         CookieBanners.setEnabled(this, !CookieBanners.enabled(this)); setupCookieBanners(); renderSettings()
@@ -307,6 +297,36 @@ internal fun MainActivity.renderSettings() {
         applyDarkSites()
         if (browserHasPage) webView.reload()
         renderSettings()
+    }
+    more("BROWSER") {
+        row("Scorri dal bordo per tornare indietro", "Da sinistra: pagina precedente · da destra: successiva", switch = homePrefs.getBoolean("edgeSwipe", true)) {
+            homePrefs.edit().putBoolean("edgeSwipe", !homePrefs.getBoolean("edgeSwipe", true)).apply(); renderSettings()
+        }
+        val tabDays = homePrefs.getInt("tabAutoCloseDays", 0)
+        row("Chiudi le schede non usate", value = if (tabDays == 0) "Mai" else "Dopo $tabDays giorni") {
+            val opts = intArrayOf(0, 1, 7, 30)
+            MaterialAlertDialogBuilder(this).setTitle("Chiudi le schede non usate")
+                .setSingleChoiceItems(arrayOf("Mai", "Dopo 1 giorno", "Dopo 7 giorni", "Dopo 30 giorni"), opts.indexOf(tabDays).coerceAtLeast(0)) { dl, w ->
+                    homePrefs.edit().putInt("tabAutoCloseDays", opts[w]).apply(); dl.dismiss(); renderSettings()
+                }.show()
+        }
+        row("🔎 Cosa cercare nei tuoi dati", "Scegli cosa mostrare sotto la barra di ricerca") {
+            val sp = getSharedPreferences("wl_search", MODE_PRIVATE)
+            val keys = listOf("note" to "📝 Note e liste", "spese" to "💰 Spese", "scadenze" to "📆 Scadenze", "biglietti" to "🎫 Biglietti e documenti",
+                "carte" to "💳 Carte fedeltà", "luoghi" to "📍 Luoghi", "libri" to "📖 Libri", "leggi" to "🔖 Leggi dopo", "cronologia" to "🕘 Cronologia")
+            val off = sp.getStringSet("off", emptySet()).orEmpty()
+            val checked = BooleanArray(keys.size) { keys[it].first !in off }
+            MaterialAlertDialogBuilder(this).setTitle("Cosa cercare")
+                .setMultiChoiceItems(keys.map { it.second }.toTypedArray(), checked) { _, i, on -> checked[i] = on }
+                .setPositiveButton("Salva") { _, _ -> sp.edit().putStringSet("off", keys.filterIndexed { i, _ -> !checked[i] }.map { it.first }.toSet()).apply() }
+                .setNegativeButton("Annulla", null).show()
+        }
+        row("Suggerimenti di ricerca", "Mentre scrivi l'indirizzo (dal motore scelto)", switch = repo.searchSuggestions()) {
+            repo.setSearchSuggestions(!repo.searchSuggestions()); renderSettings()
+        }
+        row("Nascondi barre scorrendo", "Più spazio, ma lo scorrimento è meno fluido", switch = repo.hideBarsOnScroll()) {
+            repo.setHideBarsOnScroll(!repo.hideBarsOnScroll()); hideBarsOn = repo.hideBarsOnScroll(); renderSettings()
+        }
     }
 
     section("AI")
@@ -384,7 +404,38 @@ internal fun MainActivity.renderSettings() {
     row("Cancella tutti i dati", "Recenti, cronologia, cookie, cache", danger = true) { confirmClear("Cancellare tutti i dati di navigazione?") { clearAllBrowsingData(); toast("Dati cancellati") } }
 
     section("BACKUP")
-    row("📦 Backup e ripristino", "Backup completo, sincronizzazione, preferiti di Chrome (anche in Strumenti)") { showBackupTools() }
+    val fullLast = syncPrefs.getLong("fullLast", 0L)
+    val fullUri = syncPrefs.getString("fullUri", null)
+    val where = backupPlace(fullUri)
+    row("☁️ Ultimo backup", (if (fullLast > 0) NewsAdapter.ago(fullLast).replaceFirstChar { it.uppercase() } else "Mai fatto") +
+        (if (where != null) " · su $where" else "") + (if (fullUri != null) " · ogni notte" else "") +
+        (if (syncPrefs.getBoolean("fullHeld", false)) "\n⚠️ In pausa: ora i dati sono molto meno dell'ultimo backup. Se è tutto a posto tocca «Salva ora»." else ""), value = "Salva ora") {
+        if (fullUri == null) { pendingFullAuto = true; fullBackupCreate.launch("web-launcher-completo.zip"); return@row }
+        toast("Salvo il backup…")
+        io.execute {
+            val ok = runCatching {
+                val u = Uri.parse(fullUri)
+                (contentResolver.openOutputStream(u, "wt") ?: contentResolver.openOutputStream(u))!!.use { FullBackup.write(this, it) }
+            }.isSuccess
+            if (ok) syncPrefs.edit().putLong("fullLast", System.currentTimeMillis()).putLong("fullBytes", FullBackup.dataBytes(this)).putBoolean("fullHeld", false).apply()
+            runOnUiThread { toast(if (ok) "✓ Backup salvato" else "File non raggiungibile: scegli di nuovo dove salvare"); if (currentTab == TAB_SETTINGS) renderSettings() }
+        }
+    }
+    row("📥 Ripristina", "Rimette app, note, libri, spese e impostazioni da un backup") {
+        fullBackupRestore.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+    }
+    row("Dove salvare", "Si apre la finestra dei file: tocca ☰ e scegli Google Drive (o un'altra app)", value = where ?: "Scegli") {
+        pendingFullAuto = true; fullBackupCreate.launch("web-launcher-completo.zip")
+    }
+    row("Backup automatico", "Ogni notte, solo con la batteria non scarica", switch = fullUri != null) {
+        if (fullUri != null) { syncPrefs.edit().remove("fullUri").apply(); FullBackup.schedule(this); toast("Backup automatico spento"); renderSettings() }
+        else { pendingFullAuto = true; fullBackupCreate.launch("web-launcher-completo.zip") }
+    }
+    more("BACKUP") {
+        row("🔄 Sincronizza tra dispositivi", if (repo.getAutoBackupUri() != null) "Collegato a un file di backup" else "Tramite un file su Google Drive") { showSyncHelp() }
+        row("💾 Backup delle sole impostazioni", if (repo.getAutoBackupUri() != null) "Automatico attivo" else "Un file piccolo con home, preferiti e scelte") { showBackupMenu() }
+        row("⭐ Importa preferiti da Chrome", "Da un file bookmarks.html") { showBookmarkImportHelp() }
+    }
 
     section("AGGIORNAMENTI")
     row("⬆️ Controlla aggiornamenti", "Versione ${Updater.installedName(this)} (build ${Updater.installedCode(this)})" +
@@ -392,10 +443,12 @@ internal fun MainActivity.renderSettings() {
     row("Avvisami delle nuove versioni", "Controllo automatico due volte al giorno", switch = Updater.autoCheck(this)) {
         Updater.setAutoCheck(this, !Updater.autoCheck(this)); if (Updater.autoCheck(this)) ensureNotificationPermission(); renderSettings()
     }
-    row("🧪 Ricevi le versioni di prova", "Novità prima degli altri, ma possono avere qualche errore", switch = Updater.beta(this)) {
-        Updater.setBeta(this, !Updater.beta(this)); renderSettings()
+    more("AGGIORNAMENTI") {
+        row("🧪 Ricevi le versioni di prova", "Novità prima degli altri, ma possono avere qualche errore", switch = Updater.beta(this)) {
+            Updater.setBeta(this, !Updater.beta(this)); renderSettings()
+        }
+        row("🐞 Segnala un problema", "Con versione, telefono e ultimo errore") { reportProblem() }
     }
-    row("🐞 Segnala un problema", "Con versione, telefono e ultimo errore") { reportProblem() }
 
     section("HOME")
     row("🌦 Meteo in home", if (weatherPrefs.getBoolean("hidden", false)) "Nascosto" else weatherPrefs.getString("city", null) ?: "Scegli la città") {
@@ -436,14 +489,11 @@ internal fun MainActivity.renderSettings() {
 
     if (hub) {
         val pages = listOf(
-            Triple("ASPETTO", "Tema, colore, testo, icone e sfondo", R.drawable.ic_tool_sun),
-            Triple("HOME", "Meteo, buongiorno, widget e app", R.drawable.ic_nav_home),
-            Triple("BROWSER", "Motore, suggerimenti, cookie e link", R.drawable.ic_nav_browser),
+            Triple("ASPETTO", "Tema, colore, testo, icone, meteo e widget", R.drawable.ic_tool_sun),
+            Triple("BROWSER", "Barra in basso, motore, link e cookie", R.drawable.ic_nav_browser),
             Triple("PRIVACY", "Impronta, pubblicità, pulizia e dati", R.drawable.ic_tool_lock),
-            Triple("NOTIZIE", "Fonti, YouTube e canali", R.drawable.ic_nav_news),
-            Triple("BACKUP", "File, Drive e ripristino", R.drawable.ic_tool_box),
-            Triple("AI", "Assistente, voce e Mia AI", R.drawable.ic_tool_spark),
-            Triple("AGGIORNAMENTI", "Versioni e segnalazioni", R.drawable.ic_tool_download)
+            Triple("NOTIZIE", "Fonti, YouTube, assistente, voce e Mia AI", R.drawable.ic_nav_news),
+            Triple("BACKUP", syncPrefs.getLong("fullLast", 0L).let { if (it > 0) "Ultimo backup " + NewsAdapter.ago(it) else "Backup su Drive e aggiornamenti" } + " · versione $appVersion", R.drawable.ic_tool_box)
         )
         val card = com.google.android.material.card.MaterialCardView(this).apply {
             radius = dp(20).toFloat(); cardElevation = 0f; setCardBackgroundColor(palette.card)
@@ -494,6 +544,19 @@ internal fun MainActivity.renderSettings() {
         setPadding(0, dp(24), 0, dp(8))
     })
     if (settingsQuery.isNotBlank()) applyFilter(settingsQuery)
+}
+
+/** Where the backup file lives, in plain words (null if none). */
+internal fun backupPlace(uri: String?): String? {
+    val a = runCatching { Uri.parse(uri ?: return null).authority }.getOrNull().orEmpty()
+    return when {
+        a.contains("com.google.android.apps.docs") -> "Google Drive"
+        a.contains("skydrive") || a.contains("onedrive") -> "OneDrive"
+        a.contains("dropbox") -> "Dropbox"
+        a.contains("externalstorage") || a.contains("downloads") || a.contains("media") -> "telefono"
+        a.isBlank() -> null
+        else -> "un'altra app"
+    }
 }
 
 internal fun MainActivity.showSearchEnginePicker() {
@@ -567,11 +630,6 @@ internal fun MainActivity.showPrivacyTools() {
 }
 
 internal fun MainActivity.showBackupTools() {
-    openPage("Backup e ripristino") { _, body, _ ->
-        listRow(body, "📦 Backup completo", syncPrefs.getLong("fullLast", 0L).let { if (it > 0) "Ultimo ${NewsAdapter.ago(it)}" + (if (syncPrefs.getString("fullUri", null) != null) " · ogni notte" else "") else "Tutto in un file: libri, registrazioni, biglietti…" }, onClick = { showFullBackupMenu() })
-        listRow(body, "🔄 Sincronizza tra dispositivi", if (repo.getAutoBackupUri() != null) "Collegato a un file di backup" else "Tramite un file su Google Drive", onClick = { showSyncHelp() })
-        listRow(body, "💾 Backup delle impostazioni", if (repo.getAutoBackupUri() != null) "Automatico attivo" else "Su file, Drive o condivisione", onClick = { showBackupMenu() })
-        listRow(body, "📥 Ripristina", "Da un file di backup", onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) })
-        listRow(body, "⭐ Importa preferiti da Chrome", "Da un file bookmarks.html", onClick = { showBookmarkImportHelp() })
-    }
+    // one place for backups: Impostazioni → Backup e aggiornamenti
+    settingsPage = "BACKUP"; settingsQuery = ""; showTab(MainActivity.TAB_SETTINGS); renderSettings()
 }
