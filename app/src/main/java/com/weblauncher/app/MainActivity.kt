@@ -233,6 +233,19 @@ class MainActivity : AppCompatActivity() {
         Uri.parse(origin.orEmpty()).host?.removePrefix("www.") ?: "Il sito"
     } catch (_: Exception) { "Il sito" }
 
+    // PDF tools: pick a PDF / a picture, save a new PDF where the user likes
+    var lastTranslateOffer: String? = null
+    var pdfPickDone: ((android.net.Uri) -> Unit)? = null
+    val pdfPick = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) pdfPickDone?.invoke(uri) }
+    var imagePickDone: ((android.net.Uri) -> Unit)? = null
+    val imagePick = registerForActivityResult(ActivityResultContracts.GetContent()) { uri -> if (uri != null) imagePickDone?.invoke(uri) }
+    var pendingPdfSave: java.io.File? = null
+    val pdfSaveAs = registerForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        val f = pendingPdfSave ?: return@registerForActivityResult
+        if (uri == null) return@registerForActivityResult
+        val ok = runCatching { contentResolver.openOutputStream(uri)!!.use { o -> f.inputStream().use { it.copyTo(o) } } }.isSuccess
+        toast(if (ok) "✓ PDF salvato" else "Non riesco a salvare il PDF")
+    }
     val bookmarkLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importBookmarks(uri)
     }
@@ -572,6 +585,7 @@ class MainActivity : AppCompatActivity() {
                 if (!ytDocStartSupported() && CookieBanners.enabled(this@MainActivity)) view?.evaluateJavascript(CookieBanners.SCRIPT, null)
                 io.execute { PrivacyStats.flush(this@MainActivity) }
                 runCatching { maybeSuggestPasswords(view) }
+                runCatching { maybeOfferTranslation(view, url) }
                 if (GialloZafferano.isRecipePage(url) && url != lastRecipeOffer) {
                     lastRecipeOffer = url
                     com.google.android.material.snackbar.Snackbar.make(findViewById(android.R.id.content), "🍝 Vuoi salvare questa ricetta?", 8000)
@@ -1161,6 +1175,20 @@ class MainActivity : AppCompatActivity() {
                 }
                 openPdfPage(f, "Prova PDF"); return
             }
+            "pdfedit", "pdfpages", "pdfsign" -> {   // automatic test: firma, evidenzia e riordina un PDF fatto al momento, poi apre lo strumento
+                val which = intent.getStringExtra(EXTRA_WIDGET); intent.removeExtra(EXTRA_WIDGET)
+                io.execute {
+                    val r = PdfEdit.selfTest(this, cacheDir)
+                    android.util.Log.i(SelfTest.TAG, r)
+                    val f = java.io.File(cacheDir, "prova-modifica-firmato.pdf")
+                    runOnUiThread {
+                        if (!f.exists()) return@runOnUiThread
+                        when (which) { "pdfpages" -> pdfPages(f, "Prova"); "pdfsign" -> pdfEditor(f, "Prova", "highlight"); else -> showPdfTools(f, "Prova") }
+                    }
+                }
+                return
+            }
+            "writeforme" -> { intent.removeExtra(EXTRA_WIDGET); showWriteForMe(); return }
             "tools" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_TOOLS); return }
             "settings" -> { intent.removeExtra(EXTRA_WIDGET); settingsPage = null; settingsQuery = ""; showTab(TAB_SETTINGS); return }
             "instruments" -> { intent.removeExtra(EXTRA_WIDGET); showInstrumentsPage(); return }
@@ -1572,7 +1600,8 @@ class MainActivity : AppCompatActivity() {
         item("Download") { showDownloadsPage() }
         item("Trova nella pagina", hasPage) { showFindDialog() }
         item("Modalità lettura", hasPage) { openReaderMode() }
-        item("Traduci", hasPage) { translateCurrentPage() }
+        item("Traduci", hasPage || isPdfViewer(webView.url)) { if (isPdfViewer(webView.url)) pdfFileOf(webView.url)?.let { pdfAsk(it, pdfName(webView.url)) } else translatePageInPlace() }
+        if (isPdfViewer(webView.url)) item("✍️ Modifica il PDF") { pdfFileOf(webView.url)?.let { showPdfTools(it, pdfName(webView.url)) } ?: toast("Non trovo il file del PDF") }
         if (isPdfViewer(webView.url)) item("Stampa") { printPdfUrl(webView.url) }
         else item("Stampa", hasPage) { savePageAsPdf() }
         val pageUrl = webView.url.orEmpty()

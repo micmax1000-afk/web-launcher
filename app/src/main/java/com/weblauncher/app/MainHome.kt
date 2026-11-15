@@ -206,11 +206,14 @@ internal fun MainActivity.renderTools() {
     group("AI", listOf(
         Triple("✨", "Mia AI") { openMiaAi() },
         Triple("🗣", "Chiedi a voce") { listenForQuestion() },
-        Triple("🧠", "Chiedi ai tuoi dati") { askMyData() }
+        Triple("🧠", "Chiedi ai tuoi dati") { askMyData() },
+        Triple("✍️", "Scrivi per me") { showWriteForMe() },
+        Triple("🔍", "Spiegami un foglio") { explainSheet() }
     ))
     group("DOCUMENTI", listOf(
         Triple("📄", "Scanner") { scanDocument() },
         Triple("📑", "Apri PDF") { pdfPicker.launch(arrayOf("application/pdf")) },
+        Triple("🖊", "Modifica PDF") { pickPdfForTools() },
         Triple("🎫", "Biglietti") { showWalletPage() },
         Triple("💳", "Carte fedeltà") { showCardsPage() },
         Triple("📖", "Libri") { showBooksPage() },
@@ -394,6 +397,9 @@ private fun toolIcon(label: String): Int = when (label) {
     "Parcheggio e luoghi" -> R.drawable.ic_tool_pin
     "Scanner" -> R.drawable.ic_tool_scan
     "Apri PDF" -> R.drawable.ic_tool_pdf
+    "Modifica PDF" -> R.drawable.ic_tool_edit
+    "Scrivi per me" -> R.drawable.ic_tool_note
+    "Spiegami un foglio" -> R.drawable.ic_tool_search
     "Biglietti" -> R.drawable.ic_tool_ticket
     "Carte fedeltà" -> R.drawable.ic_tool_loyalty
     "Libri" -> R.drawable.ic_tool_book
