@@ -1652,7 +1652,7 @@ class MainActivity : AppCompatActivity() {
     fun installDarkPaint() {
         runCatching { darkScript?.remove() }
         darkScript = null
-        if (AppRepository.isLightUi(this) || !repo.darkSites()) return
+        if (AppRepository.isLightUi(this) || !::repo.isInitialized || !repo.darkSites()) return
         if (!androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT)) return
         val bg = String.format("#%06X", 0xFFFFFF and AppRepository.palette(this).bg)
         val js = "(function(){try{var s=document.createElement('style');s.textContent='html,body{background:" + bg + "!important;color-scheme:dark}';document.documentElement.appendChild(s);}catch(e){}})();"
