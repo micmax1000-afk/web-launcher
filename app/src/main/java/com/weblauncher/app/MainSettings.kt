@@ -431,6 +431,7 @@ internal fun MainActivity.renderSettings() {
         if (fullUri != null) { syncPrefs.edit().remove("fullUri").apply(); FullBackup.schedule(this); toast("Backup automatico spento"); renderSettings() }
         else { pendingFullAuto = true; fullBackupCreate.launch("web-launcher-completo.zip") }
     }
+    row("🍽 Cibo e ricette → nuova app", "Porta diario, acqua, ricette e profilo nell'app «Cibo e ricette»") { sendFoodToCiboApp() }
     more("BACKUP") {
         row("🔄 Sincronizza tra dispositivi", if (repo.getAutoBackupUri() != null) "Collegato a un file di backup" else "Tramite un file su Google Drive") { showSyncHelp() }
         row("💾 Backup delle sole impostazioni", if (repo.getAutoBackupUri() != null) "Automatico attivo" else "Un file piccolo con home, preferiti e scelte") { showBackupMenu() }
