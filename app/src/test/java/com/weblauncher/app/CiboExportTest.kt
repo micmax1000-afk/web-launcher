@@ -13,9 +13,10 @@ class CiboExportTest {
 
     @Test fun jsonHasTheFieldsTheNewAppReads() {
         val d = CiboExport.Data(1, listOf(FoodEntry("e", 1, "pranzo", "Riso", 200.0, 4.0, 40.0, 1.0)), mapOf("2026-11-01" to 1500), 2000, 250, listOf("Glutine"),
-            "f", 1985, 168.0, 1.375, "keep", 62.0, listOf(Recipe("r", "Zuppa", "u", null, "2", "30 min", listOf("a"), listOf("b"), 5)))
+            "f", 1985, 168.0, 1.375, "keep", 62.0, listOf(Recipe("r", "Zuppa", "u", null, "2", "30 min", listOf("a"), listOf("b"), 5)),
+            listOf(Measure("m", "peso", 62.0, null, 1)), listOf(Med("d", "X", "1 cp", listOf("08:00"), 10)), listOf(Visit("v", "Visita", 5)), EmergencyCard("Maria"))
         val json = Gson().toJson(d)
-        for (k in listOf("\"version\"", "\"entries\"", "\"water\"", "\"waterGoal\"", "\"glass\"", "\"avoid\"", "\"sex\"", "\"birthYear\"", "\"heightCm\"", "\"activity\"", "\"goal\"", "\"weightKg\"", "\"recipes\"", "\"ingredients\"", "\"steps\"", "\"kcal\""))
+        for (k in listOf("\"version\"", "\"entries\"", "\"water\"", "\"waterGoal\"", "\"glass\"", "\"avoid\"", "\"sex\"", "\"birthYear\"", "\"heightCm\"", "\"activity\"", "\"goal\"", "\"weightKg\"", "\"recipes\"", "\"ingredients\"", "\"steps\"", "\"kcal\"", "\"measures\"", "\"meds\"", "\"visits\"", "\"emergency\""))
             assertTrue("manca $k", json.contains(k))
     }
 }

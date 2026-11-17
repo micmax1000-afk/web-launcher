@@ -16,7 +16,8 @@ internal object CiboExport {
         val version: Int = 1,
         val entries: List<FoodEntry>, val water: Map<String, Int>, val waterGoal: Int, val glass: Int, val avoid: List<String>,
         val sex: String, val birthYear: Int, val heightCm: Double, val activity: Double, val goal: String, val weightKg: Double,
-        val recipes: List<Recipe>
+        val recipes: List<Recipe>,
+        val measures: List<Measure> = emptyList(), val meds: List<Med> = emptyList(), val visits: List<Visit> = emptyList(), val emergency: EmergencyCard? = null
     )
 
     /** I giorni con acqua registrata, da prefs «water_AAAA-MM-GG». */
@@ -28,15 +29,16 @@ internal fun MainActivity.exportCiboJson(): String {
     val p = Food.profile(this)
     val water = CiboExport.waterDays(getSharedPreferences("wl_food", android.content.Context.MODE_PRIVATE).all)
     return Gson().toJson(CiboExport.Data(1, Food.load(this), water, Food.waterGoal(this), Food.glass(this), Food.avoid(this).toList(),
-        p.sex, p.birthYear, p.heightCm, p.activity, p.goal, Food.lastWeight(this), Recipes.load(this)))
+        p.sex, p.birthYear, p.heightCm, p.activity, p.goal, Food.lastWeight(this), Recipes.load(this),
+        Health.load(this).filter { it.type != "sonno" }, Meds.load(this), Visits.load(this), Emergency.load(this).takeIf { !Emergency.isEmpty(it) }))
 }
 
-/** Manda i dati di cibo e ricette all'app «Cibo e ricette» (o li salva/condivide come file). */
+/** Manda i dati di cibo, ricette e salute all'app «Benessere e cibo» (o li salva/condivide come file). */
 internal fun MainActivity.sendFoodToCiboApp() {
     val entries = Food.load(this).size; val recipes = Recipes.load(this).size
     val installed = packageManager.getLaunchIntentForPackage(CIBO_APP) != null
-    MaterialAlertDialogBuilder(this).setTitle("🍽 Cibo e ricette")
-        .setMessage("Porto nella nuova app $entries cibi del diario, $recipes ricette, l'acqua e il profilo. Qui non si cancella niente.\n\n" +
+    MaterialAlertDialogBuilder(this).setTitle("🍽 Benessere e cibo")
+        .setMessage("Porto nella nuova app $entries cibi del diario, $recipes ricette, l'acqua, il profilo e la salute (misure, farmaci, visite, scheda d'emergenza). Qui non si cancella niente. I promemoria dei farmaci e delle visite si rifanno nella nuova app: poi spegni quelli vecchi qui.\n\n" +
             if (installed) "Nella nuova app: ⚙️ → «Importa da Web Launcher» e scegli il file." else "La nuova app non è ancora installata: scaricala da github.com/micmax1000-afk/Fitness-/releases.")
         .setPositiveButton("Crea il file") { _, _ ->
             runCatching {
