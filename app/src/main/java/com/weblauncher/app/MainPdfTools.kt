@@ -475,3 +475,18 @@ internal fun MainActivity.pdfAsk(file: File, name: String) {
         }
     }.show()
 }
+
+// ---------- the separate app «PDF e fogli» ----------
+
+const val PDF_APP = "com.micmax.pdf"
+
+/** Opens the app «PDF e fogli»; if it is not installed, offers to download it. */
+internal fun MainActivity.openPdfApp() {
+    val i = packageManager.getLaunchIntentForPackage(PDF_APP)
+    if (i != null) { runCatching { startActivity(i) }.onFailure { toast("Non riesco ad aprire PDF e fogli") }; return }
+    MaterialAlertDialogBuilder(this).setTitle("📑 PDF e fogli")
+        .setMessage("È un'app a parte per i PDF: leggere, cercare, firmare, compilare, evidenziare, unire, dividere, scansionare, comprimere. Funziona senza internet e senza AI.\n\nNon è ancora installata.")
+        .setPositiveButton("Scaricala") { _, _ -> openInBrowser("https://github.com/micmax1000-afk/PDF/releases") }
+        .setNeutralButton("Apri un PDF qui") { _, _ -> pdfPicker.launch(arrayOf("application/pdf")) }
+        .setNegativeButton("Chiudi", null).show()
+}
