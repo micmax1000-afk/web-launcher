@@ -138,17 +138,22 @@ internal fun MainActivity.calendarEvents(from: Long, to: Long): List<TodayEntry>
             .appendPath(from.toString()).appendPath(to.toString()).build()
         contentResolver.query(uri, arrayOf(
             android.provider.CalendarContract.Instances.TITLE, android.provider.CalendarContract.Instances.BEGIN,
-            android.provider.CalendarContract.Instances.ALL_DAY, android.provider.CalendarContract.Instances.EVENT_ID
+            android.provider.CalendarContract.Instances.ALL_DAY, android.provider.CalendarContract.Instances.EVENT_ID, android.provider.CalendarContract.Instances.END
         ), null, null, android.provider.CalendarContract.Instances.BEGIN + " ASC")?.use { c ->
             val out = mutableListOf<TodayEntry>()
             while (c.moveToNext()) {
                 val title = c.getString(0)?.takeIf { it.isNotBlank() } ?: "(senza titolo)"
                 val allDay = c.getInt(2) == 1
                 var begin = c.getLong(1)
-                if (allDay) begin = java.util.Calendar.getInstance().apply {
-                    val u = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = begin }
-                    clear(); set(u.get(java.util.Calendar.YEAR), u.get(java.util.Calendar.MONTH), u.get(java.util.Calendar.DAY_OF_MONTH))
-                }.timeInMillis
+                if (allDay) {
+                    // i giorni interi sono salvati a mezzanotte UTC: li riporto all'ora locale, e il giorno dopo la fine non si vedono più
+                    fun local(ms: Long) = java.util.Calendar.getInstance().apply {
+                        val u = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = ms }
+                        clear(); set(u.get(java.util.Calendar.YEAR), u.get(java.util.Calendar.MONTH), u.get(java.util.Calendar.DAY_OF_MONTH))
+                    }.timeInMillis
+                    if (local(c.getLong(4)) <= from) continue
+                    begin = maxOf(local(begin), from)   // un evento di più giorni compare oggi, non nel giorno in cui è iniziato
+                }
                 val id = c.getLong(3)
                 out.add(TodayEntry(begin, allDay, title, "📅") {
                     runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.content.ContentUris.withAppendedId(android.provider.CalendarContract.Events.CONTENT_URI, id))) }
@@ -181,8 +186,14 @@ internal fun MainActivity.todayEntries(): List<TodayEntry> {
     runCatching { Birthdays.upcoming(this, 1) }.getOrDefault(emptyList()).forEach { (p, days) ->
         out += TodayEntry(start + days * 86_400_000L, true, "Compleanno di ${p.name}" + (p.turning(java.util.Calendar.getInstance())?.let { " ($it)" } ?: ""), "🎂") { showBirthdaysPage() }
     }
-    runCatching { Waste.kindsOn(Evening.waste(this), Evening.wasteDates(this), java.util.Calendar.getInstance()) }.getOrDefault(emptyList())
-        .takeIf { it.isNotEmpty() }?.let { k -> out += TodayEntry(start, true, "Oggi raccolta: " + k.joinToString(", "), "🗑") { showWastePage() } }
+    // la mattina «oggi»; da mezzogiorno quello che si mette fuori per domani
+    runCatching {
+        val afternoon = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) >= 12
+        val day = java.util.Calendar.getInstance().apply { if (afternoon) add(java.util.Calendar.DAY_OF_YEAR, 1) }
+        Waste.kindsOn(Evening.waste(this), Evening.wasteDates(this), day).takeIf { it.isNotEmpty() }?.let { k ->
+            out += TodayEntry(if (afternoon) start + 86_400_000L else start, true, (if (afternoon) "Domani raccolta: " else "Oggi raccolta: ") + k.joinToString(", "), "🗑") { showWastePage() }
+        }
+    }
     Places.parking(this)?.takeIf { it.until > now }?.let { p ->
         out += TodayEntry(p.until, false, "Scade il parcheggio", "🚗") { showPlacesPage() }
     }
@@ -210,7 +221,7 @@ internal fun MainActivity.renderWeather() {
     if (showToday) {
         val entries = runCatching { todayEntries() }.getOrDefault(emptyList())
         val tomorrow = java.util.Calendar.getInstance().apply {
-            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); add(java.util.Calendar.DAY_OF_YEAR, 1)
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0); add(java.util.Calendar.DAY_OF_YEAR, 1)
         }.timeInMillis
         val tf = java.text.SimpleDateFormat("HH:mm", Locale.ITALIAN)
         entries.take(3).forEach { e ->
@@ -247,7 +258,7 @@ internal fun MainActivity.renderWeather() {
 internal fun MainActivity.showTodayDetail() {
     val entries = runCatching { todayEntries() }.getOrDefault(emptyList())
     val tomorrow = java.util.Calendar.getInstance().apply {
-        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); add(java.util.Calendar.DAY_OF_YEAR, 1)
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0); add(java.util.Calendar.DAY_OF_YEAR, 1)
     }.timeInMillis
     val tf = java.text.SimpleDateFormat("HH:mm", Locale.ITALIAN)
     val today = java.text.SimpleDateFormat("EEEE d MMMM", Locale.ITALIAN).format(java.util.Date()).replaceFirstChar { it.uppercase() }
