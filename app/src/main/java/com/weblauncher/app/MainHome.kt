@@ -180,7 +180,6 @@ internal fun MainActivity.renderTools() {
             showChecklist(n?.id, "Lista della spesa")
         },
         Triple("🎙", "Registratore") { showRecorderPage() },
-        Triple("🍝", "Ricette") { showRecipesPage() },
         Triple("🎂", "Compleanni") { showBirthdaysPage() },
         Triple("🗑", "Raccolta rifiuti") { showWastePage() },
         Triple("🚗", "Parcheggio e luoghi") { showPlacesPage() },
@@ -200,15 +199,17 @@ internal fun MainActivity.renderTools() {
         Triple("📆", "Scadenze") { showDeadlinesPage() },
         Triple("📈", "Borsa") { showStocksPage() }
     ))
-    group("SALUTE E SPORT", listOf(
-        Triple("💚", "Benessere") { showWellnessHub() }
+    group("SALUTE E CIBO", listOf(
+        Triple("💚", "Benessere e cibo") { openWellnessApp() }
     ))
     group("AI", listOf(
         Triple("✨", "Mia AI") { openMiaAi() },
         Triple("🗣", "Chiedi a voce") { listenForQuestion() },
         Triple("🧠", "Chiedi ai tuoi dati") { askMyData() },
         Triple("✍️", "Scrivi per me") { showWriteForMe() },
-        Triple("🔍", "Spiegami un foglio") { explainSheet() }
+        Triple("🔍", "Spiegami un foglio") { explainSheet() },
+        Triple("📸", "Foto del piatto") { foodFromPhoto() },
+        Triple("🧊", "Frigo e ricette") { fridgePhoto() }
     ))
     group("DOCUMENTI", listOf(
         Triple("📑", "PDF e fogli") { openPdfApp() },
@@ -409,6 +410,9 @@ private fun toolIcon(label: String): Int = when (label) {
     "Altimetro" -> R.drawable.ic_tool_altitude
     "Tabata" -> R.drawable.ic_tool_dumbbell
     "Benessere" -> R.drawable.ic_tool_heart
+    "Benessere e cibo" -> R.drawable.ic_tool_heart
+    "Foto del piatto" -> R.drawable.ic_tool_scan
+    "Frigo e ricette" -> R.drawable.ic_tool_recipe
     "Musica" -> R.drawable.ic_tool_music
     "Raccolta rifiuti" -> R.drawable.ic_tool_trash
     "La mia settimana" -> R.drawable.ic_tool_chart

@@ -490,3 +490,16 @@ internal fun MainActivity.openPdfApp() {
         .setNeutralButton("Apri un PDF qui") { _, _ -> pdfPicker.launch(arrayOf("application/pdf")) }
         .setNegativeButton("Chiudi", null).show()
 }
+
+// ---------- the separate app «Benessere e cibo» ----------
+
+/** Opens the app «Benessere e cibo» (food, recipes, steps, sleep, workouts, medicines…); if it is not installed, offers to download it or to use the old pages. */
+internal fun MainActivity.openWellnessApp() {
+    val i = packageManager.getLaunchIntentForPackage(CIBO_APP)
+    if (i != null) { runCatching { startActivity(i) }.onFailure { toast("Non riesco ad aprire Benessere e cibo") }; return }
+    MaterialAlertDialogBuilder(this).setTitle("💚 Benessere e cibo")
+        .setMessage("È un'app a parte: diario del cibo, ricette, passi, sonno, allenamento, farmaci, visite. Funziona senza internet e senza AI.\n\nNon è ancora installata. Se hai già dati qui, dopo l'installazione portali con Impostazioni → Backup → «Salute, cibo e ricette → nuova app».")
+        .setPositiveButton("Scaricala") { _, _ -> openInBrowser("https://github.com/micmax1000-afk/Fitness-/releases") }
+        .setNeutralButton("Usa le pagine di qui") { _, _ -> showWellnessHub() }
+        .setNegativeButton("Chiudi", null).show()
+}
