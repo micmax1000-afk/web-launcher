@@ -105,3 +105,84 @@ internal fun MainActivity.playMedia(id: String, uri: String, title: String, sub:
         startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(shareUri, "audio/*").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
     }.onFailure { toast("Non trovo un'app per ascoltarla") }
 }
+
+internal fun MainActivity.statTile(label: String, value: String, sub: String? = null, color: Int? = null, fraction: Double? = null): LinearLayout {
+    val palette = AppRepository.palette(this)
+    val d = resources.displayMetrics.density
+    fun dp(v: Int) = (v * d).toInt()
+    return LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+        setPadding(dp(4), dp(11), dp(4), dp(11))
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 16 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
+        layoutParams = LinearLayout.LayoutParams(0, -2, 1f).apply { setMargins(dp(3), dp(3), dp(3), dp(3)) }
+        addView(TextView(this@statTile).apply { text = label; textSize = 12f; setTextColor(palette.textMuted); gravity = Gravity.CENTER })
+        addView(TextView(this@statTile).apply {
+            text = value; textSize = 17f; setTypeface(typeface, android.graphics.Typeface.BOLD); setTextColor(color ?: palette.text); gravity = Gravity.CENTER
+            setPadding(0, dp(2), 0, 0); maxLines = 1
+            setAutoSizeTextTypeUniformWithConfiguration(11, 17, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+        })
+        if (sub != null) addView(TextView(this@statTile).apply { text = sub; textSize = 11f; setTextColor(palette.textMuted); gravity = Gravity.CENTER; maxLines = 1 })
+        if (fraction != null) addView(progressBar(fraction, color ?: 0xFF2563EB.toInt()))
+    }
+}
+
+internal fun MainActivity.statRow(vararg tiles: View): LinearLayout =
+    LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; tiles.forEach { addView(it) } }
+
+internal fun MainActivity.progressBar(fraction: Double, color: Int): View {
+    val d = resources.displayMetrics.density
+    val palette = AppRepository.palette(this)
+    return android.widget.FrameLayout(this).apply {
+        layoutParams = LinearLayout.LayoutParams(-1, (10 * d).toInt()).apply { setMargins((6 * d).toInt(), (6 * d).toInt(), (6 * d).toInt(), (6 * d).toInt()) }
+        background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 5 * d; setColor(palette.stroke) }
+        addView(View(this@progressBar).apply {
+            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 5 * d; setColor(color) }
+            layoutParams = android.widget.FrameLayout.LayoutParams(0, -1)
+        })
+        post { (getChildAt(0).layoutParams as android.widget.FrameLayout.LayoutParams).width = (width * fraction.coerceIn(0.0, 1.0)).toInt(); getChildAt(0).requestLayout() }
+    }
+}
+
+// ======================= Health Connect (any watch or fitness app) =======================
+
+/** Reads Health Connect in the background and stores the result; [then] runs on the main thread. */
+
+/** «Foto del piatto»: l'AI guarda la foto e stima il pasto (solo una stima da leggere, niente diario). */
+internal fun MainActivity.foodFromPhoto() {
+    if (!aiReady()) return
+    val f = java.io.File(scanDir, "food_${System.currentTimeMillis()}.jpg")
+    capturePhoto(f) { shot ->
+        if (shot == null) return@capturePhoto
+        toast("✨ L'AI guarda il piatto…")
+        io.execute {
+            runCatching {
+                val bmp = android.graphics.BitmapFactory.decodeFile(shot.absolutePath)
+                val sc = minOf(1f, 1280f / maxOf(bmp.width, bmp.height))
+                val small = android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * sc).toInt(), (bmp.height * sc).toInt(), true)
+                shot.outputStream().use { small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) }
+            }
+            runOnUiThread { askFoodAi(shot) }
+        }
+    }
+}
+
+private fun MainActivity.askFoodAi(shot: java.io.File) {
+    ai.ask(listOf("user" to "Guarda la foto di un pasto. Riconosci cosa c'è nel piatto e stima una porzione realistica, quella che si vede. " +
+        "Rispondi SOLO con un oggetto JSON: {\"piatto\": \"nome breve\", \"porzione_g\": 300, \"kcal\": 550, \"proteine_g\": 25, \"carboidrati_g\": 60, \"grassi_g\": 20, \"note\": \"cosa hai riconosciuto e quanto sei sicuro\"}. " +
+        "Numeri interi. Se non vedi del cibo, rispondi {\"kcal\": 0}."),
+        "Rispondi solo con JSON valido.", object : AiBridge.Listener {
+            override fun onDone(text: String, model: String) {
+                val e = Food.parseAi(text)
+                val msg = if (e == null) "L'AI non ha riconosciuto del cibo, oppure la risposta non era comprensibile.\n\n" + text.take(300)
+                else "${e.name}\n≈ ${e.grams.toInt()} g\n${e.kcal.toInt()} kcal · proteine ${e.protein.toInt()} g · carboidrati ${e.carbs.toInt()} g · grassi ${e.fat.toInt()} g" +
+                    (if (e.note.isNotBlank()) "\n\n${e.note}" else "") + "\n\n(stima indicativa)"
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this@askFoodAi).setTitle("🍽 Foto del piatto").setMessage(msg).setPositiveButton("Chiudi", null).show()
+            }
+            override fun onError(message: String, noKey: Boolean) {
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this@askFoodAi).setTitle(if (noKey) "L'AI non è configurata" else "L'AI non è riuscita")
+                    .setMessage(if (noKey) "Serve un provider AI con la chiave, che si imposta in Mia AI." else "Motivo: $message\n\nPer le foto serve un modello che legge le immagini (per esempio Gemini).")
+                    .setPositiveButton(if (noKey) "Configura Mia AI" else "Chiudi") { _, _ -> if (noKey) openMiaAi() }
+                    .setNegativeButton("Annulla", null).show()
+            }
+        })
+}

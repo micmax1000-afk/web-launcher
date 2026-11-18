@@ -46,11 +46,7 @@ private fun MainActivity.row(body: LinearLayout, i: Todo.Item, page: androidx.ap
                     else -> showRemindersPage()
                 }
             }.show()
-            "med" -> MaterialAlertDialogBuilder(this).setTitle(i.text).setItems(arrayOf("✅ Ho preso la dose", "💊 Apri i farmaci")) { _, w ->
-                if (w == 0) { Meds.markTaken(this, i.id); toast("Segnato"); refresh() } else showMedsPage()
-            }.show()
             "dead" -> showDeadlinesPage(i.extra.ifBlank { Deadlines.DEADLINE })
-            "visit" -> showVisitsPage()
             "bday" -> showBirthdaysPage()
             "waste" -> showWastePage()
             "park" -> showPlacesPage()
@@ -85,8 +81,6 @@ internal fun MainActivity.showQuickAdd() {
     tile("💰", "Spesa in euro") { addExpenseDialog() }
     tile("📷", "Foto documento") { scanDocument() }
     tile("🎙", "Appunto a voce") { requestMicAndListen() }
-    tile("⚖️", "Peso e misure") { healthType = "peso"; showHealthPage() }
-    tile("💧", "Un bicchiere d'acqua") { Food.addWater(this, Food.glass(this)); toast("💧 +${Food.glass(this)} ml"); wellnessRefresh?.invoke() }
     root.addView(grid)
     sheet.setContentView(root); sheet.show()
 }
