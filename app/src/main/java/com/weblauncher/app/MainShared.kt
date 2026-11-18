@@ -15,9 +15,9 @@ import java.util.Locale
 internal fun MainActivity.ensureNotificationPermission() {
     if (android.os.Build.VERSION.SDK_INT >= 33 &&
         ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
-        !getSharedPreferences("wl_audio", MODE_PRIVATE).getBoolean("asked_notif", false)
+        !getSharedPreferences("wl_audio", android.content.Context.MODE_PRIVATE).getBoolean("asked_notif", false)
     ) {
-        getSharedPreferences("wl_audio", MODE_PRIVATE).edit().putBoolean("asked_notif", true).apply()
+        getSharedPreferences("wl_audio", android.content.Context.MODE_PRIVATE).edit().putBoolean("asked_notif", true).apply()
         notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }

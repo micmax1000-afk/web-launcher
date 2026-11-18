@@ -54,7 +54,6 @@ import com.weblauncher.app.MainActivity.Companion.TAB_NEWS
 import com.weblauncher.app.MainActivity.Companion.TAB_SETTINGS
 import com.weblauncher.app.MainActivity.Companion.TAB_TOOLS
 import com.weblauncher.app.MainActivity.ReaderDoc
-import com.weblauncher.app.MainActivity.Song
 import com.weblauncher.app.MainActivity.TodayEntry
 import com.weblauncher.app.MainActivity.WebTab
 import com.weblauncher.app.MainActivity.YtChannel
@@ -286,7 +285,6 @@ internal fun MainActivity.showAlertsPage() {
                 setOnCheckedChangeListener { _, c -> p.edit().putBoolean(key, c).apply(); AlertsWorker.schedule(this@showAlertsPage) }
             })
             sw("Avvisi attivi", "Controllo ogni 2 ore circa, con internet", "enabled")
-            sw("🎧 Nuovi episodi", "Dei podcast che segui (${audio.subscriptions().size})", "podcasts")
             sectionLabel(body, "📰 NOTIZIE SU…")
             val words = p.getStringSet("keywords", emptySet()).orEmpty().sorted()
             if (words.isEmpty()) body.addView(TextView(this).apply {

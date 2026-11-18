@@ -1570,7 +1570,6 @@ class MainActivity : AppCompatActivity() {
         if (watching) {
             item("Finestrella") { enterVideoPip() }
             item("Velocità (${ytPrefs.getFloat("speed", 1f)}×)") { ytSpeedDialog() }
-            item("Segui il canale") { followCurrentChannel() }
         }
         if (GialloZafferano.isRecipePage(pageUrl)) item("Salva ricetta") { saveRecipeFromPage() }
         item("Sito desktop", hasPage, tab.desktop) {
@@ -1853,7 +1852,6 @@ class MainActivity : AppCompatActivity() {
 
     data class YtChannel(val id: String, val name: String)
 
-    var ytVideos: List<NewsItem> = emptyList()
 
     // ======================= Calculator in search =======================
 
