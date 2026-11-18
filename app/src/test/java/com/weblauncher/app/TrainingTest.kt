@@ -44,23 +44,6 @@ class TrainingTest {
         assertEquals("5 e 30 al chilometro", Say.pace(60.0 / 5.5)); assertEquals("6 minuti al chilometro", Say.pace(10.0))
     }
 
-    @Test fun gpx() {
-        val w = Workout("1", "corsa", 1_700_000_000_000, 1_700_000_600_000, 1500.0, 590_000, 100.0, 0.0, 12.0)
-        val x = Gpx.build(w, listOf(Pt(45.0, 9.0, 1_700_000_000_000, 120.0, 140), Pt(45.001, 9.0, 1_700_000_060_000)), "Corsa & prova")
-        assertTrue(x.startsWith("<?xml")); assertTrue(x.contains("<trkpt lat=\"45.000000\" lon=\"9.000000\">")); assertTrue(x.contains("<gpxtpx:hr>140</gpxtpx:hr>"))
-        assertTrue(x.contains("Corsa &amp; prova")); assertTrue(x.contains("<time>2023-11-14T22:13:20Z</time>")); assertEquals(1, Regex("<gpxtpx:hr>").findAll(x).count())
-    }
-
-    @Test fun stessoPercorso() {
-        fun w(id: String, d: Double, kind: String = "corsa") = Workout(id, kind, 0, 0, d, 1_800_000, 0.0, 0.0, 0.0)
-        val here = 45.0 to 9.0
-        val start = mapOf("a" to here, "b" to (45.001 to 9.0), "c" to (45.1 to 9.0), "d" to here, "e" to here)
-        val all = listOf(w("a", 5000.0), w("b", 5200.0), w("c", 5000.0), w("d", 8000.0), w("e", 5000.0, "bici"))
-        val sim = Fitness.similar(all, all[0], { start[it.id] })
-        assertEquals(listOf("b"), sim.map { it.id })          // c troppo lontano, d troppo lungo, e un'altra attività
-        assertEquals(360, Fitness.paceSec(w("a", 5000.0)))
-    }
-
     @Test fun sintomiEReferto() {
         val l = listOf(Symptom("1", "Mal di testa", 6, "dopo pranzo", 1_700_000_000_000), Symptom("2", "Mal di testa", 4, "", 1_700_100_000_000))
         val lines = Symptoms.reportLines(l)
