@@ -1066,19 +1066,6 @@ class MainActivity : AppCompatActivity() {
             "stocks" -> { intent.removeExtra(EXTRA_WIDGET); showStocksPage(); return }
             "waste" -> { intent.removeExtra(EXTRA_WIDGET); showWastePage(); return }
             "birthdays" -> { intent.removeExtra(EXTRA_WIDGET); showBirthdaysPage(); return }
-            "wellness" -> { intent.removeExtra(EXTRA_WIDGET); showWellnessHub(); return }
-            "hc" -> { intent.removeExtra(EXTRA_WIDGET); showHealthConnectPage(); return }
-            "food" -> { intent.removeExtra(EXTRA_WIDGET); showFoodDiary(); return }
-            "water" -> { intent.removeExtra(EXTRA_WIDGET); showWaterPage(); return }
-            "calc" -> { intent.removeExtra(EXTRA_WIDGET); showCalorieCalculator(); return }
-            "workout" -> { intent.removeExtra(EXTRA_WIDGET); showWorkoutRecorder(); return }
-            "plans" -> { intent.removeExtra(EXTRA_WIDGET); showPlansPage(); return }
-            "history" -> { intent.removeExtra(EXTRA_WIDGET); showWorkoutHistory(); return }
-            "sleep" -> { intent.removeExtra(EXTRA_WIDGET); showSleepPage(); return }
-            "meds" -> { intent.removeExtra(EXTRA_WIDGET); showMedsPage(); return }
-            "visits" -> { intent.removeExtra(EXTRA_WIDGET); showVisitsPage(); return }
-            "emergency" -> { intent.removeExtra(EXTRA_WIDGET); showEmergencyPage(); return }
-            "report" -> { intent.removeExtra(EXTRA_WIDGET); showReportPage(); return }
             "privacytools" -> { intent.removeExtra(EXTRA_WIDGET); showPrivacyTools(); return }
             "backuptools" -> { intent.removeExtra(EXTRA_WIDGET); showBackupTools(); return }
             "recipes" -> { intent.removeExtra(EXTRA_WIDGET); showRecipesPage(); return }
@@ -1091,7 +1078,6 @@ class MainActivity : AppCompatActivity() {
             "shopping" -> { intent.removeExtra(EXTRA_WIDGET); val n = notes.load().firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals("Lista della spesa", true) }; showChecklist(n?.id, "Lista della spesa"); return }
             "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
-            "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
             "piperdemo" -> {
                 intent.removeExtra(EXTRA_WIDGET)
                 // automatic test: can the Lira voice (Piper) make speech in this phone's WebView?
@@ -1105,10 +1091,6 @@ class MainActivity : AppCompatActivity() {
                 }, 2500)
                 return
             }
-            "sources" -> { intent.removeExtra(EXTRA_WIDGET); showSourcesPage(); return }
-            "bledevices" -> { intent.removeExtra(EXTRA_WIDGET); showBleDevicesPage(); return }
-            "body" -> { intent.removeExtra(EXTRA_WIDGET); showBodyPage(); return }
-            "symptoms" -> { intent.removeExtra(EXTRA_WIDGET); showSymptomsPage(); return }
             "pdftext" -> {          // automatic test: text extraction of a PDF made on the spot (the AI reads this text)
                 intent.removeExtra(EXTRA_WIDGET)
                 val f = java.io.File(cacheDir, "prova-testo.pdf")
@@ -2036,11 +2018,6 @@ class MainActivity : AppCompatActivity() {
     var appCheckRefresh: (() -> Unit)? = null
     var lastRecipeOffer: String? = null
     var foodRefresh: (() -> Unit)? = null
-    var hcRefresh: (() -> Unit)? = null
-    /** Health Connect permission request: runs [hcRefresh] and a new reading when the user answers. */
-    val hcPermission = registerForActivityResult(androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()) { _ ->
-        syncHealthConnect { hcRefresh?.invoke(); wellnessRefresh?.invoke() }
-    }
     var scanPurpose: String? = null
 
     // ======================= Parking & saved places =======================

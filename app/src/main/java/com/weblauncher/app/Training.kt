@@ -151,27 +151,6 @@ fun vibrateNow(c: Context, ms: Long = 400) {
     }
 }
 
-/** GPX export of a workout (opens in Strava, Komoot, Garmin Connect…). */
-object Gpx {
-    fun build(w: Workout, pts: List<Pt>, name: String): String {
-        val iso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ROOT).apply { timeZone = TimeZone.getTimeZone("UTC") }
-        fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        val sb = StringBuilder()
-        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-        sb.append("<gpx version=\"1.1\" creator=\"Web Launcher\" xmlns=\"http://www.topografix.com/GPX/1/1\" xmlns:gpxtpx=\"http://www.garmin.com/xmlschemas/TrackPointExtension/v1\">\n")
-        sb.append("<metadata><time>${iso.format(Date(w.start))}</time></metadata>\n<trk><name>${esc(name)}</name><type>${esc(w.kind)}</type><trkseg>\n")
-        pts.forEach { p ->
-            sb.append("<trkpt lat=\"${"%.6f".format(Locale.ROOT, p.lat)}\" lon=\"${"%.6f".format(Locale.ROOT, p.lon)}\">")
-            if (p.alt != 0.0) sb.append("<ele>${"%.1f".format(Locale.ROOT, p.alt)}</ele>")
-            sb.append("<time>${iso.format(Date(p.t))}</time>")
-            if (p.hr > 0) sb.append("<extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>${p.hr}</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>")
-            sb.append("</trkpt>\n")
-        }
-        sb.append("</trkseg></trk></gpx>\n")
-        return sb.toString()
-    }
-}
-
 data class Symptom(val id: String, val what: String, val level: Int, val note: String, val time: Long)
 
 /** Symptom journal: what, how strong (1–10), when. */

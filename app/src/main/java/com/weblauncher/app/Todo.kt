@@ -46,22 +46,10 @@ object Todo {
         Reminders.load(c).filter { !it.done && it.at in (start - 86_400_000L)..end && !(it.at < now - 6 * 3_600_000L) }.forEach { r ->
             out += Item(r.at, false, r.text, if (r.repeat != null) "🔁" else "⏰", "rem", r.id.toString())
         }
-        // medicines: today's doses not taken yet (the n-th dose of the day is taken if n < doses taken)
-        Meds.load(c).filter { it.times.isNotEmpty() }.forEach { m ->
-            val taken = Meds.takenToday(c, m.id)
-            m.times.forEachIndexed { i, hhmm ->
-                if (i >= taken) {
-                    val (h, mi) = hhmm.split(':').map { it.toInt() }
-                    val t = Calendar.getInstance().apply { timeInMillis = start; set(Calendar.HOUR_OF_DAY, h); set(Calendar.MINUTE, mi) }.timeInMillis
-                    out += Item(t, false, "${m.name}" + if (m.dose.isNotBlank()) " (${m.dose})" else "", "💊", "med", m.id, hhmm)
-                }
-            }
-        }
         Deadlines.load(c).forEach { d ->
             val within = when (d.kind) { Deadlines.WARRANTY -> false; else -> d.date in (start - 86_400_000L)..end }
             if (within) out += Item(d.date, true, when (d.kind) { Deadlines.SUBSCRIPTION -> "${d.title} si rinnova"; else -> "${d.title} scade" }, "⚠️", "dead", d.id, d.kind)
         }
-        Visits.load(c).filter { it.time in now..end }.forEach { out += Item(it.time, false, it.title + if (it.place.isNotBlank()) " · ${it.place}" else "", "🩺", "visit", it.id) }
         runCatching { Birthdays.upcoming(c, days) }.getOrDefault(emptyList()).forEach { (p, d) ->
             out += Item(start + d * 86_400_000L, true, "Compleanno di ${p.name}", "🎂", "bday")
         }

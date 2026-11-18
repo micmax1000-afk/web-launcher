@@ -50,8 +50,6 @@ private fun MainActivity.checks(): List<Check> {
     out += Check("📅", "Calendario", if (has(Manifest.permission.READ_CALENDAR)) St.OK else St.OPTIONAL, "Collegato: gli appuntamenti compaiono in «Oggi»", "Per vedere gli appuntamenti in «Oggi» e in «Da fare»") { askPermission(Manifest.permission.READ_CALENDAR) }
     out += Check("🎂", "Contatti (compleanni)", if (has(Manifest.permission.READ_CONTACTS)) St.OK else St.OPTIONAL, "Collegati: compleanni dai contatti", "Per i compleanni dai contatti (puoi anche scriverli a mano)") { askPermission(Manifest.permission.READ_CONTACTS) }
     out += Check("👟", "Passi", if (Build.VERSION.SDK_INT < 29 || has(Manifest.permission.ACTIVITY_RECOGNITION)) St.OK else St.OPTIONAL, "Permesso dato: contapassi", "Per contare i passi con il telefono") { askPermission(Manifest.permission.ACTIVITY_RECOGNITION) }
-    val hcOn = Hc.status(this) == Hc.SDK_AVAILABLE && Hc.cached(this) != null
-    out += Check("⌚", "Orologio e app fitness", if (hcOn) St.OK else St.OPTIONAL, "Collegato tramite Health Connect", "Per vedere passi, sonno e battito dell'orologio") { showHealthConnectPage() }
     // --- keeping safe ---
     val last = syncPrefs.getLong("fullLast", 0L)
     val days = if (last > 0) (System.currentTimeMillis() - last) / 86_400_000L else -1
