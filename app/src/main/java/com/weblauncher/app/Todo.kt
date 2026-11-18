@@ -18,15 +18,19 @@ object Todo {
         return runCatching {
             val uri = android.provider.CalendarContract.Instances.CONTENT_URI.buildUpon().appendPath(from.toString()).appendPath(to.toString()).build()
             c.contentResolver.query(uri, arrayOf(android.provider.CalendarContract.Instances.TITLE, android.provider.CalendarContract.Instances.BEGIN,
-                android.provider.CalendarContract.Instances.ALL_DAY, android.provider.CalendarContract.Instances.EVENT_ID), null, null, android.provider.CalendarContract.Instances.BEGIN + " ASC")?.use { cur ->
+                android.provider.CalendarContract.Instances.ALL_DAY, android.provider.CalendarContract.Instances.EVENT_ID, android.provider.CalendarContract.Instances.END), null, null, android.provider.CalendarContract.Instances.BEGIN + " ASC")?.use { cur ->
                 val out = mutableListOf<Item>()
                 while (cur.moveToNext()) {
                     val allDay = cur.getInt(2) == 1
                     var begin = cur.getLong(1)
-                    if (allDay) begin = Calendar.getInstance().apply {
-                        val u = Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = begin }
-                        clear(); set(u.get(Calendar.YEAR), u.get(Calendar.MONTH), u.get(Calendar.DAY_OF_MONTH))
-                    }.timeInMillis
+                    if (allDay) {
+                        fun local(ms: Long) = Calendar.getInstance().apply {
+                            val u = Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = ms }
+                            clear(); set(u.get(Calendar.YEAR), u.get(Calendar.MONTH), u.get(Calendar.DAY_OF_MONTH))
+                        }.timeInMillis
+                        if (local(cur.getLong(4)) <= startOfDay(from + 2 * 3_600_000L)) continue   // finito ieri
+                        begin = maxOf(local(begin), startOfDay(from + 2 * 3_600_000L))
+                    }
                     out += Item(begin, allDay, cur.getString(0)?.takeIf { it.isNotBlank() } ?: "(senza titolo)", "📅", "cal", cur.getLong(3).toString())
                 }
                 out
