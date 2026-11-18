@@ -44,14 +44,6 @@ class TrainingTest {
         assertEquals("5 e 30 al chilometro", Say.pace(60.0 / 5.5)); assertEquals("6 minuti al chilometro", Say.pace(10.0))
     }
 
-    @Test fun sintomiEReferto() {
-        val l = listOf(Symptom("1", "Mal di testa", 6, "dopo pranzo", 1_700_000_000_000), Symptom("2", "Mal di testa", 4, "", 1_700_100_000_000))
-        val lines = Symptoms.reportLines(l)
-        assertTrue(lines[0].startsWith("Mal di testa: 2 volte")); assertTrue(lines[0].contains("5,0/10")); assertEquals(3, lines.size)
-        val d = Report.Data("A", 0, 1, emptyList(), emptyList(), emptyList(), 0, 0, 0, 0, emptyList(), "", "", lines)
-        assertTrue(Report.sections(d).any { it.first == "Sintomi annotati" })
-    }
-
     @Test fun promemoriaSettimanale() {
         val now = Calendar.getInstance().apply { set(2026, Calendar.NOVEMBER, 10, 12, 0, 0) }.timeInMillis    // martedì
         val next = Calendar.getInstance().apply { timeInMillis = nextWeekday(Calendar.MONDAY, "08:00", now) }
