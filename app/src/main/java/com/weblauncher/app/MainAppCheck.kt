@@ -52,7 +52,6 @@ private fun MainActivity.checks(): List<Check> {
     out += Check("👟", "Passi", if (Build.VERSION.SDK_INT < 29 || has(Manifest.permission.ACTIVITY_RECOGNITION)) St.OK else St.OPTIONAL, "Permesso dato: contapassi", "Per contare i passi con il telefono") { askPermission(Manifest.permission.ACTIVITY_RECOGNITION) }
     val hcOn = Hc.status(this) == Hc.SDK_AVAILABLE && Hc.cached(this) != null
     out += Check("⌚", "Orologio e app fitness", if (hcOn) St.OK else St.OPTIONAL, "Collegato tramite Health Connect", "Per vedere passi, sonno e battito dell'orologio") { showHealthConnectPage() }
-    out += Check("🎵", "Titolo della musica", if (Music.hasAccess(this)) St.OK else St.OPTIONAL, "Attivo: titolo e copertina visibili", "Facoltativo: i tasti funzionano già senza (serve «Accesso alle notifiche»)") { askMusicAccess() }
     // --- keeping safe ---
     val last = syncPrefs.getLong("fullLast", 0L)
     val days = if (last > 0) (System.currentTimeMillis() - last) / 86_400_000L else -1

@@ -43,13 +43,11 @@ import com.google.android.material.textfield.TextInputLayout
 import com.weblauncher.app.MainActivity.CatalogApp
 import com.weblauncher.app.MainActivity.Companion.AI_SYSTEM
 import com.weblauncher.app.MainActivity.Companion.DESKTOP_UA
-import com.weblauncher.app.MainActivity.Companion.EXTRA_OPEN_PLAYER
 import com.weblauncher.app.MainActivity.Companion.EXTRA_WIDGET
 import com.weblauncher.app.MainActivity.Companion.MENU_AI
 import com.weblauncher.app.MainActivity.Companion.NEWS_ALL
 import com.weblauncher.app.MainActivity.Companion.STATE_TAB
 import com.weblauncher.app.MainActivity.Companion.SUGGEST_TAG
-import com.weblauncher.app.MainActivity.Companion.TAB_AUDIO
 import com.weblauncher.app.MainActivity.Companion.TAB_BROWSER
 import com.weblauncher.app.MainActivity.Companion.TAB_HOME
 import com.weblauncher.app.MainActivity.Companion.TAB_NEWS

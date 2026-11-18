@@ -42,13 +42,11 @@ import com.google.android.material.textfield.TextInputLayout
 import com.weblauncher.app.MainActivity.CatalogApp
 import com.weblauncher.app.MainActivity.Companion.AI_SYSTEM
 import com.weblauncher.app.MainActivity.Companion.DESKTOP_UA
-import com.weblauncher.app.MainActivity.Companion.EXTRA_OPEN_PLAYER
 import com.weblauncher.app.MainActivity.Companion.EXTRA_WIDGET
 import com.weblauncher.app.MainActivity.Companion.MENU_AI
 import com.weblauncher.app.MainActivity.Companion.NEWS_ALL
 import com.weblauncher.app.MainActivity.Companion.STATE_TAB
 import com.weblauncher.app.MainActivity.Companion.SUGGEST_TAG
-import com.weblauncher.app.MainActivity.Companion.TAB_AUDIO
 import com.weblauncher.app.MainActivity.Companion.TAB_BROWSER
 import com.weblauncher.app.MainActivity.Companion.TAB_HOME
 import com.weblauncher.app.MainActivity.Companion.TAB_NEWS
@@ -186,8 +184,6 @@ internal fun MainActivity.fullBackupJson(): String {
         "readLater" to readLater.load(),
         "newsEnabled" to news.enabledIds().toList(),
         "newsCustom" to news.customSources(),
-        "podcasts" to audio.subscriptions(),
-        "radioFavs" to audio.favoriteStations(),
         "weather" to mapOf(
             "city" to weatherPrefs.getString("city", null),
             "lat" to weatherPrefs.getFloat("lat", Float.NaN).takeIf { !it.isNaN() },
@@ -205,13 +201,11 @@ internal fun MainActivity.applyBackupExtras(o: org.json.JSONObject) {
     list<ReadLaterItem>("readLater", object : com.google.gson.reflect.TypeToken<List<ReadLaterItem>>() {}.type)?.let { readLater.save(it) }
     list<String>("newsEnabled", object : com.google.gson.reflect.TypeToken<List<String>>() {}.type)?.let { news.setEnabledIds(it.toSet()) }
     list<NewsSource>("newsCustom", object : com.google.gson.reflect.TypeToken<List<NewsSource>>() {}.type)?.let { news.setCustomSources(it) }
-    list<Podcast>("podcasts", object : com.google.gson.reflect.TypeToken<List<Podcast>>() {}.type)?.let { audio.setSubscriptions(it) }
-    list<RadioStation>("radioFavs", object : com.google.gson.reflect.TypeToken<List<RadioStation>>() {}.type)?.let { audio.setFavoriteStations(it) }
     o.optJSONObject("weather")?.let { w ->
         val city = w.optString("city").takeIf { it.isNotBlank() && it != "null" }
         if (city != null && w.has("lat")) setWeatherPlace(city, w.optDouble("lat"), w.optDouble("lon"))
     }
-    newsItems = emptyList(); newsUpdatedAt = 0L; episodes = emptyList()
+    newsItems = emptyList(); newsUpdatedAt = 0L
 }
 
 internal fun MainActivity.applyFullBackup(o: org.json.JSONObject) {
