@@ -29,7 +29,6 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
 
     override fun doWork(): Result {
         val first = !prefs.getBoolean("initialized", false)
-        runCatching { if (prefs.getBoolean("podcasts", true)) podcasts(first) }
         // YouTube channels are no longer followed (Ascolta keeps only YouTube Music)
         runCatching { keywords(first) }
         runCatching { if (prefs.getBoolean("quakes", false)) quakes() }
@@ -58,18 +57,6 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
             notify("🌍 Terremoto magnitudo %.1f".format(q.mag), "${q.place} · a %.0f km da te · %s".format(km, NewsAdapter.ago(q.time)), "quakes", null)
         }
         (list.maxOfOrNull { it.time } ?: last).let { prefs.edit().putLong("quakeLast", maxOf(it, last)).apply() }
-    }
-
-    private fun podcasts(first: Boolean) {
-        val repo = AudioRepository(c)
-        repo.subscriptions().forEach { p ->
-            val latest = runCatching { repo.episodes(p.feedUrl).maxByOrNull { it.time } }.getOrNull() ?: return@forEach
-            val key = "pod_" + p.feedUrl.hashCode()
-            if (prefs.getString(key, null) != latest.id) {
-                if (!first && prefs.contains(key)) notify("🎧 ${p.title}", latest.title, "podcast", null)
-                prefs.edit().putString(key, latest.id).apply()
-            }
-        }
     }
 
     private fun youtube(first: Boolean) {

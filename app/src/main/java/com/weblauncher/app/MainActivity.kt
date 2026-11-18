@@ -130,13 +130,6 @@ class MainActivity : AppCompatActivity() {
     var newsUpdatedAt = 0L
     var newsLoading = false
     var newsCat = NEWS_ALL
-    val audio by lazy { AudioRepository(this) }
-    var controller: androidx.media3.session.MediaController? = null
-    var controllerFuture: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.MediaController>? = null
-    var audioTab = "foryou"
-    var episodes: List<Episode> = emptyList()
-    val radioCache = HashMap<String, List<RadioStation>>()
-    var radioRegion = "Tutte"
 
     var apps: MutableList<AppItem> = mutableListOf()
     var categories: MutableList<String> = mutableListOf()
@@ -352,7 +345,6 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         setupLauncher()
         setupNews()
-        setupAudio()
         findViewById<View>(R.id.homeToolsScroll).isVisible = false
         applyHomeLook()
         renderWeather()
@@ -438,7 +430,6 @@ class MainActivity : AppCompatActivity() {
         showTab(when (savedInstanceState?.getInt(STATE_TAB)) {
             TAB_SETTINGS -> TAB_SETTINGS
             TAB_NEWS -> TAB_NEWS
-            TAB_AUDIO -> TAB_AUDIO
             TAB_TOOLS -> TAB_TOOLS
             else -> TAB_HOME
         })
@@ -525,7 +516,6 @@ class MainActivity : AppCompatActivity() {
         applyDarkSites()
         setupMiaBridge()
         setupYouTube()
-        setupWebMusic()
         setupCookieBanners()
         webView.setOnScrollChangeListener { _, _, y, _, oldY -> onWebScroll(y, oldY) }
         webView.setOnLongClickListener {
@@ -826,7 +816,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.navHome).setOnClickListener { showTab(TAB_HOME) }
         findViewById<View>(R.id.navBrowser).setOnClickListener { showTab(TAB_BROWSER) }
         findViewById<View>(R.id.navNews).setOnClickListener { showTab(TAB_NEWS) }
-        findViewById<View>(R.id.navAudio).setOnClickListener { showTab(TAB_AUDIO) }
         findViewById<View>(R.id.navSettings).setOnClickListener { showTab(TAB_TOOLS) }
     }
 
@@ -841,9 +830,6 @@ class MainActivity : AppCompatActivity() {
                     currentTab == TAB_SETTINGS -> showTab(TAB_TOOLS)
                     currentTab == TAB_TOOLS -> showTab(TAB_HOME)
                     currentTab == TAB_NEWS -> showTab(TAB_HOME)
-                    currentTab == TAB_AUDIO && audioTab == "music" && musicWeb?.canGoBack() == true -> musicWeb?.goBack()
-                    currentTab == TAB_AUDIO && audioTab != "foryou" -> { audioTab = "foryou"; onAudioShown() }
-                    currentTab == TAB_AUDIO -> showTab(TAB_HOME)
                     else -> { isEnabled = false; onBackPressedDispatcher.onBackPressed() }
                 }
             }
@@ -859,7 +845,6 @@ class MainActivity : AppCompatActivity() {
         hideSuggestions()
         homePanel.isVisible = tab == TAB_HOME
         quickFab?.visibility = if (tab == TAB_HOME) View.VISIBLE else View.GONE
-        uiHandler.post { runCatching { updateMiniPlayer() } }
         findViewById<View>(R.id.homeWallpaper).isVisible = tab == TAB_HOME && homePrefs.getBoolean("wallpaper", false) &&
             java.io.File(filesDir, "wallpaper.jpg").exists()
         browserPanel.isVisible = tab == TAB_BROWSER
@@ -867,8 +852,6 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.toolsPanel).isVisible = tab == TAB_TOOLS
         if (tab == TAB_TOOLS) renderTools()
         findViewById<View>(R.id.newsPanel).isVisible = tab == TAB_NEWS
-        findViewById<View>(R.id.audioPanel).isVisible = tab == TAB_AUDIO
-        if (tab == TAB_AUDIO) onAudioShown()
         if (tab == TAB_HOME) { refreshWeather(); renderParkBar(); renderWeather() }
         if (::webView.isInitialized) trackUsage()
         if (tab == TAB_SETTINGS) renderSettings()
@@ -881,15 +864,13 @@ class MainActivity : AppCompatActivity() {
         iconBrowser.setColorFilter(if (tab == TAB_BROWSER) accent else muted)
         labelBrowser.setTextColor(if (tab == TAB_BROWSER) accent else muted)
         findViewById<ImageView>(R.id.iconNews).setColorFilter(if (tab == TAB_NEWS) accent else muted)
-        findViewById<ImageView>(R.id.iconAudio).setColorFilter(if (tab == TAB_AUDIO) accent else muted)
-        findViewById<TextView>(R.id.labelAudio).setTextColor(if (tab == TAB_AUDIO) accent else muted)
         findViewById<TextView>(R.id.labelNews).setTextColor(if (tab == TAB_NEWS) accent else muted)
         val toolsActive = tab == TAB_SETTINGS || tab == TAB_TOOLS
         iconSettings.setColorFilter(if (toolsActive) accent else muted)
         labelSettings.setTextColor(if (toolsActive) accent else muted)
         // only the active tab is bold (Home used to stay bold whatever the tab)
         listOf(labelHome to (tab == TAB_HOME), labelBrowser to (tab == TAB_BROWSER), findViewById<TextView>(R.id.labelNews) to (tab == TAB_NEWS),
-            findViewById<TextView>(R.id.labelAudio) to (tab == TAB_AUDIO), labelSettings to toolsActive)
+            labelSettings to toolsActive)
             .forEach { (l, on) -> l.setTypeface(null, if (on) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL) }
     }
 
@@ -956,7 +937,7 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
         // battery: pages (scripts, ads, feeds) must not keep running in the background,
         // except a YouTube video playing with «audio a schermo spento» or picture-in-picture
-        val keepAudio = (YouTube.isYouTube(webView.url) && ytPlaying || musicWebPlaying || Music.webFromMusic && Music.web?.playing == true) && ytPrefs.getBoolean("background", true)
+        val keepAudio = (YouTube.isYouTube(webView.url) && ytPlaying) && ytPrefs.getBoolean("background", true)
         if (!keepAudio && !inPip && !isChangingConfigurations) {
             // a moment later: coming straight back must not blank the page (the white flash)
             uiHandler.removeCallbacks(pauseWebTask)
@@ -975,7 +956,7 @@ class MainActivity : AppCompatActivity() {
         uiHandler.removeCallbacks(pauseWebTask)
         if (webPaused && ::webView.isInitialized) {
             webView.setBackgroundColor(if (AppRepository.isLightUi(this)) android.graphics.Color.WHITE else AppRepository.palette(this).bg)
-            webView.onResume(); musicWeb?.onResume(); webView.resumeTimers(); webPaused = false
+            webView.onResume(); webView.resumeTimers(); webPaused = false
         }
         if (lockEnabled() && !inPip) {
             val delay = lockPrefs.getInt("delayMin", 1) * 60_000L
@@ -1016,7 +997,6 @@ class MainActivity : AppCompatActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (intent.getBooleanExtra(EXTRA_OPEN_PLAYER, false)) { showTab(TAB_AUDIO); showPlayerSheet(); return }
         openShortcut(intent)
     }
 
@@ -1099,13 +1079,9 @@ class MainActivity : AppCompatActivity() {
             "visits" -> { intent.removeExtra(EXTRA_WIDGET); showVisitsPage(); return }
             "emergency" -> { intent.removeExtra(EXTRA_WIDGET); showEmergencyPage(); return }
             "report" -> { intent.removeExtra(EXTRA_WIDGET); showReportPage(); return }
-            "music" -> { intent.removeExtra(EXTRA_WIDGET); showMusicPage(); return }
-            "nowplaying" -> { intent.removeExtra(EXTRA_WIDGET); showNowPlayingFull(); return }
             "privacytools" -> { intent.removeExtra(EXTRA_WIDGET); showPrivacyTools(); return }
             "backuptools" -> { intent.removeExtra(EXTRA_WIDGET); showBackupTools(); return }
             "recipes" -> { intent.removeExtra(EXTRA_WIDGET); showRecipesPage(); return }
-            "foryou" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "foryou"; showTab(TAB_AUDIO); return }
-            "player" -> { intent.removeExtra(EXTRA_WIDGET); showPlayerSheet(); return }
             "todo" -> { intent.removeExtra(EXTRA_WIDGET); showTodoPage(); return }
             "quickadd" -> { intent.removeExtra(EXTRA_WIDGET); showQuickAdd(); return }
             "quick_shop" -> { intent.removeExtra(EXTRA_WIDGET); quickShopping(); return }
@@ -1116,14 +1092,6 @@ class MainActivity : AppCompatActivity() {
             "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "hr" -> { intent.removeExtra(EXTRA_WIDGET); showHrPage(); return }
-            "playerdemo", "lyricsdemo" -> {
-                val withLyrics = intent.getStringExtra(EXTRA_WIDGET) == "lyricsdemo"
-                intent.removeExtra(EXTRA_WIDGET)
-                Music.demo = true; Music.webFromMusic = true
-                Music.web = WebPlaying("Someone Like You", "Adele", "", true, System.currentTimeMillis(), true, 84_000, 285_000)
-                showTab(TAB_AUDIO); showNowPlayingFull(openLyrics = withLyrics)
-                uiHandler.postDelayed({ Music.demo = false; Music.webFromMusic = false; Music.web = null; updateMiniPlayer() }, 9000); return
-            }
             "piperdemo" -> {
                 intent.removeExtra(EXTRA_WIDGET)
                 // automatic test: can the Lira voice (Piper) make speech in this phone's WebView?
@@ -1137,12 +1105,6 @@ class MainActivity : AppCompatActivity() {
                 }, 2500)
                 return
             }
-            "audiosettings" -> { intent.removeExtra(EXTRA_WIDGET); showAudioSettings(); return }
-            "ytmusic" -> { intent.removeExtra(EXTRA_WIDGET); openYtMusic(); return }
-            "radiotab" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "radio"; showTab(TAB_AUDIO); return }
-            "queue" -> { intent.removeExtra(EXTRA_WIDGET); showQueuePage(); return }
-            "podcasttools" -> { intent.removeExtra(EXTRA_WIDGET); showPodcastTools(); return }
-            "radioalarm" -> { intent.removeExtra(EXTRA_WIDGET); showRadioAlarmPage(); return }
             "sources" -> { intent.removeExtra(EXTRA_WIDGET); showSourcesPage(); return }
             "bledevices" -> { intent.removeExtra(EXTRA_WIDGET); showBleDevicesPage(); return }
             "body" -> { intent.removeExtra(EXTRA_WIDGET); showBodyPage(); return }
@@ -1208,7 +1170,6 @@ class MainActivity : AppCompatActivity() {
             "park" -> { intent.removeExtra(EXTRA_WIDGET); parkHere(); return }
             "scan" -> { intent.removeExtra(EXTRA_WIDGET); scanDocument(); return }
             "record" -> { intent.removeExtra(EXTRA_WIDGET); showRecorderPage(); if (!RecordingService.isRecording()) startRecording(); return }
-            "podcast" -> { intent.removeExtra(EXTRA_WIDGET); audioTab = "podcast"; showTab(TAB_AUDIO); return }
             "brief" -> { intent.removeExtra(EXTRA_WIDGET); showBrief(null); return }
         }
         val data = intent?.data
@@ -1609,7 +1570,6 @@ class MainActivity : AppCompatActivity() {
         if (watching) {
             item("Finestrella") { enterVideoPip() }
             item("Velocità (${ytPrefs.getFloat("speed", 1f)}×)") { ytSpeedDialog() }
-            item("Segui il canale") { followCurrentChannel() }
         }
         if (GialloZafferano.isRecipePage(pageUrl)) item("Salva ricetta") { saveRecipeFromPage() }
         item("Sito desktop", hasPage, tab.desktop) {
@@ -1659,10 +1619,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun pauseWebForBattery() {
         if (isFinishing || isDestroyed || !::webView.isInitialized || webPaused || inPip) return
-        val keepAudio = (YouTube.isYouTube(webView.url) && ytPlaying || musicWebPlaying || Music.webFromMusic && Music.web?.playing == true) && ytPrefs.getBoolean("background", true)
+        val keepAudio = (YouTube.isYouTube(webView.url) && ytPlaying) && ytPrefs.getBoolean("background", true)
         if (keepAudio) return
         webView.onPause()
-        musicWeb?.onPause()
         webView.pauseTimers()
         webPaused = true
     }
@@ -1739,9 +1698,7 @@ class MainActivity : AppCompatActivity() {
      */
     override fun onDestroy() {
         uiHandler.removeCallbacks(pauseWebTask)
-        Music.webControl = null; Music.web = null
         io.shutdown()
-        controllerFuture?.let { androidx.media3.session.MediaController.releaseFuture(it) }
         runCatching { ai.destroy() }
         tts?.shutdown()
         tts = null
@@ -1815,12 +1772,7 @@ class MainActivity : AppCompatActivity() {
     var wasteRefresh: (() -> Unit)? = null
 
     val notifPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    val opmlPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { importOpml(it) } }
 
-    var playerSheetUpdate: (() -> Unit)? = null
-    var miniClosedFor: String? = null
-    var sleepAt = 0L
-    val sleepRunnable = Runnable { runCatching { musicAction("pause") }; sleepAt = 0L; toast("Timer: riproduzione in pausa") }
 
     // ======================= Weather (Open-Meteo: free, no key) =======================
 
@@ -1877,10 +1829,6 @@ class MainActivity : AppCompatActivity() {
     var settingsPage: String? = null
     var toolsCatalog: List<Pair<String, List<Pair<String, String>>>> = emptyList()
     var ytPlaying = false
-    /** YouTube Music, in its own page inside Ascolta (separate from the Browser). */
-    var musicWeb: WebView? = null
-    var musicWebPlaying = false
-    var musicBarUpdate: (() -> Unit)? = null
     var ytTranscriptCallback: ((org.json.JSONObject) -> Unit)? = null
     var inPip = false
 
@@ -1897,7 +1845,6 @@ class MainActivity : AppCompatActivity() {
         browserToolbar.isVisible = !inPip
         bottomBar.isVisible = !inPip
         webProgress.visibility = if (inPip) View.GONE else View.INVISIBLE
-        if (inPip) findViewById<View>(R.id.miniPlayer).isVisible = false else updateMiniPlayer()
         webView.evaluateJavascript("window.__wlPip&&__wlPip(${inPip})", null)
     }
 
@@ -1905,7 +1852,6 @@ class MainActivity : AppCompatActivity() {
 
     data class YtChannel(val id: String, val name: String)
 
-    var ytVideos: List<NewsItem> = emptyList()
 
     // ======================= Calculator in search =======================
 
@@ -1918,7 +1864,6 @@ class MainActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && currentTab == TAB_HOME && toolsPrefs.getBoolean("smartClipboard", true)) checkClipboard()
-        if (hasFocus && currentTab == TAB_AUDIO && toolsPrefs.getBoolean("smartClipboard", true)) checkYoutubeClip()
     }
 
     // ======================= Phishing warning =======================
@@ -2225,18 +2170,6 @@ class MainActivity : AppCompatActivity() {
 
     var healthRefresh: (() -> Unit)? = null
 
-    // ======================= Music on the phone =======================
-
-    data class Song(val id: Long, val title: String, val artist: String, val album: String, val albumId: Long, val duration: Long)
-
-    var songs: List<Song>? = null
-    var musicView = "songs"
-    var musicFilter: Pair<String, String>? = null
-
-    val musicPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
-        if (ok) { songs = null; renderAudio() } else toast("Serve il permesso per leggere la musica del telefono")
-    }
-
     /** Full-page settings (bottom-nav tab), grouped cards with large rows. */
     /** "Agenzia ANSA: ultime notizie ... - ANSA" -> "ANSA"; falls back to the host name. */
     class WebTab(
@@ -2256,9 +2189,7 @@ class MainActivity : AppCompatActivity() {
         const val TAB_SETTINGS = 2
         const val STATE_TAB = "current_tab"
         const val TAB_NEWS = 3
-        const val TAB_AUDIO = 4
         const val TAB_TOOLS = 5
-        const val EXTRA_OPEN_PLAYER = "open_player"
         const val EXTRA_WIDGET = "widget_action"
         const val NEWS_ALL = "Tutte"
         val SUGGEST_TAG = Any()

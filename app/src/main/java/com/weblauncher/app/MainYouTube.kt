@@ -42,20 +42,17 @@ import com.google.android.material.textfield.TextInputLayout
 import com.weblauncher.app.MainActivity.CatalogApp
 import com.weblauncher.app.MainActivity.Companion.AI_SYSTEM
 import com.weblauncher.app.MainActivity.Companion.DESKTOP_UA
-import com.weblauncher.app.MainActivity.Companion.EXTRA_OPEN_PLAYER
 import com.weblauncher.app.MainActivity.Companion.EXTRA_WIDGET
 import com.weblauncher.app.MainActivity.Companion.MENU_AI
 import com.weblauncher.app.MainActivity.Companion.NEWS_ALL
 import com.weblauncher.app.MainActivity.Companion.STATE_TAB
 import com.weblauncher.app.MainActivity.Companion.SUGGEST_TAG
-import com.weblauncher.app.MainActivity.Companion.TAB_AUDIO
 import com.weblauncher.app.MainActivity.Companion.TAB_BROWSER
 import com.weblauncher.app.MainActivity.Companion.TAB_HOME
 import com.weblauncher.app.MainActivity.Companion.TAB_NEWS
 import com.weblauncher.app.MainActivity.Companion.TAB_SETTINGS
 import com.weblauncher.app.MainActivity.Companion.TAB_TOOLS
 import com.weblauncher.app.MainActivity.ReaderDoc
-import com.weblauncher.app.MainActivity.Song
 import com.weblauncher.app.MainActivity.TodayEntry
 import com.weblauncher.app.MainActivity.WebTab
 import com.weblauncher.app.MainActivity.YtChannel
@@ -169,15 +166,6 @@ internal fun MainActivity.askVideo() {
     }
 }
 
-internal fun MainActivity.followCurrentChannel() {
-    webView.evaluateJavascript("window.__wlChannel ? __wlChannel() : '{}'") { raw ->
-        val o = runCatching { org.json.JSONObject(jsString(raw)) }.getOrNull()
-        val id = o?.optString("id").orEmpty()
-        if (!id.startsWith("UC")) { toast("Apri un video o la pagina del canale"); return@evaluateJavascript }
-        addYtChannel(YtChannel(id, o?.optString("name").orEmpty().ifBlank { "Canale" }))
-    }
-}
-
 internal fun MainActivity.ytSpeedDialog() {
     val speeds = floatArrayOf(1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
     val labels = speeds.map { (if (it % 1f == 0f) it.toInt().toString() else it.toString()) + "x" }.toTypedArray()
@@ -241,182 +229,4 @@ internal fun MainActivity.enterVideoPip() {
     } catch (_: Exception) {
         webView.evaluateJavascript("window.__wlPip&&__wlPip(false)", null)
     }
-}
-
-internal fun MainActivity.ytChannels(): List<YtChannel> = runCatching {
-    com.google.gson.Gson().fromJson<List<YtChannel>>(ytPrefs.getString("channels", "[]"),
-        object : com.google.gson.reflect.TypeToken<List<YtChannel>>() {}.type)
-}.getOrNull().orEmpty()
-
-internal fun MainActivity.saveYtChannels(list: List<YtChannel>) {
-    ytPrefs.edit().putString("channels", com.google.gson.Gson().toJson(list)).apply()
-}
-
-internal fun MainActivity.addYtChannel(c: YtChannel) {
-    if (ytChannels().any { it.id == c.id }) { toast("Segui già ${c.name}"); return }
-    saveYtChannels(ytChannels() + c)
-    ytVideos = emptyList()
-    toast("▶ Ora segui ${c.name}: lo trovi in Ascolta → Video")
-}
-
-internal fun MainActivity.refreshYtVideos() {
-    val chans = ytChannels()
-    val refresh = findViewById<androidx.swiperefreshlayout.widget.SwipeRefreshLayout>(R.id.audioRefresh)
-    if (chans.isEmpty()) { refresh.isRefreshing = false; return }
-    refresh.isRefreshing = true
-    Thread {
-        val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
-        val all = try {
-            pool.invokeAll(chans.map { ch ->
-                java.util.concurrent.Callable {
-                    runCatching {
-                        val c = java.net.URL("https://www.youtube.com/feeds/videos.xml?channel_id=" + ch.id).openConnection() as java.net.HttpURLConnection
-                        c.connectTimeout = 8000; c.readTimeout = 10000
-                        c.setRequestProperty("Cookie", "SOCS=CAI")
-                        val bytes = c.inputStream.use { it.readBytes() }
-                        val head = String(bytes, 0, minOf(bytes.size, 4000), Charsets.UTF_8)
-                        val realName = Regex("<title>([^<]+)</title>").find(head)?.groupValues?.get(1)
-                            ?.let { androidx.core.text.HtmlCompat.fromHtml(it, 0).toString().trim() }
-                        if (!realName.isNullOrBlank() && realName != ch.name) runOnUiThread {
-                            saveYtChannels(ytChannels().map { if (it.id == ch.id) it.copy(name = realName) else it })
-                        }
-                        news.parseFeed(bytes, NewsSource(ch.id, realName ?: ch.name, "Video", "")).take(15)
-                    }.getOrDefault(emptyList())
-                }
-            }, 40, java.util.concurrent.TimeUnit.SECONDS).flatMap { f -> runCatching { f.get() }.getOrDefault(emptyList()) }
-        } finally { pool.shutdownNow() }
-        runOnUiThread {
-            refresh.isRefreshing = false
-            if (all.isNotEmpty()) {
-                ytVideos = all.filter { !it.link.contains("/shorts/") }.sortedByDescending { it.time }
-                ytPrefs.edit().putLong("refreshed", System.currentTimeMillis()).apply()
-            }
-            if (currentTab == TAB_AUDIO && audioTab == "video") renderAudio()
-        }
-    }.start()
-}
-
-internal fun MainActivity.renderVideos(list: android.widget.LinearLayout) {
-    val palette = AppRepository.palette(this)
-    val d = resources.displayMetrics.density
-    fun dp(v: Int) = (v * d).toInt()
-    val chans = ytChannels()
-    if (chans.isEmpty()) {
-        list.addView(TextView(this).apply {
-            text = "Nessun canale seguito.\n\nApri un video su YouTube → menu ⋮ → «Segui il canale», " +
-                "oppure tocca «Cerca» e scrivi il nome del canale (es. @nomecanale).\n\n" +
-                "Vedrai solo i video dei tuoi canali: niente consigliati, niente Shorts."
-            textSize = 15f; setTextColor(palette.textMuted); setPadding(dp(14), dp(24), dp(14), dp(16))
-        })
-        return
-    }
-    if (ytVideos.isEmpty() && System.currentTimeMillis() - ytPrefs.getLong("refreshed", 0L) > 60_000L) refreshYtVideos()
-    sectionLabel(list, "CANALI · ${chans.size}")
-    val row = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
-    chans.forEach { ch ->
-        row.addView(TextView(this).apply {
-            text = ch.name; textSize = 13f; setTextColor(palette.text)
-            setPadding(dp(12), dp(6), dp(12), dp(6))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                cornerRadius = 16 * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke)
-            }
-            layoutParams = android.widget.LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) }
-            setOnClickListener { performLongClick() }
-            setOnLongClickListener {
-                MaterialAlertDialogBuilder(this@renderVideos).setTitle(ch.name)
-                    .setItems(arrayOf("▶ Apri il canale", "✕ Non seguire più")) { _, w ->
-                        if (w == 0) openInBrowser("https://m.youtube.com/channel/${ch.id}/videos")
-                        else { saveYtChannels(ytChannels().filter { it.id != ch.id }); ytVideos = ytVideos.filter { it.sourceId != ch.id }; renderAudio() }
-                    }.show()
-                true
-            }
-        })
-    }
-    list.addView(android.widget.HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; setPadding(dp(6), 0, 0, 0); addView(row) })
-    sectionLabel(list, "ULTIMI VIDEO")
-    if (ytVideos.isEmpty()) {
-        list.addView(TextView(this).apply { text = "Trascina in giù per caricare"; textSize = 14f; setTextColor(palette.textMuted); setPadding(dp(10), dp(8), 0, 0) })
-    }
-    ytVideos.take(60).forEach { v ->
-        val r = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            setPadding(dp(6), dp(8), dp(6), dp(8))
-            val tv = android.util.TypedValue()
-            theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
-            setBackgroundResource(tv.resourceId)
-            setOnClickListener { openInBrowser(v.link) }
-            setOnLongClickListener {
-                MaterialAlertDialogBuilder(this@renderVideos).setTitle(v.title)
-                    .setItems(arrayOf("Apri", "Apri in nuova scheda", "Condividi", "🔖 Leggi dopo (link)")) { _, w ->
-                        when (w) {
-                            0 -> openInBrowser(v.link)
-                            1 -> openInNewTab(v.link)
-                            2 -> startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "${v.title}\n${v.link}")
-                            }, "Condividi video"))
-                            3 -> saveForLater(ReaderDoc(v.title, v.source, v.link, v.image, v.summary.ifBlank { v.title }))
-                        }
-                    }.show()
-                true
-            }
-        }
-        r.addView(ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            layoutParams = android.widget.LinearLayout.LayoutParams(dp(128), dp(72)).apply { marginEnd = dp(12) }
-            background = android.graphics.drawable.GradientDrawable().apply { cornerRadius = 10 * d; setColor(palette.iconTile) }
-            load(v.image) { transformations(coil.transform.RoundedCornersTransformation(20f)) }
-        })
-        val box = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            layoutParams = android.widget.LinearLayout.LayoutParams(0, -2, 1f)
-        }
-        box.addView(TextView(this).apply {
-            text = v.title; textSize = 14.5f; maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(palette.text); setTypeface(typeface, android.graphics.Typeface.BOLD)
-        })
-        box.addView(TextView(this).apply {
-            text = "${v.source} · ${NewsAdapter.ago(v.time)}"; textSize = 12f; setTextColor(palette.textMuted); setPadding(0, dp(3), 0, 0)
-        })
-        r.addView(box)
-        list.addView(r)
-    }
-}
-
-internal fun MainActivity.addChannelDialog() {
-    val d = resources.displayMetrics.density
-    val et = TextInputEditText(this).apply { hint = "@nomecanale o link del canale"; setSingleLine() }
-    val box = android.widget.FrameLayout(this).apply { setPadding((22 * d).toInt(), (8 * d).toInt(), (22 * d).toInt(), 0); addView(et) }
-    MaterialAlertDialogBuilder(this).setTitle("Segui un canale YouTube").setView(box)
-        .setPositiveButton("Cerca") { _, _ ->
-            val raw = et.text?.toString()?.trim().orEmpty()
-            if (raw.isEmpty()) return@setPositiveButton
-            val url = when {
-                raw.startsWith("http") -> raw.replace("://youtube.com", "://www.youtube.com").replace("://m.youtube.com", "://www.youtube.com")
-                raw.startsWith("@") -> "https://www.youtube.com/$raw"
-                raw.startsWith("UC") && raw.length == 24 -> "https://www.youtube.com/channel/$raw"
-                else -> "https://www.youtube.com/@" + raw.replace(" ", "")
-            }
-            toast("Cerco il canale…")
-            Thread {
-                val found = runCatching {
-                    val c = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-                    c.connectTimeout = 8000; c.readTimeout = 12000
-                    c.setRequestProperty("Cookie", "SOCS=CAI")
-                    c.setRequestProperty("Accept-Language", "it-IT,it;q=0.9")
-                    c.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-                    val html = c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-                    val id = Regex("<link rel=\"canonical\" href=\"https://www\\.youtube\\.com/channel/(UC[\\w-]{22})\"").find(html)?.groupValues?.get(1)
-                        ?: Regex("\"(?:externalId|channelId|browseId)\":\"(UC[\\w-]{22})\"").find(html)?.groupValues?.get(1)
-                    val name = Regex("<meta property=\"og:title\" content=\"([^\"]+)\"").find(html)?.groupValues?.get(1)
-                    if (id == null) null else YtChannel(id, androidx.core.text.HtmlCompat.fromHtml(name ?: "Canale", 0).toString())
-                }.getOrNull()
-                runOnUiThread {
-                    if (found == null) toast("Canale non trovato: prova dal video, menu ⋮ → Segui il canale")
-                    else { addYtChannel(found); if (currentTab == TAB_AUDIO) { audioTab = "video"; refreshYtVideos(); renderAudio() } }
-                }
-            }.start()
-        }
-        .setNegativeButton("Annulla", null)
-        .show()
 }
