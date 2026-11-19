@@ -194,7 +194,7 @@ internal fun MainActivity.fridgePhoto() {
     }
 }
 
-private fun shrinkPhoto(shot: File) = runCatching {
+internal fun shrinkPhoto(shot: File) = runCatching {
     val bmp = android.graphics.BitmapFactory.decodeFile(shot.absolutePath)
     val sc = minOf(1f, 1280f / maxOf(bmp.width, bmp.height))
     val small = android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * sc).toInt(), (bmp.height * sc).toInt(), true)

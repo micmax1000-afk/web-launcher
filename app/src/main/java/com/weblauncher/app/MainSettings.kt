@@ -328,7 +328,7 @@ internal fun MainActivity.renderSettings() {
 
     section("AI")
     val aiRowSub = "Usa provider, chiave e modello di Mia AI"
-    row("Assistente AI", aiRowSub, value = "Configura") { openMiaAi() }
+    row("Assistente AI", aiRowSub, value = "Apri") { showAiSettings() }
     row("Comandi vocali con AI", "Es. «apri YouTube e cerca ricette di pasta»", switch = repo.aiVoice()) {
         repo.setAiVoice(!repo.aiVoice()); renderSettings()
     }

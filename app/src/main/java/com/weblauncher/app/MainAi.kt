@@ -103,7 +103,7 @@ internal fun MainActivity.askMia() {
     val url = webView.url.orEmpty()
     val watch = url.contains("/watch") || url.contains("/shorts/") || url.contains("youtu.be/")
     when {
-        !browserHasPage || !url.startsWith("http") || MiaAi.isMiaUrl(url) -> openMiaAi()
+        !browserHasPage || !url.startsWith("http") || MiaAi.isMiaUrl(url) -> showAskPage()
         YouTube.isYouTube(url) && watch -> summarizeVideo()
         hostOf(url) == "mail.google.com" -> summarizeEmail()
         else -> summarizePage()
