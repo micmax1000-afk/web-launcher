@@ -521,7 +521,7 @@ internal fun MainActivity.openPdfPage(pdf: java.io.File, title: String) {
     runCatching { pdf.copyTo(copy, true) }.onFailure { toast("Non riesco ad aprire il PDF"); return }
     val url = MiaAi.ORIGIN + "/assets/pdf/viewer.html?theme=" + (if (AppRepository.isLightUi(this)) "light" else "dark") +
         "&file=" + Uri.encode("/files/pdf/" + copy.name) + "&name=" + Uri.encode(title)
-    openPage(title, "Modifica", { showPdfTools(copy, title) }) { root, body, dialog ->
+    openPage(title) { root, body, dialog ->
         (body.parent as? View)?.visibility = View.GONE
         val wv = WebView(this)
         syncWebViewTheme()

@@ -1119,19 +1119,6 @@ class MainActivity : AppCompatActivity() {
                 }
                 openPdfPage(f, "Prova PDF"); return
             }
-            "pdfedit", "pdfpages", "pdfsign" -> {   // automatic test: firma, evidenzia e riordina un PDF fatto al momento, poi apre lo strumento
-                val which = intent.getStringExtra(EXTRA_WIDGET); intent.removeExtra(EXTRA_WIDGET)
-                io.execute {
-                    val r = PdfEdit.selfTest(this, cacheDir)
-                    android.util.Log.i(SelfTest.TAG, r)
-                    val f = java.io.File(cacheDir, "prova-modifica-firmato.pdf")
-                    runOnUiThread {
-                        if (!f.exists()) return@runOnUiThread
-                        when (which) { "pdfpages" -> pdfPages(f, "Prova"); "pdfsign" -> pdfEditor(f, "Prova", "highlight"); else -> showPdfTools(f, "Prova") }
-                    }
-                }
-                return
-            }
             "writeforme" -> { intent.removeExtra(EXTRA_WIDGET); showWriteForMe(); return }
             "tools" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_TOOLS); return }
             "settings" -> { intent.removeExtra(EXTRA_WIDGET); settingsPage = null; settingsQuery = ""; showTab(TAB_SETTINGS); return }
@@ -1544,7 +1531,6 @@ class MainActivity : AppCompatActivity() {
         item("Trova nella pagina", hasPage) { showFindDialog() }
         item("Modalità lettura", hasPage) { openReaderMode() }
         item("Traduci", hasPage || isPdfViewer(webView.url)) { if (isPdfViewer(webView.url)) pdfFileOf(webView.url)?.let { pdfAsk(it, pdfName(webView.url)) } else translatePageInPlace() }
-        if (isPdfViewer(webView.url)) item("✍️ Modifica il PDF") { pdfFileOf(webView.url)?.let { showPdfTools(it, pdfName(webView.url)) } ?: toast("Non trovo il file del PDF") }
         if (isPdfViewer(webView.url)) item("Stampa") { printPdfUrl(webView.url) }
         else item("Stampa", hasPage) { savePageAsPdf() }
         val pageUrl = webView.url.orEmpty()

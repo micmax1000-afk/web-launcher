@@ -254,7 +254,7 @@ internal fun MainActivity.explainSheet() {
                     io.execute {
                         val dest = File(pdfDir, "explain_" + System.currentTimeMillis() + ".pdf")
                         val ok = runCatching { contentResolver.openInputStream(uri)!!.use { i -> dest.outputStream().use { i.copyTo(it) } } }.isSuccess
-                        val text = if (ok) PdfEdit.text(this, dest) else null
+                        val text: String? = null   // il PDF va all'AI così com'è
                         runOnUiThread {
                             when {
                                 !ok -> toast("Non riesco ad aprire il PDF")

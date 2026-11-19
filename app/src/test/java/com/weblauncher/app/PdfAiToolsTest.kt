@@ -7,24 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PdfAiToolsTest {
-    private fun near(a: Pair<Float, Float>, x: Float, y: Float) { assertEquals(x, a.first, 0.01f); assertEquals(y, a.second, 0.01f) }
-
-    @Test fun pdfCoordinatesNoRotation() {
-        // A4 portrait: top left on screen is the top left of the page (y grows upwards in PDF)
-        near(PdfEdit.toPdf(0f, 0f, 0f, 0f, 595f, 842f, 0), 0f, 842f)
-        near(PdfEdit.toPdf(1f, 1f, 0f, 0f, 595f, 842f, 0), 595f, 0f)
-        near(PdfEdit.toPdf(0.5f, 0.25f, 10f, 20f, 100f, 200f, 0), 60f, 170f)
-    }
-
-    @Test fun pdfCoordinatesRotated() {
-        // shown turned 90° clockwise: the displayed top left is the PDF bottom left
-        near(PdfEdit.toPdf(0f, 0f, 0f, 0f, 595f, 842f, 90), 0f, 0f)
-        near(PdfEdit.toPdf(1f, 0f, 0f, 0f, 595f, 842f, 90), 0f, 842f)
-        near(PdfEdit.toPdf(0f, 0f, 0f, 0f, 595f, 842f, 180), 595f, 0f)
-        near(PdfEdit.toPdf(0f, 0f, 0f, 0f, 595f, 842f, 270), 595f, 842f)
-        near(PdfEdit.toPdf(0f, 0f, 0f, 0f, 595f, 842f, -90), 595f, 842f)
-    }
-
     @Test fun subjectLine() {
         val (s, b) = AiTools.splitSubject("Oggetto: Disdetta abbonamento\n\nGentile palestra,\nscrivo per…")
         assertEquals("Disdetta abbonamento", s)
