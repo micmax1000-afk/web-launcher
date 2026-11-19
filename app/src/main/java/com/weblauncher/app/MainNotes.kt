@@ -120,9 +120,9 @@ internal fun MainActivity.showNotesPage() {
             tools.removeAllViews(); chips.removeAllViews()
             if (tab != 0) return
             val grid = notePrefs.getString("view", "grid") == "grid"
-            tools.addView(chipView(if (grid) "▦ Griglia" else "☰ Elenco", false) {
-                notePrefs.edit().putString("view", if (grid) "list" else "grid").apply(); drawBars(); render()
-            })
+            // due tasti chiari: quello acceso è la vista che vedi
+            tools.addView(chipView("▦ Griglia", grid) { notePrefs.edit().putString("view", "grid").apply(); drawBars(); render() })
+            tools.addView(chipView("☰ Elenco", !grid) { notePrefs.edit().putString("view", "list").apply(); drawBars(); render() })
             val sort = notePrefs.getString("sort", "time") ?: "time"
             tools.addView(chipView("↕ " + (NoteTools.SORTS.firstOrNull { it.first == sort }?.second ?: "Ultima modifica"), false) {
                 MaterialAlertDialogBuilder(this).setTitle("Ordina per").setItems(NoteTools.SORTS.map { it.second }.toTypedArray()) { _, w ->
@@ -181,6 +181,9 @@ internal fun MainActivity.showNotesPage() {
             box.addView(TextView(this).apply { text = (if (n.locked) "🔒 " else "") + title; textSize = 15f; setTypeface(typeface, Typeface.BOLD); setTextColor(palette.text); maxLines = 2 })
             if (n.locked) { box.addView(TextView(this).apply { text = "protetta · si apre con l'impronta"; textSize = 12.5f; setTextColor(palette.textMuted) }); return }
             val (prose, items) = NoteTools.split(n.text)
+            if (items.isNotEmpty()) box.addView(TextView(this).apply {
+                text = "☑ ${items.count { it.first }}/${items.size}"; textSize = 12f; setTextColor(accent); setPadding(0, dp(2), 0, 0)
+            })
             val rest = prose.lines().filter { it.isNotBlank() }.drop(if (prose.isNotBlank()) 1 else 0)
             val lines = rest.take(if (grid) 4 else 2).toMutableList()
             items.take(if (grid) 4 else 3).forEach { lines += (if (it.first) "☑ " else "☐ ") + it.second }
@@ -213,7 +216,11 @@ internal fun MainActivity.showNotesPage() {
             if (!grid) items.forEach { n ->
                 list.addView(card(n, false).apply { layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) } })
             } else items.chunked(2).forEach { pair ->
-                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                // la riga deve essere larga quanto la pagina: le due note se la dividono a metà
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+                }
                 pair.forEach { n -> row.addView(card(n, true).apply { layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) } }) }
                 if (pair.size == 1) row.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f).apply { setMargins(dp(4), 0, dp(4), 0) } })
                 list.addView(row)
