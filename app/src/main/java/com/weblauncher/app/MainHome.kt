@@ -197,7 +197,7 @@ internal fun MainActivity.renderTools() {
         Triple("📈", "Borsa") { showStocksPage() }
     ))
     group("AI", listOf(
-        Triple("✨", "Mia AI") { openMiaAi() },
+        Triple("✨", "Chiedi") { showAskPage() },
         Triple("🗣", "Chiedi a voce") { listenForQuestion() },
         Triple("🧠", "Chiedi ai tuoi dati") { askMyData() },
         Triple("✍️", "Scrivi per me") { showWriteForMe() },
@@ -419,7 +419,7 @@ private fun toolIcon(label: String): Int = when (label) {
     "Profilo 2" -> R.drawable.ic_tool_mask
     "Download" -> R.drawable.ic_tool_download
     "Cronologia" -> R.drawable.ic_tool_history
-    "Mia AI" -> R.drawable.ic_tool_spark
+    "Mia AI", "Chiedi" -> R.drawable.ic_tool_spark
     "Impostazioni" -> R.drawable.ic_tool_settings
     "Privacy" -> R.drawable.ic_tool_shield
     "Da fare" -> R.drawable.ic_tool_check

@@ -91,6 +91,14 @@ adb shell am start -W -n $PKG/.MainActivity --es widget_action writeforme >/dev/
 shot 19e-scrivi-per-me 4
 alive || { echo "::error::L'app si e' chiusa in Scrivi per me"; why; exit 1; }
 adb shell input keyevent KEYCODE_BACK
+adb shell am start -W -n $PKG/.MainActivity --es widget_action ask >/dev/null
+shot 19f-chiedi 4
+alive || { echo "::error::L'app si e' chiusa nella finestra Chiedi"; why; exit 1; }
+adb shell input keyevent KEYCODE_BACK
+adb shell am start -W -n $PKG/.MainActivity --es widget_action aisettings >/dev/null
+shot 19g-impostazioni-ai 4
+alive || { echo "::error::L'app si e' chiusa nelle impostazioni AI"; why; exit 1; }
+adb shell input keyevent KEYCODE_BACK
 
 # estrazione del testo da un PDF (e' quello che l'AI legge per il calendario dei rifiuti)
 adb shell am start -W -n $PKG/.MainActivity --es widget_action pdftext >/dev/null
