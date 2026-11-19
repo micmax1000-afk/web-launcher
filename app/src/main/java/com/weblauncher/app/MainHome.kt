@@ -183,6 +183,7 @@ internal fun MainActivity.renderTools() {
         Triple("📦", "Pacchi") { showParcelsPage() }
     ))
     group("LA TUA GIORNATA", listOf(
+        Triple("📅", "Calendario") { showCalendarPage() },
         Triple("✅", "Da fare") { showTodoPage() },
         Triple("☀️", "Buongiorno") { previewBrief() },
         Triple("📊", "La mia settimana") { showWeeklySummary() },
@@ -420,6 +421,7 @@ private fun toolIcon(label: String): Int = when (label) {
     "Download" -> R.drawable.ic_tool_download
     "Cronologia" -> R.drawable.ic_tool_history
     "Mia AI", "Chiedi" -> R.drawable.ic_tool_spark
+    "Calendario" -> R.drawable.ic_tool_month
     "Impostazioni" -> R.drawable.ic_tool_settings
     "Privacy" -> R.drawable.ic_tool_shield
     "Da fare" -> R.drawable.ic_tool_check
