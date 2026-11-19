@@ -1139,6 +1139,7 @@ class MainActivity : AppCompatActivity() {
             "recorder" -> { intent.removeExtra(EXTRA_WIDGET); showRecorderPage(); return }
             "new_note" -> { intent.removeExtra(EXTRA_WIDGET); editNote(null); return }
             "notes" -> { intent.removeExtra(EXTRA_WIDGET); showNotesPage(); return }
+            "calendar" -> { intent.removeExtra(EXTRA_WIDGET); showCalendarPage(); return }
             "ask" -> { intent.removeExtra(EXTRA_WIDGET); listenForQuestion(); return }
             "park" -> { intent.removeExtra(EXTRA_WIDGET); parkHere(); return }
             "scan" -> { intent.removeExtra(EXTRA_WIDGET); scanDocument(); return }
@@ -1731,6 +1732,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     var notesRefresh: (() -> Unit)? = null
+    var calendarPageRefresh: (() -> Unit)? = null
 
     // ======================= Home tools row =======================
 
@@ -1755,6 +1757,7 @@ class MainActivity : AppCompatActivity() {
     data class TodayEntry(val time: Long, val allDay: Boolean, val text: String, val icon: String, val action: (() -> Unit)? = null)
 
     val calendarPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        calendarPageRefresh?.invoke()
         homePrefs.edit().putBoolean("askedCal", true).apply()
         if (ok) renderWeather() else toast("Calendario non collegato")
     }
