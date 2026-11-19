@@ -1121,6 +1121,8 @@ class MainActivity : AppCompatActivity() {
                 openPdfPage(f, "Prova PDF"); return
             }
             "writeforme" -> { intent.removeExtra(EXTRA_WIDGET); showWriteForMe(); return }
+            "ask" -> { intent.removeExtra(EXTRA_WIDGET); showAskPage(); return }
+            "aisettings" -> { intent.removeExtra(EXTRA_WIDGET); showAiSettings(); return }
             "tools" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_TOOLS); return }
             "settings" -> { intent.removeExtra(EXTRA_WIDGET); settingsPage = null; settingsQuery = ""; showTab(TAB_SETTINGS); return }
             "instruments" -> { intent.removeExtra(EXTRA_WIDGET); showInstrumentsPage(); return }
