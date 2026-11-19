@@ -157,13 +157,18 @@ internal fun MainActivity.showCalendarPage() {
             row.addView(TextView(this).apply { text = if (i.allDay) "" else tf.format(Date(i.time)); textSize = 12.5f; setTextColor(palette.textMuted) })
             parent.addView(row)
         }
-        fun dayHeader(parent: LinearLayout, t: Long) = parent.addView(TextView(this).apply {
+        val headers = HashMap<Long, View>()
+        fun dayHeader(parent: LinearLayout, t: Long) = TextView(this).apply {
             text = (if (t == today) "OGGI · " else if (t == today + 86_400_000L) "DOMANI · " else "") + dayFmt.format(Date(t)).uppercase(Locale.ITALIAN)
             textSize = 12.5f; setTypeface(typeface, Typeface.BOLD); setTextColor(if (t == today) accent else palette.textMuted); setPadding(dp(8), dp(12), 0, dp(4))
-        })
+            parent.addView(this); headers[t] = this
+        }
+        val scroll = body.parent as android.widget.ScrollView
+        /** Porta in vista il giorno [t] (la sua intestazione). */
+        fun scrollToDay(t: Long) { scroll.post { headers[t]?.let { v -> scroll.smoothScrollTo(0, (v.top - dp(8)).coerceAtLeast(0)) } } }
 
         render = {
-            body.removeAllViews()
+            body.removeAllViews(); headers.clear()
             // barra: ‹ periodo › e Settimana / Mese
             val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(6)) }
             fun arrow(t: String, delta: Int) = TextView(this).apply {
@@ -194,7 +199,7 @@ internal fun MainActivity.showCalendarPage() {
             modes.addView(TextView(this).apply {
                 text = "Oggi"; textSize = 13.5f; setPadding(dp(16), dp(7), dp(16), dp(7)); setTextColor(palette.text)
                 background = GradientDrawable().apply { cornerRadius = 18f * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
-                setOnClickListener { anchor = today; selected = today; render() }
+                setOnClickListener { anchor = today; selected = today; render(); scrollToDay(today); toast("Oggi: " + dayFmt.format(Date(today))) }
             })
             body.addView(modes)
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED)
@@ -208,12 +213,14 @@ internal fun MainActivity.showCalendarPage() {
                 days.forEachIndexed { idx, t ->
                     val n = items.count { CalendarTools.dayStart(it.time) == t }
                     val on = t == today
+                    val sel = t == selected && !on
                     strip.addView(TextView(this).apply {
                         text = initials[idx] + "\n" + Calendar.getInstance().apply { timeInMillis = t }.get(Calendar.DAY_OF_MONTH) + "\n" + "•".repeat(n.coerceAtMost(3)).ifEmpty { " " }
                         textSize = 12f; gravity = Gravity.CENTER; setLineSpacing(0f, 0.95f)
                         setTextColor(if (on) android.graphics.Color.WHITE else palette.text)
-                        background = box(if (on) accent else palette.card, if (on) accent else palette.stroke, 10f)
+                        background = GradientDrawable().apply { cornerRadius = 10f * d; setColor(if (on) accent else palette.card); setStroke(dp(if (sel) 2 else 1).coerceAtLeast(1), if (on || sel) accent else palette.stroke) }
                         setPadding(0, dp(6), 0, dp(4))
+                        setOnClickListener { selected = t; render(); scrollToDay(t) }
                         layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply { setMargins(dp(2), 0, dp(2), 0) }
                     })
                 }
@@ -221,8 +228,10 @@ internal fun MainActivity.showCalendarPage() {
                 var any = false
                 days.forEach { t ->
                     val list = items.filter { CalendarTools.dayStart(it.time) == t }
-                    if (list.isEmpty()) return@forEach
-                    any = true; dayHeader(body, t); list.forEach { itemRow(body, it) }
+                    if (list.isEmpty() && t != today && t != selected) return@forEach
+                    any = true; dayHeader(body, t)
+                    if (list.isEmpty()) hintLabel(body, if (t == today) "Niente in programma oggi. Tocca «＋ Aggiungi» in alto." else "Niente in programma.")
+                    else list.forEach { itemRow(body, it) }
                 }
                 if (!any) hintLabel(body, "Niente in programma questa settimana.")
             } else {
