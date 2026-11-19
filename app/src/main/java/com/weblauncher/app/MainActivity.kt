@@ -345,6 +345,7 @@ class MainActivity : AppCompatActivity() {
         setupWebView()
         setupLauncher()
         setupNews()
+        setupAskBar()
         findViewById<View>(R.id.homeToolsScroll).isVisible = false
         applyHomeLook()
         renderWeather()
@@ -394,7 +395,7 @@ class MainActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnMic).setOnClickListener { requestMicAndListen() }
         findViewById<View>(R.id.btnWebHome).setOnClickListener { showTab(TAB_HOME) }
         findViewById<View>(R.id.btnWebAi).setOnClickListener { askMia() }
-        findViewById<View>(R.id.btnWebAi).setOnLongClickListener { openMiaAi(); true }
+        findViewById<View>(R.id.btnWebAi).setOnLongClickListener { showAskPage(); true }
         findViewById<View>(R.id.btnWebMenu).setOnClickListener { showBrowserMenu(it) }
         findViewById<View>(R.id.btnTabs).setOnClickListener { showTabSwitcher() }
         webAddress.addTextChangedListener(object : TextWatcher {
@@ -2061,8 +2062,11 @@ class MainActivity : AppCompatActivity() {
     var voiceAskMode = false
     val askSpeechLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         val text = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.trim().orEmpty()
-        if (r.resultCode == RESULT_OK && text.isNotEmpty()) askByVoice(text)
+        val target = askVoiceTarget; askVoiceTarget = null
+        if (r.resultCode == RESULT_OK && text.isNotEmpty()) { if (target != null) target(text) else askByVoice(text) }
     }
+    /** Se impostato, la prossima frase detta va qui (finestra «Chiedi») invece che alla risposta a voce. */
+    var askVoiceTarget: ((String) -> Unit)? = null
 
     // ======================= Unified search =======================
 
