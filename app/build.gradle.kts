@@ -14,7 +14,7 @@ android {
         // Su GitHub il numero di build cresce a ogni compilazione (1000 + numero dell'esecuzione),
         // cosi' l'app riconosce da sola le versioni piu' nuove.
         versionCode = System.getenv("WL_VERSION_CODE")?.toIntOrNull() ?: 45
-        versionName = "7.44.0"
+        versionName = "7.45.0"
         // solo italiano e inglese: le librerie includono testi in ~80 lingue che l'app non usa
         resourceConfigurations += listOf("it", "en")
     }
@@ -76,11 +76,7 @@ dependencies {
     implementation("androidx.biometric:biometric:1.1.0")
     implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
-    implementation("androidx.media3:media3-exoplayer:1.3.1")
-    implementation("androidx.media3:media3-exoplayer-hls:1.3.1")
-    implementation("androidx.media3:media3-session:1.3.1")
     implementation("com.google.zxing:core:3.5.3")
-    implementation("com.tom-roush:pdfbox-android:2.0.27.0")   // sign, fill, highlight, merge and reorder PDFs
     implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0-beta1")
     testImplementation("junit:junit:4.13.2")
