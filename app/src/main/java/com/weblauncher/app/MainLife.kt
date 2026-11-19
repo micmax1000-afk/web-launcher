@@ -271,6 +271,20 @@ internal fun MainActivity.cookingMode(r: Recipe) {
 
 // ======================= Background alerts =======================
 
+internal fun MainActivity.showAlertLog() {
+    openPage("Ultimi avvisi", "Pulisci", { dlg -> AlertLog.clear(this); dlg.dismiss(); toast("Elenco svuotato") }) { _, body, _ ->
+        val list = AlertLog.load(this)
+        if (list.isEmpty()) { emptyLabel(body, "Ancora nessun avviso.\nQui trovi gli ultimi 50, anche se cancelli la notifica."); return@openPage }
+        val dayFmt = java.text.SimpleDateFormat("EEEE d MMMM", java.util.Locale.ITALIAN)
+        var lastDay = ""
+        list.forEach { e ->
+            val day = dayFmt.format(java.util.Date(e.time))
+            if (day != lastDay) { sectionLabel(body, day.uppercase(java.util.Locale.ITALIAN)); lastDay = day }
+            listRow(body, e.title, e.text.take(140) + " · " + NewsAdapter.ago(e.time), onClick = { e.url?.let { openInBrowser(it) } })
+        }
+    }
+}
+
 internal fun MainActivity.showAlertsPage() {
     val p = getSharedPreferences("wl_alerts", MODE_PRIVATE)
     openPage("Avvisi", "Controlla ora", { _ -> AlertsWorker.runNow(this); toast("Controllo in corso…") }) { _, body, _ ->
@@ -285,6 +299,32 @@ internal fun MainActivity.showAlertsPage() {
                 setOnCheckedChangeListener { _, c -> p.edit().putBoolean(key, c).apply(); AlertsWorker.schedule(this@showAlertsPage) }
             })
             sw("Avvisi attivi", "Controllo ogni 2 ore circa, con internet", "enabled")
+            val log = AlertLog.load(this)
+            listRow(body, "🕘 Ultimi avvisi" + if (log.isNotEmpty()) " · ${log.size}" else "", "Da rileggere anche se hai cancellato la notifica", onClick = { showAlertLog() })
+            sectionLabel(body, "COSA CONTROLLO")
+            fun sw2(label: String, sub: String, key: String, needsCity: Boolean = false) = body.addView(com.google.android.material.materialswitch.MaterialSwitch(this).apply {
+                text = "$label\n$sub"; textSize = 15f; setTextColor(palette.text); isChecked = p.getBoolean(key, false)
+                setPadding(dp(10), dp(10), dp(6), dp(10))
+                setOnCheckedChangeListener { v, on ->
+                    if (on && needsCity && weatherPrefs.getString("city", null) == null) { v.isChecked = false; toast("Scegli prima la città del meteo"); setupWeather(); return@setOnCheckedChangeListener }
+                    p.edit().putBoolean(key, on).apply(); if (on) ensureNotificationPermission(); AlertsWorker.schedule(this@showAlertsPage)
+                }
+            })
+            val city = weatherPrefs.getString("city", null)
+            sw2("⛈ Allerta meteo", "Temporali, pioggia forte, neve, vento, gelo" + (city?.let { " a $it" } ?: " (serve la città del meteo)"), "meteo", needsCity = true)
+            sw2("🚆 Scioperi", "Treni, bus, metro e aerei, dalle notizie", "scioperi")
+            sw2("🌍 Terremoti vicini", "Magnitudo 3 o più entro 100 km" + (city?.let { " da $it" } ?: ""), "quakes", needsCity = true)
+            sectionLabel(body, "ORE DI SILENZIO")
+            val qf = p.getInt("quietFrom", 22 * 60 + 30); val qt = p.getInt("quietTo", 7 * 60)
+            fun hm(m: Int) = "%02d:%02d".format(m / 60, m % 60)
+            sw2("🌙 Senza suono di notte", "Dalle ${hm(qf)} alle ${hm(qt)}: gli avvisi arrivano muti, li leggi dopo", "quiet")
+            listRow(body, "🕙 Cambia gli orari", "${hm(qf)} – ${hm(qt)}", onClick = {
+                android.app.TimePickerDialog(this, { _, h1, m1 ->
+                    android.app.TimePickerDialog(this, { _, h2, m2 ->
+                        p.edit().putInt("quietFrom", h1 * 60 + m1).putInt("quietTo", h2 * 60 + m2).apply(); render()
+                    }, qt / 60, qt % 60, true).apply { setTitle("Fino alle…") }.show()
+                }, qf / 60, qf % 60, true).apply { setTitle("Dalle…") }.show()
+            })
             sectionLabel(body, "📰 NOTIZIE SU…")
             val words = p.getStringSet("keywords", emptySet()).orEmpty().sorted()
             if (words.isEmpty()) body.addView(TextView(this).apply {
