@@ -145,7 +145,7 @@ class ShopWidget : AppWidgetProvider() {
         }
         fun render(c: Context, manager: AppWidgetManager, ids: IntArray) {
             val v = RemoteViews(c.packageName, R.layout.widget_shop)
-            val note = runCatching { JsonStore.notes(c).load() }.getOrDefault(emptyList()).firstOrNull { it.text.lines().first().trim().equals("Lista della spesa", true) }
+            val note = runCatching { JsonStore.notes(c).load() }.getOrDefault(emptyList()).firstOrNull { it.deletedAt == null && it.text.lines().first().trim().equals("Lista della spesa", true) }
             val items = note?.let { n -> n.text.lines().drop(1).mapNotNull { l -> l.trim().takeIf { it.startsWith("☐") }?.removePrefix("☐")?.trim()?.takeIf { it.isNotEmpty() } } }.orEmpty()
             v.setTextViewText(R.id.pHeader, "🛒 Spesa" + if (items.isNotEmpty()) " · ${items.size}" else "")
             v.setOnClickPendingIntent(R.id.pRoot, launch(c, 410) { putExtra(MainActivity.EXTRA_WIDGET, "shopping") })

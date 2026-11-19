@@ -244,10 +244,10 @@ internal fun MainActivity.updateUnifiedSearch(q: String) {
         fun has(s: String?) = s?.lowercase(Locale.ITALIAN)?.contains(query) == true
         val off = getSharedPreferences("wl_search", MODE_PRIVATE).getStringSet("off", emptySet()).orEmpty()
         runCatching {
-            if ("note" !in off) notes.load().filter { has(it.text) }.take(3).forEach { n ->
+            if ("note" !in off) notes.load().filter { it.deletedAt == null && !it.locked && has(it.text) }.take(3).forEach { n ->
                 val first = n.text.lines().firstOrNull { it.isNotBlank() }.orEmpty()
                 hits += Hit(if (isChecklist(n.text)) "☑" else "📝", first.take(60), "Nota", {
-                    if (isChecklist(n.text)) showChecklist(n.id) else editNote(n)
+                    openNote(n)
                 })
             }
             if ("libri" !in off) Ebooks.load(this).filter { has(it.title) || has(it.author) }.take(2).forEach { b -> hits += Hit("📖", b.title, "Libro · ${b.author}", { openBook(b) }) }

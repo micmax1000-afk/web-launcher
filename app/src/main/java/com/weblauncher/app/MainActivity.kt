@@ -1076,7 +1076,7 @@ class MainActivity : AppCompatActivity() {
             "quick_reminder" -> { intent.removeExtra(EXTRA_WIDGET); quickReminder(); return }
             "whatuse" -> { intent.removeExtra(EXTRA_WIDGET); showTab(TAB_TOOLS); showWhatYouUse(); return }
             "appcheck" -> { intent.removeExtra(EXTRA_WIDGET); showAppCheck(); return }
-            "shopping" -> { intent.removeExtra(EXTRA_WIDGET); val n = notes.load().firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals("Lista della spesa", true) }; showChecklist(n?.id, "Lista della spesa"); return }
+            "shopping" -> { intent.removeExtra(EXTRA_WIDGET); val n = notes.load().firstOrNull { it.deletedAt == null && isChecklist(it.text) && it.text.lines().first().trim().equals("Lista della spesa", true) }; showChecklist(n?.id, "Lista della spesa"); return }
             "passwords" -> { intent.removeExtra(EXTRA_WIDGET); showPasswordInfo(); return }
             "recents" -> { intent.removeExtra(EXTRA_WIDGET); showRecentsPage(); return }
             "piperdemo" -> {

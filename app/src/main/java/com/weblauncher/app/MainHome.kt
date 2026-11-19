@@ -173,7 +173,7 @@ internal fun MainActivity.renderTools() {
     group("ORGANIZZA", listOf(
         Triple("📝", "Note") { showNotesPage() },
         Triple("🛒", "Lista spesa") {
-            val n = notes.load().firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals("Lista della spesa", true) }
+            val n = notes.load().firstOrNull { it.deletedAt == null && isChecklist(it.text) && it.text.lines().first().trim().equals("Lista della spesa", true) }
             showChecklist(n?.id, "Lista della spesa")
         },
         Triple("🎙", "Registratore") { showRecorderPage() },

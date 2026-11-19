@@ -65,7 +65,7 @@ import java.util.UUID
 internal fun MainActivity.addItemsToShoppingList(items: List<String>) {
     val name = "Lista della spesa"
     val list = notes.load()
-    var n = list.firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals(name, true) }
+    var n = list.firstOrNull { it.deletedAt == null && isChecklist(it.text) && it.text.lines().first().trim().equals(name, true) }
     if (n == null) { n = Note(UUID.randomUUID().toString(), name, System.currentTimeMillis()); list.add(n) }
     n.text = (n.text.trimEnd() + "\n" + items.filter { it.isNotBlank() }.joinToString("\n") { "☐ " + it.trim().replaceFirstChar { c -> c.uppercase() } }).trim()
     n.time = System.currentTimeMillis()
