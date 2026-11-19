@@ -20,8 +20,8 @@ import com.google.gson.reflect.TypeToken
 import java.util.concurrent.TimeUnit
 
 /**
- * Background checks every ~2 hours: new podcast episodes, new videos of followed channels,
- * news about the user's keywords (Google News). Only new items are notified.
+ * Background checks every ~2 hours: news about the user's keywords (Google News), weather alerts,
+ * transport strikes, nearby earthquakes. Only new items are notified; each one is also kept in [AlertLog].
  */
 class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     private val c = context
@@ -29,9 +29,10 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
 
     override fun doWork(): Result {
         val first = !prefs.getBoolean("initialized", false)
-        // YouTube channels are no longer followed (Ascolta keeps only YouTube Music)
         runCatching { keywords(first) }
         runCatching { if (prefs.getBoolean("quakes", false)) quakes() }
+        runCatching { if (prefs.getBoolean("meteo", false)) meteo() }
+        runCatching { if (prefs.getBoolean("scioperi", false)) strikes(first) }
         prefs.edit().putBoolean("initialized", true).putLong("lastRun", System.currentTimeMillis()).apply()
         return Result.success()
     }
@@ -59,22 +60,30 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
         (list.maxOfOrNull { it.time } ?: last).let { prefs.edit().putLong("quakeLast", maxOf(it, last)).apply() }
     }
 
-    private fun youtube(first: Boolean) {
-        val chans = runCatching {
-            Gson().fromJson<List<MainActivity.YtChannel>>(c.getSharedPreferences("wl_yt", Context.MODE_PRIVATE).getString("channels", "[]"),
-                object : TypeToken<List<MainActivity.YtChannel>>() {}.type)
-        }.getOrNull().orEmpty()
-        val news = NewsRepository(c)
-        chans.forEach { ch ->
-            val items = runCatching { news.parseFeed(get("https://www.youtube.com/feeds/videos.xml?channel_id=" + ch.id), NewsSource(ch.id, ch.name, "Video", "")) }
-                .getOrNull()?.filter { !it.link.contains("/shorts/") } ?: return@forEach
-            val latest = items.maxByOrNull { it.time } ?: return@forEach
-            val key = "yt_" + ch.id
-            if (prefs.getString(key, null) != latest.id) {
-                if (!first && prefs.contains(key)) notify("▶ ${ch.name}", latest.title, null, latest.link)
-                prefs.edit().putString(key, latest.id).apply()
-            }
+    /** Allerta meteo per la città del meteo, una volta per giorno e tipo. */
+    private fun meteo() {
+        val wp = c.getSharedPreferences("wl_weather", Context.MODE_PRIVATE)
+        val lat = wp.getFloat("lat", Float.NaN); val lon = wp.getFloat("lon", Float.NaN)
+        if (lat.isNaN()) return
+        val city = wp.getString("city", null) ?: "la tua città"
+        val json = get("https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&daily=weather_code,precipitation_sum,wind_gusts_10m_max,temperature_2m_min&timezone=auto&forecast_days=2").toString(Charsets.UTF_8)
+        val seen = prefs.getStringSet("meteoSeen", emptySet()).orEmpty().toMutableSet()
+        MeteoAlerts.check(json, city).forEach { a ->
+            val key = a.day + "_" + a.kind
+            if (key !in seen) { notify(a.title, a.text, "alerts", null); seen += key }
         }
+        prefs.edit().putStringSet("meteoSeen", seen.toList().takeLast(60).toSet()).apply()
+    }
+
+    /** Scioperi dei trasporti dalle notizie (Google News), solo quelli nuovi. */
+    private fun strikes(first: Boolean) {
+        val url = "https://news.google.com/rss/search?q=" + Uri.encode("sciopero (treni OR trasporti OR bus OR metro OR aerei) when:1d") + "&hl=it&gl=IT&ceid=IT:it"
+        val items = NewsRepository(c).parseFeed(get(url), NewsSource("strike", "Scioperi", "Avvisi", url))
+        val seen = prefs.getStringSet("strikeSeen", emptySet()).orEmpty().toMutableSet()
+        val fresh = items.filter { it.id !in seen }.sortedByDescending { it.time }
+        if (!first && seen.isNotEmpty()) fresh.take(2).forEach { notify("🚆 Sciopero", it.title, null, it.link) }
+        seen.addAll(items.map { it.id })
+        prefs.edit().putStringSet("strikeSeen", seen.toList().takeLast(300).toSet()).apply()
     }
 
     private fun keywords(first: Boolean) {
@@ -93,6 +102,10 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
     }
 
     private fun notify(title: String, text: String, widget: String?, url: String?) {
+        AlertLog.add(c, title, text, url)
+        val cal = java.util.Calendar.getInstance()
+        val quiet = prefs.getBoolean("quiet", false) &&
+            MeteoAlerts.inQuiet(cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE), prefs.getInt("quietFrom", 22 * 60 + 30), prefs.getInt("quietTo", 7 * 60))
         val nm = c.getSystemService(NotificationManager::class.java)
         if (android.os.Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(NotificationChannel(CHANNEL, "Avvisi", NotificationManager.IMPORTANCE_DEFAULT))
         val id = (title + text).hashCode()
@@ -104,6 +117,7 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
             .setSmallIcon(R.drawable.ic_nav_news)
             .setContentTitle(title).setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setSilent(quiet)   // ore di silenzio: arriva senza suono, la leggi dopo
             .setAutoCancel(true).setContentIntent(pi).build()
         runCatching { nm.notify(id, n) }
     }
@@ -114,7 +128,8 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
 
         fun schedule(c: Context) {
             val p = c.getSharedPreferences("wl_alerts", Context.MODE_PRIVATE)
-            val any = p.getBoolean("podcasts", true) || p.getStringSet("keywords", emptySet()).orEmpty().isNotEmpty() || p.getBoolean("quakes", false)
+            val any = p.getStringSet("keywords", emptySet()).orEmpty().isNotEmpty() || p.getBoolean("quakes", false) ||
+                p.getBoolean("meteo", false) || p.getBoolean("scioperi", false)
             val wm = WorkManager.getInstance(c)
             if (!p.getBoolean("enabled", true) || !any) { wm.cancelUniqueWork(WORK); return }
             val req = PeriodicWorkRequestBuilder<AlertsWorker>(2, TimeUnit.HOURS)
@@ -128,4 +143,18 @@ class AlertsWorker(context: Context, params: WorkerParameters) : Worker(context,
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()).build())
         }
     }
+}
+
+/** Gli ultimi avvisi, da rileggere nell'app anche dopo aver cancellato la notifica. */
+object AlertLog {
+    data class Entry(val title: String, val text: String, val url: String?, val time: Long)
+    private fun prefs(c: Context) = c.getSharedPreferences("wl_alerts", Context.MODE_PRIVATE)
+    fun load(c: Context): List<Entry> = runCatching {
+        Gson().fromJson<List<Entry>>(prefs(c).getString("log", "[]"), object : TypeToken<List<Entry>>() {}.type)
+    }.getOrNull().orEmpty().filterNotNull()
+    fun add(c: Context, title: String, text: String, url: String?) {
+        val l = (listOf(Entry(title, text, url, System.currentTimeMillis())) + load(c)).take(50)
+        prefs(c).edit().putString("log", Gson().toJson(l)).apply()
+    }
+    fun clear(c: Context) { prefs(c).edit().remove("log").apply() }
 }

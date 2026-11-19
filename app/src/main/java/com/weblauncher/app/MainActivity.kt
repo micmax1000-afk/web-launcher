@@ -1140,6 +1140,7 @@ class MainActivity : AppCompatActivity() {
             "new_note" -> { intent.removeExtra(EXTRA_WIDGET); editNote(null); return }
             "notes" -> { intent.removeExtra(EXTRA_WIDGET); showNotesPage(); return }
             "calendar" -> { intent.removeExtra(EXTRA_WIDGET); showCalendarPage(); return }
+            "alerts" -> { intent.removeExtra(EXTRA_WIDGET); showAlertsPage(); return }
             "ask" -> { intent.removeExtra(EXTRA_WIDGET); listenForQuestion(); return }
             "park" -> { intent.removeExtra(EXTRA_WIDGET); parkHere(); return }
             "scan" -> { intent.removeExtra(EXTRA_WIDGET); scanDocument(); return }

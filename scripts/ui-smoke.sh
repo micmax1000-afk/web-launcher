@@ -99,6 +99,10 @@ adb shell am start -W -n $PKG/.MainActivity --es widget_action calendar >/dev/nu
 shot 19i-calendario 4
 alive || { echo "::error::L'app si e' chiusa nel Calendario"; why; exit 1; }
 adb shell input keyevent KEYCODE_BACK
+adb shell am start -W -n $PKG/.MainActivity --es widget_action alerts >/dev/null
+shot 19j-avvisi 4
+alive || { echo "::error::L'app si e' chiusa negli Avvisi"; why; exit 1; }
+adb shell input keyevent KEYCODE_BACK
 adb shell am start -W -n $PKG/.MainActivity --es widget_action ask >/dev/null
 shot 19f-chiedi 4
 alive || { echo "::error::L'app si e' chiusa nella finestra Chiedi"; why; exit 1; }
