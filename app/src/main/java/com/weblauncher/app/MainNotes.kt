@@ -261,7 +261,7 @@ internal fun MainActivity.editNote(existing: Note?, onSaved: () -> Unit = { note
             if (text.isEmpty() || !aiReady()) { if (text.isEmpty()) toast("Scrivi prima qualcosa nella nota"); return@action }
             val opts = arrayOf("✏️ Correggi e riordina", "📝 Riassumi", "☑ Fanne una lista con spunte", "🛒 Metti nella spesa le cose da comprare", "❓ Fai una domanda")
             MaterialAlertDialogBuilder(this).setTitle("✨ Chiedi all'AI su questa nota").setItems(opts) { _, w ->
-                fun run(prompt: String, done: (String) -> Unit) {
+                fun askNote(prompt: String, done: (String) -> Unit) {
                     toast("✨ Ci penso…")
                     ai.ask(listOf("user" to "$prompt\n\n$text"), null, object : AiBridge.Listener {
                         override fun onDone(text: String, model: String) = done(text.trim())
@@ -269,16 +269,16 @@ internal fun MainActivity.editNote(existing: Note?, onSaved: () -> Unit = { note
                     })
                 }
                 when (w) {
-                    0 -> run("Riordina questa nota in italiano: correggi gli errori, dai una struttura chiara (titolo breve sulla prima riga, poi elenchi puntati con «- » dove servono). Non aggiungere informazioni. Rispondi solo con la nota.") { et.setText(it); et.setSelection(et.text.length) }
+                    0 -> askNote("Riordina questa nota in italiano: correggi gli errori, dai una struttura chiara (titolo breve sulla prima riga, poi elenchi puntati con «- » dove servono). Non aggiungere informazioni. Rispondi solo con la nota.") { et.setText(it); et.setSelection(et.text.length) }
                     1 -> showAiSheet("Riassunto della nota", "Nota:\n$text\n\n", "Riassumi questa nota in italiano in poche righe.", showFirstQuestion = false)
-                    2 -> run("Trasforma questa nota in una lista di cose da fare, una per riga, senza numeri né simboli. Prima riga: un titolo breve. Rispondi solo con la lista.") { out ->
+                    2 -> askNote("Trasforma questa nota in una lista di cose da fare, una per riga, senza numeri né simboli. Prima riga: un titolo breve. Rispondi solo con la lista.") { out ->
                         val ls = out.lines().map { it.trim().trimStart('-', '*', '•', ' ') }.filter { it.isNotBlank() }
-                        if (ls.size < 2) { toast("Non ho trovato una lista"); return@run }
+                        if (ls.size < 2) { toast("Non ho trovato una lista"); return@askNote }
                         val list = notes.load()
                         list.add(Note(UUID.randomUUID().toString(), ls.first() + "\n" + ls.drop(1).joinToString("\n") { "☐ $it" }, System.currentTimeMillis(), label = label))
                         notes.save(list); notesRefresh?.invoke(); toast("☑ Creata la lista «${ls.first()}»")
                     }
-                    3 -> run("Dalla nota qui sotto elenca solo le cose da comprare (ingredienti, prodotti), separate da virgola, in italiano. Se non ce ne sono rispondi NIENTE.") { out ->
+                    3 -> askNote("Dalla nota qui sotto elenca solo le cose da comprare (ingredienti, prodotti), separate da virgola, in italiano. Se non ce ne sono rispondi NIENTE.") { out ->
                         if (out.isBlank() || out.uppercase().startsWith("NIENTE")) toast("Non ho trovato cose da comprare") else addToShoppingList(out, "Lista della spesa")
                     }
                     else -> { dialog.dismiss(); showAskPage(prefill = null); toast("Scrivi la domanda: la nota non viene allegata, incollala se serve") }
