@@ -177,7 +177,7 @@ internal fun MainActivity.splitItems(t: String): List<String> =
 internal fun MainActivity.addToShoppingList(itemsText: String, listName: String) {
     val name = listName.trim().replaceFirstChar { it.uppercase() }.ifBlank { "Lista della spesa" }
     val list = notes.load()
-    var n = list.firstOrNull { isChecklist(it.text) && it.text.lines().first().trim().equals(name, true) }
+    var n = list.firstOrNull { it.deletedAt == null && isChecklist(it.text) && it.text.lines().first().trim().equals(name, true) }
     if (n == null) { n = Note(UUID.randomUUID().toString(), name, System.currentTimeMillis()); list.add(n) }
     val add = splitItems(itemsText)
     n.text = (n.text.trimEnd() + "\n" + add.joinToString("\n") { "☐ $it" }).trim()

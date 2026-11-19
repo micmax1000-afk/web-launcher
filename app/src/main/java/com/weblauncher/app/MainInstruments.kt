@@ -27,7 +27,7 @@ import java.util.Locale
 
 // ======================= Measuring tools hub =======================
 
-private fun MainActivity.withPermissions(vararg perms: String, action: () -> Unit) {
+internal fun MainActivity.withPermissions(vararg perms: String, action: () -> Unit) {
     if (perms.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) { action(); return }
     pendingPermAction = action; toolPermission.launch(arrayOf(*perms))
 }
