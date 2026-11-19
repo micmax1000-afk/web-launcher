@@ -122,7 +122,7 @@ class TodayWidget : AppWidgetProvider() {
             val items = runCatching { Todo.items(c, 2, now) }.getOrDefault(emptyList())
                 .filter { !(it.time < now - 3_600_000L && it.kind == "cal") }
             v.setTextViewText(R.id.tHeader, "✅ Da fare · " + java.text.SimpleDateFormat("EEEE d MMM", java.util.Locale.ITALIAN).format(java.util.Date(now)))
-            v.setOnClickPendingIntent(R.id.tRoot, launch(c, 400) { putExtra(MainActivity.EXTRA_WIDGET, "todo") })
+            v.setOnClickPendingIntent(R.id.tRoot, launch(c, 400) { putExtra(MainActivity.EXTRA_WIDGET, "calendar") })
             val ids5 = intArrayOf(R.id.t1, R.id.t2, R.id.t3, R.id.t4, R.id.t5)
             ids5.forEachIndexed { i, id ->
                 v.setTextViewText(id, items.getOrNull(i)?.let { Todo.line(it, now) } ?: if (i == 0) "Niente da fare 🙂" else "")

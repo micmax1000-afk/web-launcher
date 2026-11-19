@@ -184,12 +184,8 @@ internal fun MainActivity.renderTools() {
     ))
     group("LA TUA GIORNATA", listOf(
         Triple("📅", "Calendario") { showCalendarPage() },
-        Triple("✅", "Da fare") { showTodoPage() },
-        Triple("☀️", "Buongiorno") { previewBrief() },
-        Triple("📊", "La mia settimana") { showWeeklySummary() },
+        Triple("☀️", "Riepilogo") { showSummaryHub() },
         Triple("🔔", "Avvisi") { showAlertsPage() },
-        Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
-        Triple("⌛", "Tempo di utilizzo") { showUsagePage() }
     ))
     group("SOLDI", listOf(
         Triple("💰", "Spese") { showExpensesPage() },
@@ -199,12 +195,7 @@ internal fun MainActivity.renderTools() {
     ))
     group("AI", listOf(
         Triple("✨", "Chiedi") { showAskPage() },
-        Triple("🗣", "Chiedi a voce") { listenForQuestion() },
-        Triple("🧠", "Chiedi ai tuoi dati") { askMyData() },
-        Triple("✍️", "Scrivi per me") { showWriteForMe() },
-        Triple("🔍", "Spiegami un foglio") { explainSheet() },
-        Triple("📸", "Foto del piatto") { foodFromPhoto() },
-        Triple("🧊", "Frigo e ricette") { fridgePhoto() }
+        Triple("🧠", "Chiedi ai tuoi dati") { askMyData() }
     ))
     group("DOCUMENTI", listOf(
         Triple("🎫", "Biglietti") { showWalletPage() },
@@ -223,14 +214,24 @@ internal fun MainActivity.renderTools() {
         Triple("➕", "Aggiungi web app") { showAddEditDialog(null) },
         Triple("🕵️", "Profilo 2") { startActivity(Intent(this, IsolatedBrowserActivity::class.java)) },
         Triple("⬇", "Download") { showDownloadsPage() },
-        Triple("🕘", "Cronologia") { showHistoryPage() },
-        Triple("🩺", "Controllo dell'app") { showAppCheck() },
-        Triple("🔑", "Password") { showPasswordInfo() },
-        Triple("🛡", "Privacy") { showPrivacyTools() },
-        Triple("📦", "Backup") { showBackupTools() }
+        Triple("🕘", "Cronologia") { showHistoryPage() }
     ))
     // trovati con la ricerca anche se non hanno un riquadro (sono dentro altre pagine)
     val searchOnly = listOf<Triple<String, String, () -> Unit>>(
+        Triple("✅", "Da fare") { showTodoPage() },
+        Triple("☀️", "Buongiorno") { previewBrief() },
+        Triple("📊", "La mia settimana") { showWeeklySummary() },
+        Triple("🌦", "Meteo") { if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail() },
+        Triple("⌛", "Tempo di utilizzo") { showUsagePage() },
+        Triple("🗣", "Chiedi a voce") { listenForQuestion() },
+        Triple("✍️", "Scrivi per me") { showWriteForMe() },
+        Triple("🔍", "Spiegami un foglio") { explainSheet() },
+        Triple("📸", "Foto del piatto") { foodFromPhoto() },
+        Triple("🧊", "Frigo e ricette") { fridgePhoto() },
+        Triple("🩺", "Controllo dell'app") { showAppCheck() },
+        Triple("🔑", "Password") { showPasswordInfo() },
+        Triple("🛡", "Privacy") { showPrivacyTools() },
+        Triple("📦", "Backup") { showBackupTools() },
         Triple("👟", "Passi") { showStepsPage() },
         Triple("⏱", "Tabata") { showTabata() },
         Triple("❤️", "Salute") { showHealthPage() },
@@ -422,6 +423,7 @@ private fun toolIcon(label: String): Int = when (label) {
     "Cronologia" -> R.drawable.ic_tool_history
     "Mia AI", "Chiedi" -> R.drawable.ic_tool_spark
     "Calendario" -> R.drawable.ic_tool_month
+    "Riepilogo" -> R.drawable.ic_tool_sun
     "Impostazioni" -> R.drawable.ic_tool_settings
     "Privacy" -> R.drawable.ic_tool_shield
     "Da fare" -> R.drawable.ic_tool_check
@@ -465,4 +467,16 @@ internal fun MainActivity.customizeTools() {
                 2 -> { tp.edit().clear().apply(); renderTools(); toast("Strumenti ripristinati") }
             }
         }.show()
+}
+
+/** «Riepilogo»: buongiorno, la mia settimana, meteo e tempo di utilizzo in un posto. */
+internal fun MainActivity.showSummaryHub() {
+    openPage("Riepilogo") { _, body, dialog ->
+        listRow(body, "☀️ Buongiorno", "Il riepilogo del mattino: meteo, appuntamenti, scadenze, notizie", onClick = { dialog.dismiss(); previewBrief() })
+        listRow(body, "📊 La mia settimana", "Spese, passi, scadenze e compleanni della settimana", onClick = { dialog.dismiss(); showWeeklySummary() })
+        listRow(body, "🌦 Meteo", weatherPrefs.getString("city", null) ?: "Scegli la città", onClick = {
+            dialog.dismiss(); if (weatherPrefs.getString("city", null) == null) setupWeather() else showWeatherDetail()
+        })
+        listRow(body, "⌛ Tempo di utilizzo", "Quanto usi i siti, con i limiti", onClick = { dialog.dismiss(); showUsagePage() })
+    }
 }

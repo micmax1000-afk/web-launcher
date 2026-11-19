@@ -249,48 +249,40 @@ internal fun MainActivity.showAskPage(
     }
 }
 
-/** La barra «✨ Chiedi…» in cima alla Home, con microfono, fotocamera e le scorciatoie. */
+/** In cima alla Home: un tasto ✨ dentro la barra di ricerca (una sola barra per cercare e chiedere) e le scorciatoie dell'AI. */
 internal fun MainActivity.setupAskBar() {
     val header = findViewById<LinearLayout>(R.id.header) ?: return
-    if (header.findViewWithTag<View>("askBar") != null) return
+    if (header.findViewWithTag<View>("askChips") != null) return
     val palette = AppRepository.palette(this)
     val accent = accentColor()
     val d = resources.displayMetrics.density
     fun dp(v: Int) = (v * d).toInt()
-    val card = LinearLayout(this).apply {
-        tag = "askBar"
-        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(16), 0, dp(6), 0)
-        background = GradientDrawable().apply { cornerRadius = 27f * d; setColor(palette.card); setStroke((1.5f * d).toInt().coerceAtLeast(1), accent) }
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(10) }
-        setOnClickListener { showAskPage() }
+    searchInput.hint = "Cerca o chiedi all'AI…"
+    // il tasto ✨ accanto al microfono, dentro la stessa barra
+    val mic = findViewById<View>(R.id.btnMic)
+    (mic.parent as? LinearLayout)?.let { row ->
+        row.addView(ImageButton(this).apply {
+            setImageResource(R.drawable.ic_ai); setColorFilter(accent); contentDescription = "Chiedi all'AI"; background = null
+            setPadding(dp(11), dp(11), dp(11), dp(11)); scaleType = ImageView.ScaleType.FIT_CENTER
+            layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+            setOnClickListener {
+                val q = searchInput.text?.toString()?.trim().orEmpty()
+                searchInput.setText("")
+                if (q.isEmpty()) showAskPage() else showAskPage(prefill = q, autoSend = true)
+            }
+        }, row.indexOfChild(mic))
     }
-    card.addView(ImageView(this).apply {
-        setImageResource(R.drawable.ic_ai); setColorFilter(accent)
-        layoutParams = LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginEnd = dp(10) }
-    })
-    card.addView(TextView(this).apply {
-        text = "Chiedi o scrivi qualcosa…"; textSize = 15f; setTextColor(palette.textMuted)
-        layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-    })
-    fun small(icon: Int, desc: String, onClick: () -> Unit) = card.addView(ImageButton(this).apply {
-        setImageResource(icon); setColorFilter(accent); contentDescription = desc; background = null
-        setPadding(dp(10), dp(10), dp(10), dp(10)); scaleType = ImageView.ScaleType.FIT_CENTER
-        layoutParams = LinearLayout.LayoutParams(dp(44), dp(44))
+    val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(8), 0, 0) }
+    fun chip(label: String, onClick: () -> Unit) = chips.addView(TextView(this).apply {
+        text = label; textSize = 13.5f; setTextColor(palette.text)
+        setPadding(dp(14), dp(8), dp(14), dp(8))
+        background = GradientDrawable().apply { cornerRadius = 18f * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
+        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(8) }
         setOnClickListener { onClick() }
     })
-    small(R.drawable.ic_nav_mic, "Parla") {
-        if (!aiReady()) return@small
-        askVoiceTarget = { q -> showAskPage(prefill = q, autoSend = true) }
-        val i = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, "it-IT")
-            putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Cosa vuoi chiedere?")
-        }
-        try { askSpeechLauncher.launch(i) } catch (_: Exception) { askVoiceTarget = null; toast(getString(R.string.no_speech)) }
-    }
-    small(R.drawable.ic_tool_scan, "Fotografa") {
-        if (!aiReady()) return@small
+    chip("✨ Chiedi") { showAskPage() }
+    chip("📷 Fotografa e chiedi") {
+        if (!aiReady()) return@chip
         val f = File(scanDir, "chiedi_${System.currentTimeMillis()}.jpg")
         capturePhoto(f) { shot ->
             if (shot == null) return@capturePhoto
@@ -300,21 +292,11 @@ internal fun MainActivity.setupAskBar() {
             }
         }
     }
-    header.addView(card)
-    val chips = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(8), 0, 0) }
-    fun chip(label: String, onClick: () -> Unit) = chips.addView(TextView(this).apply {
-        text = label; textSize = 13.5f; setTextColor(palette.text)
-        setPadding(dp(14), dp(8), dp(14), dp(8))
-        background = GradientDrawable().apply { cornerRadius = 18f * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
-        layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(8) }
-        setOnClickListener { onClick() }
-    })
     chip("📝 Scrivi per me") { if (aiReady()) showWriteForMe() }
     chip("📄 Spiegami un foglio") { if (aiReady()) explainSheet() }
     chip("🍽 Foto piatto") { foodFromPhoto() }
     chip("🧊 Frigo") { if (aiReady()) fridgePhoto() }
-    chip("🧠 I miei dati") { if (aiReady()) askMyData() }
-    header.addView(HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(chips) })
+    header.addView(HorizontalScrollView(this).apply { tag = "askChips"; isHorizontalScrollBarEnabled = false; addView(chips) })
 }
 
 // ======================= Impostazioni dell'assistente AI =======================

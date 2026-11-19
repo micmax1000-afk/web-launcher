@@ -13,7 +13,7 @@ import androidx.core.content.ContextCompat
 import coil.load
 import java.util.Locale
 
-// Funzioni comuni rimaste dopo che la sezione Ascolta è passata alla sua app.
+// Funzioni comuni usate da più pagine.
 
 internal fun MainActivity.ensureNotificationPermission() {
     if (android.os.Build.VERSION.SDK_INT >= 33 &&
