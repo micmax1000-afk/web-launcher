@@ -187,5 +187,5 @@ private fun MainActivity.askFoodAi(shot: java.io.File) {
                     .setPositiveButton(if (noKey) "Configura Mia AI" else "Chiudi") { _, _ -> if (noKey) openMiaAi() }
                     .setNegativeButton("Annulla", null).show()
             }
-        })
+        }, listOf(Triple("image", "image/jpeg", "/files/scan/" + shot.name)))
 }
