@@ -444,6 +444,7 @@ internal fun MainActivity.renderSettings() {
         row("🧪 Ricevi le versioni di prova", "Novità prima degli altri, ma possono avere qualche errore", switch = Updater.beta(this)) {
             Updater.setBeta(this, !Updater.beta(this)); renderSettings()
         }
+        row("🩺 Controllo dell'app", "Permessi, backup e cose da sistemare") { showAppCheck() }
         row("🐞 Segnala un problema", "Con versione, telefono e ultimo errore") { reportProblem() }
     }
 

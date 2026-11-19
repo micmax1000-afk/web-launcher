@@ -366,7 +366,6 @@ class MainActivity : AppCompatActivity() {
         uiHandler.postDelayed({ runCatching { showNewsAfterUpdate() } }, 900)
         setupNav()
         setupBack()
-        setupQuickButton()
         applyBarPosition()
         setupDownloadDone()
 
@@ -385,7 +384,7 @@ class MainActivity : AppCompatActivity() {
         }
         findViewById<View>(R.id.aiSearchHint).setOnClickListener {
             val q = searchInput.text?.toString()?.trim().orEmpty()
-            if (q.isNotEmpty()) { searchInput.setText(""); askAi(q) }
+            if (q.isNotEmpty()) { searchInput.setText(""); showAskPage(prefill = q, autoSend = true) }
         }
         webSearchHint.setOnClickListener {
             val q = searchInput.text?.toString()?.trim().orEmpty()

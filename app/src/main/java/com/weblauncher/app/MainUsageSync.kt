@@ -191,7 +191,7 @@ internal fun MainActivity.fullBackupJson(): String {
     ))
 }
 
-/** Applies the extra sections of a backup (notes, read later, news, podcasts...). */
+/** Applies the extra sections of a backup (notes, read later, news...). */
 internal fun MainActivity.applyBackupExtras(o: org.json.JSONObject) {
     val gson = com.google.gson.Gson()
     fun <T> list(key: String, type: java.lang.reflect.Type): List<T>? =
@@ -243,7 +243,7 @@ internal fun MainActivity.checkSyncFromOtherDevice() {
             MaterialAlertDialogBuilder(this)
                 .setTitle("🔄 Dati più recenti")
                 .setMessage("Il backup su Drive è stato aggiornato da «${o.optString("device", "un altro dispositivo")}» " +
-                    "(${NewsAdapter.ago(savedAt)}). Vuoi caricare app, note, notizie e podcast da lì?")
+                    "(${NewsAdapter.ago(savedAt)}). Vuoi caricare app, note, e notizie da lì?")
                 .setPositiveButton("Aggiorna") { _, _ ->
                     applyFullBackup(o)
                     syncPrefs.edit().putLong("applied", savedAt).putLong("written", savedAt).apply()
@@ -262,7 +262,7 @@ internal fun MainActivity.showSyncHelp() {
             "Usa lo stesso file di backup su Google Drive su tutti i dispositivi.\n\n" +
             "1. Sul primo: «Crea il file» e salvalo su Drive.\n" +
             "2. Sugli altri: «Collega un file esistente» e scegli lo stesso file.\n\n" +
-            "Le modifiche (app, note, leggi dopo, notizie, podcast, meteo) vengono salvate quando esci dall'app; " +
+            "Le modifiche (app, note, leggi dopo, notizie, meteo) vengono salvate quando esci dall'app; " +
             "quando apri l'app su un altro dispositivo ti propone di aggiornarla."
         )
         .setPositiveButton("Crea il file") { _, _ -> startAutoBackupSetup() }

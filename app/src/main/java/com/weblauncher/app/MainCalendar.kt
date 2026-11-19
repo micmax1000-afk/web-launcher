@@ -197,6 +197,12 @@ internal fun MainActivity.showCalendarPage() {
             })
             mode("Settimana", false); mode("Mese", true)
             modes.addView(TextView(this).apply {
+                text = "Elenco"; textSize = 13.5f; setPadding(dp(16), dp(7), dp(16), dp(7)); setTextColor(palette.text)
+                background = GradientDrawable().apply { cornerRadius = 18f * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
+                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(8) }
+                setOnClickListener { showTodoPage() }
+            })
+            modes.addView(TextView(this).apply {
                 text = "Oggi"; textSize = 13.5f; setPadding(dp(16), dp(7), dp(16), dp(7)); setTextColor(palette.text)
                 background = GradientDrawable().apply { cornerRadius = 18f * d; setColor(palette.card); setStroke(d.toInt().coerceAtLeast(1), palette.stroke) }
                 setOnClickListener { anchor = today; selected = today; render(); scrollToDay(today); toast("Oggi: " + dayFmt.format(Date(today))) }

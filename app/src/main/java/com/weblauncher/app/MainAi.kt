@@ -363,7 +363,7 @@ internal fun MainActivity.interpretVoice(text: String, fallback: () -> Unit) {
         "{\"action\":\"ask\",\"question\":\"...\"} per una domanda a cui rispondere a parole\n" +
         "{\"action\":\"summarize\"} per riassumere la pagina aperta\n" +
         "{\"action\":\"new_tab\"}, {\"action\":\"close_all_tabs\"}, {\"action\":\"history\"}, " +
-        "{\"action\":\"downloads\"}, {\"action\":\"settings\"}, {\"action\":\"reminder\",\"text\":\"...\"} per un promemoria (testo con quando), {\"action\":\"news\"} per le notizie, {\"action\":\"radio\"}, {\"action\":\"podcast\"}, " +
+        "{\"action\":\"downloads\"}, {\"action\":\"settings\"}, {\"action\":\"reminder\",\"text\":\"...\"} per un promemoria (testo con quando), {\"action\":\"news\"} per le notizie, " +
         "{\"action\":\"briefing\"} per il riassunto delle notizie del giorno"
     ai.ask(listOf("user" to prompt), "Sei l'interprete dei comandi vocali di un browser. Rispondi solo con JSON valido.",
         object : AiBridge.Listener {
